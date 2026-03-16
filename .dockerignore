@@ -1,0 +1,10 @@
+# Enviar solo /backend al contexto de Docker para builds rápidos
+**
+
+!backend/
+!backend/**
+!.dockerignore
+
+# Evitar enviar dependencias y artefactos locales
+backend/node_modules
+backend/dist
