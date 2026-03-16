@@ -8,15 +8,19 @@ class AuthUser {
     required this.role,
     required this.email,
     required this.name,
+    this.avatarKey,
+    this.avatarUrl,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     return AuthUser(
-      userId: json['userId'] as String,
+      userId: (json['userId'] ?? json['id']) as String,
       companyId: json['companyId'] as String,
       role: json['role'] as String,
       email: json['email'] as String,
       name: json['name'] as String,
+      avatarKey: json['avatarKey'] as String?,
+      avatarUrl: json['avatarUrl'] as String?,
     );
   }
 
@@ -25,6 +29,8 @@ class AuthUser {
   final String role;
   final String email;
   final String name;
+  final String? avatarKey;
+  final String? avatarUrl;
 }
 
 @immutable

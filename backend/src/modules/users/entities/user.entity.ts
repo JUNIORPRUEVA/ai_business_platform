@@ -15,6 +15,9 @@ export class UserEntity extends BaseEntity {
   @Column({ type: 'text' })
   email!: string;
 
+  @Column({ type: 'text', name: 'avatar_key', nullable: true })
+  avatarKey!: string | null;
+
   @Column({ type: 'text', name: 'password_hash' })
   passwordHash!: string;
 

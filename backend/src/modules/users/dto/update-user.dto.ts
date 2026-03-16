@@ -8,6 +8,10 @@ export class UpdateUserDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  avatarKey?: string;
+
+  @IsOptional()
   @IsEmail()
   email?: string;
 

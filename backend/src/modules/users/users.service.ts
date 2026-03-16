@@ -47,6 +47,7 @@ export class UsersService {
       companyId,
       name: dto.name,
       email: dto.email.toLowerCase().trim(),
+      avatarKey: null,
       passwordHash: await bcrypt.hash(dto.password, 12),
       role: dto.role ?? 'operator',
     });
@@ -78,6 +79,9 @@ export class UsersService {
     }
     if (dto.name !== undefined) {
       existing.name = dto.name;
+    }
+    if (dto.avatarKey !== undefined) {
+      existing.avatarKey = dto.avatarKey.trim() || null;
     }
     if (dto.role !== undefined) {
       existing.role = dto.role;

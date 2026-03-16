@@ -22,6 +22,18 @@ class IdParam {
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Get('me')
+  @Roles('admin', 'operator', 'viewer')
+  me(@CurrentUser() user: AuthUser) {
+    return this.usersService.get(user.companyId, user.userId);
+  }
+
+  @Patch('me')
+  @Roles('admin', 'operator', 'viewer')
+  updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateUserDto) {
+    return this.usersService.update(user.companyId, user.userId, dto);
+  }
+
   @Get()
   list(@CurrentUser() user: AuthUser) {
     return this.usersService.list(user.companyId);

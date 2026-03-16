@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -80,7 +81,7 @@ class AuthApiClient {
   Future<AuthSession> getSession(String token) async {
     final userResponse = await _send(
       () => _client.get(
-        _buildUri('/auth/me'),
+        _buildUri('/users/me'),
         headers: _authorizedHeaders(token),
       ),
     );
@@ -91,10 +92,76 @@ class AuthApiClient {
       ),
     );
 
+    final userJson = _decodeObject(userResponse.body);
+    final avatarKey = userJson['avatarKey'] as String?;
+    final avatarUrl = await _resolveAvatarUrl(token, avatarKey);
+
     return AuthSession(
-      user: AuthUser.fromJson(_decodeObject(userResponse.body)),
+      user: AuthUser.fromJson({
+        ...userJson,
+        if (avatarUrl != null) 'avatarUrl': avatarUrl,
+      }),
       company: AuthCompany.fromJson(_decodeObject(companyResponse.body)),
     );
+  }
+
+  Future<AuthSession> updateProfile({
+    required String token,
+    required String name,
+    String? avatarKey,
+  }) async {
+    await _send(
+      () => _client.patch(
+        _buildUri('/users/me'),
+        headers: _authorizedHeaders(token),
+        body: jsonEncode({
+          'name': name,
+          'avatarKey': avatarKey,
+        }),
+      ),
+    );
+
+    return getSession(token);
+  }
+
+  Future<String> uploadAvatar({
+    required String token,
+    required Uint8List bytes,
+    required String fileName,
+    required String contentType,
+  }) async {
+    final presignResponse = await _send(
+      () => _client.post(
+        _buildUri('/storage/presign-upload'),
+        headers: _authorizedHeaders(token),
+        body: jsonEncode({
+          'folder': 'media',
+          'filename': fileName,
+          'contentType': contentType,
+        }),
+      ),
+    );
+
+    final presignPayload = _decodeObject(presignResponse.body);
+    final uploadUrl = presignPayload['url'] as String;
+    final uploadResponse = await _client
+        .put(
+          Uri.parse(uploadUrl),
+          headers: {
+            'Content-Type': contentType,
+          },
+          body: bytes,
+        )
+        .timeout(_timeout);
+
+    if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
+      throw AuthApiException(
+        'No se pudo subir la imagen al storage.',
+        statusCode: uploadResponse.statusCode,
+      );
+    }
+
+    return presignPayload['key'] as String;
   }
 
   Map<String, String> get _jsonHeaders => const {
@@ -128,7 +195,8 @@ class AuthApiClient {
     } on TimeoutException {
       throw const AuthApiException('La solicitud tardó demasiado.');
     } on http.ClientException catch (error) {
-      throw AuthApiException('No se pudo conectar al backend: ${error.message}');
+      throw AuthApiException(
+          'No se pudo conectar al backend: ${error.message}');
     }
   }
 
@@ -155,5 +223,27 @@ class AuthApiClient {
       }
     }
     return null;
+  }
+
+  Future<String?> _resolveAvatarUrl(String token, String? avatarKey) async {
+    if (avatarKey == null || avatarKey.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      final response = await _send(
+        () => _client.get(
+          _buildUri(
+            '/storage/presign-download?key=${Uri.encodeQueryComponent(avatarKey)}',
+          ),
+          headers: _authorizedHeaders(token),
+        ),
+      );
+
+      final payload = _decodeObject(response.body);
+      return payload['url'] as String?;
+    } on AuthApiException {
+      return null;
+    }
   }
 }

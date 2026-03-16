@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../application/executive_navigation_provider.dart';
 import 'executive_app_bar.dart';
 import 'executive_content_container.dart';
 import 'executive_footer.dart';
 import 'executive_nav_item.dart';
 import 'executive_sidebar.dart';
 
-class ExecutiveLayout extends StatefulWidget {
+class ExecutiveLayout extends ConsumerStatefulWidget {
   const ExecutiveLayout({
     super.key,
     required this.title,
@@ -22,24 +24,46 @@ class ExecutiveLayout extends StatefulWidget {
   final Widget Function(BuildContext context, int selectedIndex) builder;
 
   @override
-  State<ExecutiveLayout> createState() => _ExecutiveLayoutState();
+  ConsumerState<ExecutiveLayout> createState() => _ExecutiveLayoutState();
 }
 
-class _ExecutiveLayoutState extends State<ExecutiveLayout> {
+class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  late int _selectedIndex = widget.initialIndex;
   bool _isSidebarCollapsed = false;
   bool _didAutoCollapseOnce = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ref.read(executiveSelectedIndexProvider.notifier).state =
+          widget.initialIndex;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    final rawSelectedIndex = ref.watch(executiveSelectedIndexProvider);
+    final selectedIndex = rawSelectedIndex.clamp(0, widget.items.length - 1);
 
     final isMobile = size.width < 760;
     final isNarrow = size.width >= 760 && size.width < 1100;
 
-    final pageTitle = _pageTitleForIndex(_selectedIndex);
+    if (rawSelectedIndex != selectedIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        ref.read(executiveSelectedIndexProvider.notifier).state = selectedIndex;
+      });
+    }
+
+    final pageTitle = _pageTitleForIndex(selectedIndex);
     final isMessagesPage = pageTitle.toLowerCase().contains('mensajes');
 
     if (!_didAutoCollapseOnce && isNarrow) {
@@ -55,7 +79,8 @@ class _ExecutiveLayoutState extends State<ExecutiveLayout> {
     final baseLightTheme = AppTheme.light();
     final messagesTheme = baseLightTheme.copyWith(
       textTheme: baseLightTheme.textTheme.apply(fontFamily: 'Inter'),
-      primaryTextTheme: baseLightTheme.primaryTextTheme.apply(fontFamily: 'Inter'),
+      primaryTextTheme:
+          baseLightTheme.primaryTextTheme.apply(fontFamily: 'Inter'),
     );
 
     return Scaffold(
@@ -80,7 +105,10 @@ class _ExecutiveLayoutState extends State<ExecutiveLayout> {
           : null,
       body: Stack(
         children: [
-          if (isMessagesPage) const _ExecutiveLightBackground() else const _ExecutiveBackground(),
+          if (isMessagesPage)
+            const _ExecutiveLightBackground()
+          else
+            const _ExecutiveBackground(),
           Theme(
             data: isMessagesPage ? messagesTheme : Theme.of(context),
             child: SafeArea(
@@ -89,13 +117,16 @@ class _ExecutiveLayoutState extends State<ExecutiveLayout> {
                   if (!isMobile)
                     ExecutiveSidebar(
                       items: widget.items,
-                      selectedIndex: _selectedIndex,
+                      selectedIndex: selectedIndex,
                       isCollapsed: _isSidebarCollapsed,
                       onSelect: (index) {
-                        setState(() => _selectedIndex = index);
+                        ref
+                            .read(executiveSelectedIndexProvider.notifier)
+                            .state = index;
                       },
                       onToggleCollapse: () {
-                        setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+                        setState(
+                            () => _isSidebarCollapsed = !_isSidebarCollapsed);
                       },
                     ),
                   Expanded(
@@ -110,7 +141,8 @@ class _ExecutiveLayoutState extends State<ExecutiveLayout> {
                               _scaffoldKey.currentState?.openDrawer();
                               return;
                             }
-                            setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+                            setState(() =>
+                                _isSidebarCollapsed = !_isSidebarCollapsed);
                           },
                         ),
                         Expanded(
@@ -123,10 +155,12 @@ class _ExecutiveLayoutState extends State<ExecutiveLayout> {
                                           horizontal: 16,
                                           vertical: 12,
                                         ),
-                                        child: widget.builder(context, _selectedIndex),
+                                        child: widget.builder(
+                                            context, selectedIndex),
                                       )
                                     : ExecutiveContentContainer(
-                                        child: widget.builder(context, _selectedIndex),
+                                        child: widget.builder(
+                                            context, selectedIndex),
                                       ),
                               ),
                               const SizedBox(height: 8),

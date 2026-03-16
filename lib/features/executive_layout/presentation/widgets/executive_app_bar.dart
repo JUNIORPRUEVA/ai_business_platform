@@ -4,8 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/executive_navigation_provider.dart';
 import '../../../../modules/auth/application/auth_providers.dart';
 import '../../../../modules/tenancy/application/tenancy_providers.dart';
+import 'user_profile_dialog.dart';
 
 class ExecutiveAppBar extends ConsumerWidget {
   const ExecutiveAppBar({
@@ -28,7 +30,8 @@ class ExecutiveAppBar extends ConsumerWidget {
     final isMobile = width < 760;
     final isTiny = width < 380;
     final isCompact = width < 900;
-    final searchWidth = math.min(360.0, math.max(220.0, width * 0.32)).toDouble();
+    final searchWidth =
+        math.min(360.0, math.max(220.0, width * 0.32)).toDouble();
     final horizontalPadding = isMobile ? 12.0 : 18.0;
     final iconSize = isTiny ? 38.0 : (isMobile ? 40.0 : 44.0);
     final iconGap = isMobile ? 6.0 : 8.0;
@@ -43,7 +46,8 @@ class ExecutiveAppBar extends ConsumerWidget {
               color: theme.colorScheme.surface.withValues(alpha: 0.16),
               border: Border(
                 bottom: BorderSide(
-                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
+                  color:
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
                 ),
               ),
             ),
@@ -70,7 +74,8 @@ class ExecutiveAppBar extends ConsumerWidget {
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.4,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.90),
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.90),
                         ),
                       ),
                     ),
@@ -98,7 +103,8 @@ class ExecutiveAppBar extends ConsumerWidget {
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontSize: isMobile ? 20 : 22,
                           fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.92),
                           letterSpacing: 0.2,
                         ),
                       ),
@@ -119,7 +125,9 @@ class ExecutiveAppBar extends ConsumerWidget {
                     ] else ...[
                       SizedBox(
                         width: isCompact
-                            ? math.min(260.0, math.max(180.0, width * 0.30)).toDouble()
+                            ? math
+                                .min(260.0, math.max(180.0, width * 0.30))
+                                .toDouble()
                             : searchWidth,
                         child: const _SearchField(),
                       ),
@@ -183,11 +191,13 @@ class _TenantSwitcherState extends ConsumerState<_TenantSwitcher> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
-                color: theme.colorScheme.surface.withValues(alpha: _isHovered ? 0.16 : 0.12),
+                color: theme.colorScheme.surface
+                    .withValues(alpha: _isHovered ? 0.16 : 0.12),
                 border: Border.all(
                   color: (_isHovered
                           ? theme.colorScheme.primary.withValues(alpha: 0.35)
-                          : theme.colorScheme.outlineVariant.withValues(alpha: 0.55))
+                          : theme.colorScheme.outlineVariant
+                              .withValues(alpha: 0.55))
                       .withValues(alpha: 1),
                 ),
               ),
@@ -209,13 +219,15 @@ class _TenantSwitcherState extends ConsumerState<_TenantSwitcher> {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                          color:
+                              theme.colorScheme.primary.withValues(alpha: 0.18),
                           blurRadius: 16,
                           offset: const Offset(0, 8),
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.apartment_rounded, size: 18, color: Colors.white),
+                    child: const Icon(Icons.apartment_rounded,
+                        size: 18, color: Colors.white),
                   ),
                   if (!widget.isCompact) ...[
                     const SizedBox(width: 10),
@@ -231,7 +243,8 @@ class _TenantSwitcherState extends ConsumerState<_TenantSwitcher> {
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w800,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.92),
                             ),
                           ),
                           const SizedBox(height: 1),
@@ -240,7 +253,8 @@ class _TenantSwitcherState extends ConsumerState<_TenantSwitcher> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.65),
                             ),
                           ),
                         ],
@@ -256,7 +270,8 @@ class _TenantSwitcherState extends ConsumerState<_TenantSwitcher> {
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.90),
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.90),
                         ),
                       ),
                     ),
@@ -316,7 +331,8 @@ class _SearchFieldState extends State<_SearchField> {
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          color: theme.colorScheme.surface.withValues(alpha: _isHovered ? 0.16 : 0.12),
+          color: theme.colorScheme.surface
+              .withValues(alpha: _isHovered ? 0.16 : 0.12),
           border: Border.all(
             color: (_isHovered
                     ? theme.colorScheme.primary.withValues(alpha: 0.35)
@@ -342,7 +358,8 @@ class _SearchFieldState extends State<_SearchField> {
             ),
             border: InputBorder.none,
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
       ),
@@ -369,6 +386,7 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
     final authState = ref.watch(authControllerProvider);
     final userName = authState.session?.user.name ?? 'Ejecutivo';
     final companyName = authState.session?.company.name ?? 'Empresa';
+    final avatarUrl = authState.session?.user.avatarUrl;
 
     return MenuAnchor(
       builder: (context, controller, child) {
@@ -387,15 +405,17 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
               ),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
-                color: theme.colorScheme.surface.withValues(alpha: _isHovered ? 0.16 : 0.12),
+                color: theme.colorScheme.surface
+                    .withValues(alpha: _isHovered ? 0.16 : 0.12),
                 border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
+                  color:
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const _Avatar(),
+                  _Avatar(avatarUrl: avatarUrl, userName: userName),
                   if (!widget.isCompact) ...[
                     const SizedBox(width: 10),
                     Text(
@@ -403,7 +423,8 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.90),
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.90),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -423,12 +444,28 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
         MenuItemButton(
           leadingIcon: const Icon(Icons.person_outline_rounded),
           child: Text(userName),
-          onPressed: () {},
+          onPressed: () async {
+            await showDialog<void>(
+              context: context,
+              builder: (dialogContext) => const UserProfileDialog(),
+            );
+          },
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.business_outlined),
           child: Text(companyName),
-          onPressed: () {},
+          onPressed: () {
+            ref.read(executiveSelectedIndexProvider.notifier).state =
+                executiveDashboardIndex;
+          },
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.settings_outlined),
+          child: const Text('Configuración'),
+          onPressed: () {
+            ref.read(executiveSelectedIndexProvider.notifier).state =
+                executiveSettingsIndex;
+          },
         ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 12),
@@ -442,7 +479,8 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
             if (!context.mounted) {
               return;
             }
-            Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+            Navigator.of(context)
+                .pushNamedAndRemoveUntil('/login', (_) => false);
           },
         ),
       ],
@@ -451,11 +489,22 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar();
+  const _Avatar({required this.userName, this.avatarUrl});
+
+  final String userName;
+  final String? avatarUrl;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final initials = userName.trim().isEmpty
+        ? 'U'
+        : userName
+            .trim()
+            .split(RegExp(r'\s+'))
+            .take(2)
+            .map((part) => part.characters.first.toUpperCase())
+            .join();
 
     return Container(
       width: 34,
@@ -478,7 +527,35 @@ class _Avatar extends StatelessWidget {
           ),
         ],
       ),
-      child: const Icon(Icons.person_rounded, size: 18, color: Colors.white),
+      child: ClipOval(
+        child: avatarUrl != null && avatarUrl!.isNotEmpty
+            ? Image.network(
+                avatarUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Center(
+                    child: Text(
+                      initials,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  );
+                },
+              )
+            : Center(
+                child: Text(
+                  initials,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+      ),
     );
   }
 }
@@ -522,14 +599,16 @@ class _HoverIconButtonState extends State<_HoverIconButton> {
             height: widget.size,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              color: theme.colorScheme.surface.withValues(alpha: _isHovered ? 0.16 : 0.10),
+              color: theme.colorScheme.surface
+                  .withValues(alpha: _isHovered ? 0.16 : 0.10),
               border: Border.all(
                 color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
               ),
             ),
             child: Icon(
               widget.icon,
-              color: theme.colorScheme.onSurface.withValues(alpha: _isHovered ? 0.90 : 0.72),
+              color: theme.colorScheme.onSurface
+                  .withValues(alpha: _isHovered ? 0.90 : 0.72),
               size: widget.size * 0.50,
             ),
           ),

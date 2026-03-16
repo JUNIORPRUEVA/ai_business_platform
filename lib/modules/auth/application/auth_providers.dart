@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../data/auth_api_client.dart';
 import '../data/auth_token_store.dart';
@@ -11,6 +12,7 @@ class AuthState {
     required this.status,
     this.session,
     this.errorMessage,
+    this.noticeMessage,
   });
 
   const AuthState.loading() : this(status: AuthStatus.loading);
@@ -19,12 +21,37 @@ class AuthState {
           status: AuthStatus.unauthenticated,
           errorMessage: errorMessage,
         );
-  const AuthState.authenticated(AuthSession session)
-      : this(status: AuthStatus.authenticated, session: session);
+  const AuthState.authenticated(
+    AuthSession session, {
+    String? noticeMessage,
+  }) : this(
+          status: AuthStatus.authenticated,
+          session: session,
+          noticeMessage: noticeMessage,
+        );
 
   final AuthStatus status;
   final AuthSession? session;
   final String? errorMessage;
+  final String? noticeMessage;
+
+  AuthState copyWith({
+    AuthStatus? status,
+    AuthSession? session,
+    String? errorMessage,
+    bool clearErrorMessage = false,
+    String? noticeMessage,
+    bool clearNoticeMessage = false,
+  }) {
+    return AuthState(
+      status: status ?? this.status,
+      session: session ?? this.session,
+      errorMessage:
+          clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+      noticeMessage:
+          clearNoticeMessage ? null : (noticeMessage ?? this.noticeMessage),
+    );
+  }
 }
 
 final authApiClientProvider = Provider<AuthApiClient>((ref) {
@@ -100,14 +127,70 @@ class AuthController extends Notifier<AuthState> {
       );
       await _tokenStore.write(token);
       final session = await _apiClient.getSession(token);
-      state = AuthState.authenticated(session);
+      state = AuthState.authenticated(
+        session,
+        noticeMessage:
+            'Empresa creada correctamente. El canal de WhatsApp puede quedar pendiente de conexión mientras se termina la configuración de Evolution API.',
+      );
     } on AuthApiException catch (error) {
       state = AuthState.unauthenticated(errorMessage: error.message);
     }
   }
 
+  void clearNotice() {
+    if (state.noticeMessage == null) {
+      return;
+    }
+
+    state = state.copyWith(clearNoticeMessage: true);
+  }
+
   Future<void> logout() async {
     await _tokenStore.clear();
     state = const AuthState.unauthenticated();
+  }
+
+  Future<void> updateProfile({
+    required String name,
+    Uint8List? avatarBytes,
+    String? avatarFileName,
+    String? avatarContentType,
+  }) async {
+    final token = await _tokenStore.read();
+    if (token == null || token.trim().isEmpty) {
+      await logout();
+      throw const AuthApiException('Tu sesión expiró. Inicia sesión otra vez.');
+    }
+
+    final currentState = state;
+
+    try {
+      var avatarKey = currentState.session?.user.avatarKey;
+      if (avatarBytes != null &&
+          avatarFileName != null &&
+          avatarContentType != null) {
+        avatarKey = await _apiClient.uploadAvatar(
+          token: token,
+          bytes: avatarBytes,
+          fileName: avatarFileName,
+          contentType: avatarContentType,
+        );
+      }
+
+      final session = await _apiClient.updateProfile(
+        token: token,
+        name: name,
+        avatarKey: avatarKey,
+      );
+
+      state = currentState.copyWith(
+        status: AuthStatus.authenticated,
+        session: session,
+        clearErrorMessage: true,
+      );
+    } on AuthApiException catch (error) {
+      state = currentState.copyWith(errorMessage: error.message);
+      throw error;
+    }
   }
 }
