@@ -1,10 +1,4 @@
-# Enviar solo /backend al contexto de Docker para builds rápidos
-**
+# Nota: este .dockerignore se usa solo si el build-context es la raíz del repo.
+# En EasyPanel, si el contexto es /backend, se usa backend/.dockerignore.
 
-!backend/
-!backend/**
-!.dockerignore
-
-# Evitar enviar dependencias y artefactos locales
-backend/node_modules
-backend/dist
+# Default: no filtrar nada desde raíz (para no romper plataformas que setean contexto distinto)
