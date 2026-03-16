@@ -616,12 +616,6 @@ class DocumentsSettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedDocument = controller.selectedDocument;
-    final summaryController = selectedDocument == null
-        ? null
-        : (TextEditingController(text: selectedDocument.summary)
-          ..selection = TextSelection.collapsed(
-            offset: selectedDocument.summary.length,
-          ));
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -633,9 +627,13 @@ class DocumentsSettingsSection extends StatelessWidget {
             subtitle:
                 'Activos indexados que alimentan el cerebro con conocimiento verificable.',
             trailing: OutlinedButton.icon(
-              onPressed: controller.addDocument,
+              onPressed: controller.isUploadingDocument
+                  ? null
+                  : controller.addDocument,
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Registrar'),
+              label: Text(
+                controller.isUploadingDocument ? 'Cargando...' : 'Registrar',
+              ),
             ),
             child: ListView.separated(
               shrinkWrap: true,
@@ -746,8 +744,9 @@ class DocumentsSettingsSection extends StatelessWidget {
                             style: Theme.of(context).textTheme.labelLarge,
                           ),
                           const SizedBox(height: 8),
-                          TextField(
-                            controller: summaryController,
+                          TextFormField(
+                            key: ValueKey<String>(selectedDocument.id),
+                            initialValue: selectedDocument.summary,
                             maxLines: 8,
                             onChanged: (value) =>
                                 controller.updateDocumentSummary(
@@ -765,8 +764,10 @@ class DocumentsSettingsSection extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           TextButton.icon(
-                            onPressed: () =>
-                                controller.removeDocument(selectedDocument.id),
+                            onPressed: controller.isUploadingDocument
+                                ? null
+                                : () => controller
+                                    .removeDocument(selectedDocument.id),
                             icon: const Icon(Icons.delete_outline_rounded),
                             label: const Text('Eliminar'),
                           ),

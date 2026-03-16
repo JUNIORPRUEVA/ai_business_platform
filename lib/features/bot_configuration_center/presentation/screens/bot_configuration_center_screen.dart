@@ -54,6 +54,7 @@ class _BotConfigurationCenterModuleState
   void initState() {
     super.initState();
     _controller = BotConfigurationCenterController();
+    Future<void>.microtask(_controller.load);
   }
 
   @override
@@ -310,6 +311,12 @@ class _Workspace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (controller.isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
     final section = controller.selectedSection;
 
     switch (section) {

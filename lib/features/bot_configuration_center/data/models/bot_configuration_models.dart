@@ -308,6 +308,26 @@ class KnowledgeDocumentConfigModel {
     );
   }
 
+  factory KnowledgeDocumentConfigModel.fromBackendJson(
+    Map<String, dynamic> json,
+  ) {
+    final rawSize = json['size'];
+    final parsedSize = rawSize is num
+        ? rawSize.toInt()
+        : int.tryParse(rawSize?.toString() ?? '');
+
+    return KnowledgeDocumentConfigModel(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      status: json['status'] as String? ?? 'ready',
+      kind: json['kind'] as String? ?? 'document',
+      sizeLabel: _formatSizeLabel(parsedSize),
+      isEnabled: (json['status'] as String? ?? 'ready').toLowerCase() !=
+          'disabled',
+    );
+  }
+
   final String id;
   final String name;
   final String summary;
@@ -512,6 +532,59 @@ class BotConfigurationBundleModel {
     );
   }
 
+  factory BotConfigurationBundleModel.fromBackendJson(
+    Map<String, dynamic> json, {
+    List<dynamic> documents = const <dynamic>[],
+  }) {
+    return BotConfigurationBundleModel(
+      general: GeneralBotConfigModel.fromJson(
+        (json['general'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+      ),
+      evolutionApi: EvolutionApiConfigModel.fromJson(
+        (json['evolution'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+      ),
+      openAi: OpenAiConfigModel.fromJson(
+        (json['openai'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+      ),
+      memory: MemorySettingsConfigModel.fromJson(
+        (json['memory'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+      ),
+      orchestrator: OrchestratorConfigModel.fromJson({
+        ...((json['orchestrator'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{}),
+        'autonomyLevel': _mapAutonomyLevelFromBackend(
+          (json['orchestrator'] as Map?)?['autonomyLevel'] as String?,
+        ),
+      }),
+      prompts: ((json['prompts'] as List?) ?? const <dynamic>[])
+          .whereType<Map>()
+          .map((item) => PromptTemplateConfigModel.fromJson(
+                item.cast<String, dynamic>(),
+              ))
+          .toList(growable: false),
+      tools: ((json['tools'] as List?) ?? const <dynamic>[])
+          .whereType<Map>()
+          .map((item) => InternalToolConfigModel.fromJson(
+                item.cast<String, dynamic>(),
+              ))
+          .toList(growable: false),
+      documents: documents
+          .whereType<Map>()
+          .map((item) => KnowledgeDocumentConfigModel.fromBackendJson(
+                item.cast<String, dynamic>(),
+              ))
+          .toList(growable: false),
+      security: SecuritySettingsConfigModel.fromJson(
+        (json['security'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+      ),
+    );
+  }
+
   final GeneralBotConfigModel general;
   final EvolutionApiConfigModel evolutionApi;
   final OpenAiConfigModel openAi;
@@ -536,4 +609,30 @@ class BotConfigurationBundleModel {
       security: security.toEntity(),
     );
   }
+}
+
+String _mapAutonomyLevelFromBackend(String? value) {
+  switch ((value ?? '').toLowerCase()) {
+    case 'strict':
+      return 'Estricto';
+    case 'guarded':
+      return 'Protegido';
+    case 'balanced':
+      return 'Equilibrado';
+    default:
+      return 'Protegido';
+  }
+}
+
+String _formatSizeLabel(int? size) {
+  if (size == null || size <= 0) {
+    return '-';
+  }
+  if (size < 1024) {
+    return '$size B';
+  }
+  if (size < 1024 * 1024) {
+    return '${(size / 1024).toStringAsFixed(1)} KB';
+  }
+  return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
 }

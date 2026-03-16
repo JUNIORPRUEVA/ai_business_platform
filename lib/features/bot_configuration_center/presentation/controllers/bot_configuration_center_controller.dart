@@ -1,12 +1,19 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../modules/auth/data/auth_token_store.dart';
 import '../../data/models/bot_configuration_models.dart';
+import '../../data/services/bot_configuration_center_api_client.dart';
 import '../../domain/entities/bot_configuration_bundle.dart';
 import '../../domain/entities/bot_configuration_section.dart';
 
 class BotConfigurationCenterController extends ChangeNotifier {
-  BotConfigurationCenterController()
-      : _bundle = BotConfigurationBundleModel.mock().toEntity(),
+  BotConfigurationCenterController({
+    BotConfigurationCenterApiClient? apiClient,
+    AuthTokenStore? tokenStore,
+  })  : _apiClient = apiClient ?? BotConfigurationCenterApiClient(),
+        _tokenStore = tokenStore ?? AuthTokenStore(),
+        _bundle = BotConfigurationBundleModel.mock().toEntity(),
         generalBotNameController = TextEditingController(),
         generalEnvironmentController = TextEditingController(),
         evolutionBaseUrlController = TextEditingController(),
@@ -24,6 +31,9 @@ class BotConfigurationCenterController extends ChangeNotifier {
         securityWebhookSigningSecretController = TextEditingController() {
     _applyBundleToControllers();
   }
+
+  final BotConfigurationCenterApiClient _apiClient;
+  final AuthTokenStore _tokenStore;
 
   final TextEditingController generalBotNameController;
   final TextEditingController generalEnvironmentController;
@@ -50,6 +60,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
   int _selectedPromptIndex = 0;
   int _selectedDocumentIndex = 0;
   bool _isTesting = false;
+  bool _isLoading = false;
+  bool _isUploadingDocument = false;
   BotConfigurationSection? _activeSaveSection;
   String? _errorMessage;
   String? _successMessage;
@@ -63,6 +75,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
   int get selectedPromptIndex => _selectedPromptIndex;
   int get selectedDocumentIndex => _selectedDocumentIndex;
   bool get isTesting => _isTesting;
+  bool get isLoading => _isLoading;
+  bool get isUploadingDocument => _isUploadingDocument;
   BotConfigurationSection? get activeSaveSection => _activeSaveSection;
   String? get errorMessage => _errorMessage;
   String? get successMessage => _successMessage;
@@ -83,7 +97,6 @@ class BotConfigurationCenterController extends ChangeNotifier {
         'Estricto',
         'Protegido',
         'Equilibrado',
-        'Agresivo',
       ];
 
   List<String> get availableFallbackStrategies => const <String>[
@@ -114,6 +127,35 @@ class BotConfigurationCenterController extends ChangeNotifier {
 
     return _bundle.documents[
         _selectedDocumentIndex.clamp(0, _bundle.documents.length - 1)];
+  }
+
+  Future<void> load() async {
+    _clearBanners();
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final token = await _requireToken();
+      final configuration =
+          await _apiClient.getJson('/bot-configuration', token: token);
+      final documents =
+          await _apiClient.getJsonList('/ai-brain/documents', token: token);
+
+      _bundle = BotConfigurationBundleModel.fromBackendJson(
+        configuration,
+        documents: documents,
+      ).toEntity();
+      _selectedPromptIndex = 0;
+      _selectedDocumentIndex = 0;
+      _applyBundleToControllers();
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   void selectSection(BotConfigurationSection section) {
@@ -293,36 +335,97 @@ class BotConfigurationCenterController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addDocument() {
-    final nextDocuments = _bundle.documents.toList(growable: true)
-      ..insert(
-        0,
-        KnowledgeDocumentConfig(
-          id: 'doc-${DateTime.now().microsecondsSinceEpoch}',
-          name: 'Nuevo documento empresarial',
-          summary:
-              'Describe aquí el contenido indexado que el cerebro debe usar como conocimiento.',
-          status: 'Pendiente',
-          kind: 'Documento',
-          sizeLabel: '-',
-          isEnabled: true,
-        ),
-      );
-    _bundle = _bundle.copyWith(documents: nextDocuments);
-    _selectedDocumentIndex = 0;
+  Future<void> addDocument() async {
+    _clearBanners();
+    _isUploadingDocument = true;
     notifyListeners();
+
+    try {
+      final token = await _requireToken();
+      final picked = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: true,
+      );
+      final file = picked?.files.single;
+      if (file == null) {
+        return;
+      }
+
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw const BotConfigurationCenterApiException(
+          'No se pudieron leer los bytes del documento seleccionado.',
+        );
+      }
+
+      final contentType = _resolveContentType(file.extension);
+      final uploadTarget = await _apiClient.postJson(
+        '/ai-brain/documents/presign-upload',
+        {
+          'filename': file.name,
+          'contentType': contentType,
+        },
+        token: token,
+      );
+
+      await _apiClient.uploadBytesToUrl(
+        url: uploadTarget['url'] as String,
+        bytes: bytes,
+        contentType: contentType,
+      );
+
+      await _apiClient.postJson(
+        '/ai-brain/documents',
+        {
+          'name': file.name,
+          'storageKey': uploadTarget['key'] as String,
+          'contentType': contentType,
+          'kind': _inferDocumentKind(file.name),
+          'size': file.size,
+          'summary':
+              'Documento empresarial cargado desde la consola de configuración.',
+        },
+        token: token,
+      );
+
+      await load();
+      _successMessage = 'Documento cargado y registrado correctamente.';
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isUploadingDocument = false;
+      notifyListeners();
+    }
   }
 
-  void removeDocument(String documentId) {
-    final nextDocuments = _bundle.documents
-        .where((document) => document.id != documentId)
-        .toList(growable: false);
-    _bundle = _bundle.copyWith(documents: nextDocuments);
-    if (_selectedDocumentIndex >= nextDocuments.length) {
-      _selectedDocumentIndex =
-          nextDocuments.isEmpty ? 0 : nextDocuments.length - 1;
-    }
+  Future<void> removeDocument(String documentId) async {
+    _clearBanners();
+    _isUploadingDocument = true;
     notifyListeners();
+
+    try {
+      final token = await _requireToken();
+      await _apiClient.delete('/ai-brain/documents/$documentId', token: token);
+
+      final nextDocuments = _bundle.documents
+          .where((document) => document.id != documentId)
+          .toList(growable: false);
+      _bundle = _bundle.copyWith(documents: nextDocuments);
+      if (_selectedDocumentIndex >= nextDocuments.length) {
+        _selectedDocumentIndex =
+            nextDocuments.isEmpty ? 0 : nextDocuments.length - 1;
+      }
+      _successMessage = 'Documento eliminado correctamente.';
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isUploadingDocument = false;
+      notifyListeners();
+    }
   }
 
   void updateSecuritySettings({bool? encryptSecrets, bool? auditLog}) {
@@ -359,12 +462,149 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _syncDraftsIntoState();
     notifyListeners();
 
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    try {
+      final token = await _requireToken();
+      switch (section) {
+        case BotConfigurationSection.general:
+          await _apiClient.putJson(
+            '/bot-configuration/general',
+            {
+              'botName': _bundle.general.botName,
+              'defaultLanguage': _bundle.general.defaultLanguage,
+              'isEnabled': _bundle.general.isEnabled,
+              'environmentLabel': _bundle.general.environmentLabel,
+            },
+            token: token,
+          );
+          break;
+        case BotConfigurationSection.evolutionApi:
+          await _apiClient.putJson(
+            '/bot-configuration/evolution',
+            {
+              'baseUrl': _bundle.evolutionApi.baseUrl,
+              'instanceName': _bundle.evolutionApi.instanceName,
+              'apiKey': _bundle.evolutionApi.apiKey,
+              'webhookSecret': _bundle.evolutionApi.webhookSecret,
+              'connectedNumber': _bundle.evolutionApi.connectedNumber,
+              'isEnabled': _bundle.evolutionApi.isEnabled,
+            },
+            token: token,
+          );
+          break;
+        case BotConfigurationSection.openAi:
+          await _apiClient.putJson(
+            '/bot-configuration/openai',
+            {
+              'apiKey': _bundle.openAi.apiKey,
+              'model': _bundle.openAi.model,
+              'temperature': _bundle.openAi.temperature,
+              'maxTokens': _bundle.openAi.maxTokens,
+              'isEnabled': _bundle.openAi.isEnabled,
+              'systemPromptPreview': _bundle.openAi.systemPromptPreview,
+            },
+            token: token,
+          );
+          break;
+        case BotConfigurationSection.memory:
+          await _apiClient.putJson(
+            '/bot-configuration/memory',
+            {
+              'enableShortTermMemory': _bundle.memory.enableShortTermMemory,
+              'enableLongTermMemory': _bundle.memory.enableLongTermMemory,
+              'enableOperationalMemory':
+                  _bundle.memory.enableOperationalMemory,
+              'recentMessageWindowSize':
+                  _bundle.memory.recentMessageWindowSize,
+              'automaticSummarization':
+                  _bundle.memory.automaticSummarization,
+              'memoryTtl': _bundle.memory.memoryTtl,
+              'useRedis': _bundle.memory.useRedis,
+              'usePostgreSql': _bundle.memory.usePostgreSql,
+            },
+            token: token,
+          );
+          break;
+        case BotConfigurationSection.orchestrator:
+          await _apiClient.putJson(
+            '/bot-configuration/orchestrator',
+            {
+              'automaticMode': _bundle.orchestrator.automaticMode,
+              'assistedMode': _bundle.orchestrator.assistedMode,
+              'enableRoleDetection': _bundle.orchestrator.enableRoleDetection,
+              'enableIntentClassification':
+                  _bundle.orchestrator.enableIntentClassification,
+              'enableToolExecution': _bundle.orchestrator.enableToolExecution,
+              'requireConfirmationForCriticalActions':
+                  _bundle.orchestrator.requireConfirmationForCriticalActions,
+              'autonomyLevel':
+                  _mapAutonomyLevelToBackend(_bundle.orchestrator.autonomyLevel),
+              'fallbackStrategy': _bundle.orchestrator.fallbackStrategy,
+            },
+            token: token,
+          );
+          break;
+        case BotConfigurationSection.prompts:
+          if (_bundle.prompts.isNotEmpty) {
+            final prompt = _bundle.prompts[
+                _selectedPromptIndex.clamp(0, _bundle.prompts.length - 1)];
+            await _apiClient.putJson(
+              '/bot-configuration/prompts/${prompt.id}',
+              {
+                'title': prompt.title,
+                'description': prompt.description,
+                'content': prompt.content,
+              },
+              token: token,
+            );
+          }
+          break;
+        case BotConfigurationSection.tools:
+          for (final tool in _bundle.tools) {
+            await _apiClient.putJson(
+              '/bot-configuration/tools/${tool.id}',
+              {'isEnabled': tool.isEnabled},
+              token: token,
+            );
+          }
+          break;
+        case BotConfigurationSection.documents:
+          for (final document in _bundle.documents) {
+            await _apiClient.patchJson(
+              '/ai-brain/documents/${document.id}',
+              {
+                'name': document.name,
+                'summary': document.summary,
+                'status': document.isEnabled ? document.status : 'disabled',
+              },
+              token: token,
+            );
+          }
+          break;
+        case BotConfigurationSection.security:
+          await _apiClient.putJson(
+            '/bot-configuration/security',
+            {
+              'internalApiToken': _bundle.security.internalApiToken,
+              'webhookSigningSecret': _bundle.security.webhookSigningSecret,
+              'encryptSecrets': _bundle.security.encryptSecrets,
+              'auditLog': _bundle.security.auditLog,
+            },
+            token: token,
+          );
+          break;
+      }
 
-    _activeSaveSection = null;
-    _successMessage =
-        'Configuración de ${section.label} guardada correctamente.';
-    notifyListeners();
+      await load();
+      _successMessage =
+          'Configuración de ${section.label} guardada correctamente.';
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _activeSaveSection = null;
+      notifyListeners();
+    }
   }
 
   void dismissBanners() {
@@ -446,6 +686,68 @@ class BotConfigurationCenterController extends ChangeNotifier {
   void _clearBanners() {
     _errorMessage = null;
     _successMessage = null;
+  }
+
+  Future<String> _requireToken() async {
+    final token = await _tokenStore.read();
+    if (token == null || token.trim().isEmpty) {
+      throw const BotConfigurationCenterApiException(
+        'Tu sesión expiró. Inicia sesión otra vez.',
+      );
+    }
+    return token;
+  }
+
+  String _mapAutonomyLevelToBackend(String label) {
+    switch (label) {
+      case 'Estricto':
+        return 'strict';
+      case 'Protegido':
+        return 'guarded';
+      case 'Equilibrado':
+        return 'balanced';
+      default:
+        return 'guarded';
+    }
+  }
+
+  String _resolveContentType(String? extension) {
+    switch ((extension ?? '').toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+        return 'text/markdown';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'csv':
+        return 'text/csv';
+      case 'json':
+        return 'application/json';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  String _inferDocumentKind(String fileName) {
+    final normalized = fileName.toLowerCase();
+    if (normalized.contains('catalog')) {
+      return 'catalog';
+    }
+    if (normalized.contains('polit') || normalized.contains('policy')) {
+      return 'policy';
+    }
+    if (normalized.contains('faq')) {
+      return 'faq';
+    }
+    return 'document';
   }
 
   @override
