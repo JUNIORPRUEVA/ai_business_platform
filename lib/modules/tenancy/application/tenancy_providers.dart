@@ -1,8 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/application/auth_providers.dart';
 import '../domain/tenant.dart';
 
 final tenantsProvider = Provider<List<Tenant>>((ref) {
+  final authState = ref.watch(authControllerProvider);
+  final session = authState.session;
+  if (session != null) {
+    return [
+      Tenant(
+        id: session.company.id,
+        name: session.company.name,
+        planLabel: session.company.plan,
+        industryLabel: session.user.role,
+      ),
+    ];
+  }
+
   return const [
     Tenant(
       id: 'fulltech',

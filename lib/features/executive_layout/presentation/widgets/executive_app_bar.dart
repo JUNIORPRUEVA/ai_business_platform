@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../modules/auth/application/auth_providers.dart';
 import '../../../../modules/tenancy/application/tenancy_providers.dart';
 
 class ExecutiveAppBar extends ConsumerWidget {
@@ -349,22 +350,25 @@ class _SearchFieldState extends State<_SearchField> {
   }
 }
 
-class _UserMenu extends StatefulWidget {
+class _UserMenu extends ConsumerStatefulWidget {
   const _UserMenu({required this.isCompact, required this.isMobile});
 
   final bool isCompact;
   final bool isMobile;
 
   @override
-  State<_UserMenu> createState() => _UserMenuState();
+  ConsumerState<_UserMenu> createState() => _UserMenuState();
 }
 
-class _UserMenuState extends State<_UserMenu> {
+class _UserMenuState extends ConsumerState<_UserMenu> {
   bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final authState = ref.watch(authControllerProvider);
+    final userName = authState.session?.user.name ?? 'Ejecutivo';
+    final companyName = authState.session?.company.name ?? 'Empresa';
 
     return MenuAnchor(
       builder: (context, controller, child) {
@@ -395,7 +399,7 @@ class _UserMenuState extends State<_UserMenu> {
                   if (!widget.isCompact) ...[
                     const SizedBox(width: 10),
                     Text(
-                      'Ejecutivo',
+                      userName,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
@@ -418,12 +422,12 @@ class _UserMenuState extends State<_UserMenu> {
       menuChildren: [
         MenuItemButton(
           leadingIcon: const Icon(Icons.person_outline_rounded),
-          child: const Text('Perfil'),
+          child: Text(userName),
           onPressed: () {},
         ),
         MenuItemButton(
-          leadingIcon: const Icon(Icons.settings_outlined),
-          child: const Text('Configuración'),
+          leadingIcon: const Icon(Icons.business_outlined),
+          child: Text(companyName),
           onPressed: () {},
         ),
         const Padding(
@@ -433,7 +437,13 @@ class _UserMenuState extends State<_UserMenu> {
         MenuItemButton(
           leadingIcon: const Icon(Icons.logout_rounded),
           child: const Text('Cerrar sesión'),
-          onPressed: () {},
+          onPressed: () async {
+            await ref.read(authControllerProvider.notifier).logout();
+            if (!context.mounted) {
+              return;
+            }
+            Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+          },
         ),
       ],
     );
