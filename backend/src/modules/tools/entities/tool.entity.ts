@@ -8,6 +8,9 @@ export class ToolEntity extends BaseEntity {
   @Column({ type: 'uuid', name: 'company_id' })
   companyId!: string;
 
+  @Column({ type: 'uuid', name: 'bot_id', nullable: true })
+  botId!: string | null;
+
   @Column({ type: 'text' })
   name!: string;
 

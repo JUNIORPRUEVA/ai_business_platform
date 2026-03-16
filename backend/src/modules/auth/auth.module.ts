@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { CompanyEntity } from '../companies/entities/company.entity';
+import { ProvisioningModule } from '../provisioning/provisioning.module';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -12,6 +13,7 @@ import { JwtStrategy } from './jwt.strategy';
 @Module({
   imports: [
     ConfigModule,
+    ProvisioningModule,
     TypeOrmModule.forFeature([UserEntity, CompanyEntity]),
     JwtModule.registerAsync({
       inject: [ConfigService],

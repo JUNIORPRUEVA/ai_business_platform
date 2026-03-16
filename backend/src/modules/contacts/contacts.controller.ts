@@ -6,6 +6,7 @@ import { AuthUser } from '../../common/auth/auth.types';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { LicenseGuard } from '../billing/license.guard';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { ContactsService } from './contacts.service';
@@ -15,7 +16,7 @@ class IdParam {
   id!: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
 @Controller('contacts')
 export class ContactsController {
   constructor(private readonly contactsService: ContactsService) {}

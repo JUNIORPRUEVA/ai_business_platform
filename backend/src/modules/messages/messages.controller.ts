@@ -6,6 +6,7 @@ import { AuthUser } from '../../common/auth/auth.types';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { LicenseGuard } from '../billing/license.guard';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { MessagesService } from './messages.service';
 
@@ -19,7 +20,7 @@ class ListQuery {
   limit?: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
 @Controller('conversations/:conversationId/messages')
 export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}

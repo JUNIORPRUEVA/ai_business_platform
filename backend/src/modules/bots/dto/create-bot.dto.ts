@@ -9,8 +9,16 @@ export class CreateBotDto {
   model?: string;
 
   @IsOptional()
+  @IsString()
+  systemPrompt?: string;
+
+  @IsOptional()
   @IsNumber()
   temperature?: number;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
 
   @IsOptional()
   @IsString()

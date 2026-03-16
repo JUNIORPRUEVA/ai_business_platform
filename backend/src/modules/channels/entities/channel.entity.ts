@@ -12,6 +12,7 @@ export type ChannelType =
 @Entity({ name: 'channels' })
 @Index(['companyId'])
 @Index(['companyId', 'type'])
+@Index(['instanceName'])
 export class ChannelEntity extends BaseEntity {
   @Column({ type: 'uuid', name: 'company_id' })
   companyId!: string;
@@ -24,6 +25,16 @@ export class ChannelEntity extends BaseEntity {
 
   @Column({ type: 'text', default: 'active' })
   status!: string;
+
+  @Column({ type: 'text', name: 'instance_name', nullable: true })
+  instanceName!: string | null;
+
+  @Column({
+    type: 'text',
+    name: 'connection_status',
+    default: 'disconnected',
+  })
+  connectionStatus!: string;
 
   @Column({ type: 'jsonb', default: () => `'{}'::jsonb` })
   config!: Record<string, unknown>;

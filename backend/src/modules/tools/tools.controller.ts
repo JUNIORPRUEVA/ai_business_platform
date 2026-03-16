@@ -6,6 +6,7 @@ import { AuthUser } from '../../common/auth/auth.types';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { LicenseGuard } from '../billing/license.guard';
 import { CreateToolDto } from './dto/create-tool.dto';
 import { UpdateToolDto } from './dto/update-tool.dto';
 import { ToolsService } from './tools.service';
@@ -15,7 +16,7 @@ class IdParam {
   id!: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
 @Controller('tools')
 export class ToolsController {
   constructor(private readonly toolsService: ToolsService) {}

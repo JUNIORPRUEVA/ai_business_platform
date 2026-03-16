@@ -2,14 +2,13 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 
-import { AiModule } from '../ai/ai.module';
+import { AiEngineModule } from '../ai-engine/ai-engine.module';
 import { BotsModule } from '../bots/bots.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { PromptsModule } from '../prompts/prompts.module';
 import { MessagesModule } from '../messages/messages.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { MessageProcessingProcessor } from './processors/message-processing.processor';
-import { EvolutionApiService } from '../channels/services/evolution-api.service';
 
 @Module({
   imports: [
@@ -28,14 +27,14 @@ import { EvolutionApiService } from '../channels/services/evolution-api.service'
     BullModule.registerQueue({
       name: 'message-processing',
     }),
-    AiModule,
+    AiEngineModule,
     BotsModule,
     ChannelsModule,
     PromptsModule,
     MessagesModule,
     ConversationsModule,
   ],
-  providers: [MessageProcessingProcessor, EvolutionApiService],
+  providers: [MessageProcessingProcessor],
   exports: [BullModule],
 })
 export class WorkersModule {}

@@ -11,10 +11,25 @@ export class RegisterCompanyDto {
   @IsString()
   adminName!: string;
 
+  // Preferred keys
+  @IsOptional()
   @IsEmail()
-  adminEmail!: string;
+  adminEmail?: string;
 
+  // Aliases to support simpler clients
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  // Preferred keys
+  @IsOptional()
   @IsString()
   @MinLength(8)
-  adminPassword!: string;
+  adminPassword?: string;
+
+  // Aliases to support simpler clients
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  password?: string;
 }

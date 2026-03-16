@@ -6,6 +6,7 @@ import { AuthUser } from '../../common/auth/auth.types';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { LicenseGuard } from '../billing/license.guard';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { UpdateBotDto } from './dto/update-bot.dto';
 import { BotsService } from './bots.service';
@@ -15,7 +16,7 @@ class IdParam {
   id!: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
 @Controller('bots')
 export class BotsController {
   constructor(private readonly botsService: BotsService) {}

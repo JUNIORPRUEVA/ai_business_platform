@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { LicenseService } from '../billing/license.service';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { UpdateBotDto } from './dto/update-bot.dto';
 import { BotEntity } from './entities/bot.entity';
@@ -11,6 +12,7 @@ export class BotsService {
   constructor(
     @InjectRepository(BotEntity)
     private readonly botsRepository: Repository<BotEntity>,
+    private readonly licenseService: LicenseService,
   ) {}
 
   list(companyId: string) {
@@ -26,12 +28,15 @@ export class BotsService {
     return bot;
   }
 
-  create(companyId: string, dto: CreateBotDto) {
+  async create(companyId: string, dto: CreateBotDto) {
+    await this.licenseService.assertPlanLimit(companyId, 'bots');
     const entity = this.botsRepository.create({
       companyId,
       name: dto.name,
       model: dto.model ?? 'gpt-4o-mini',
+      systemPrompt: dto.systemPrompt ?? '',
       temperature: dto.temperature ?? 0.2,
+      language: dto.language ?? 'es',
       status: dto.status ?? 'active',
     });
     return this.botsRepository.save(entity);

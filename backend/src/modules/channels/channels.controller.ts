@@ -6,6 +6,7 @@ import { AuthUser } from '../../common/auth/auth.types';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { LicenseGuard } from '../billing/license.guard';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelsService } from './channels.service';
@@ -15,7 +16,7 @@ class IdParam {
   id!: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
 @Controller('channels')
 export class ChannelsController {
   constructor(private readonly channelsService: ChannelsService) {}
@@ -30,6 +31,24 @@ export class ChannelsController {
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param() params: IdParam) {
     return this.channelsService.get(user.companyId, params.id);
+  }
+
+  @Roles('admin', 'operator', 'viewer')
+  @Get(':id/qrcode')
+  getQrCode(@CurrentUser() user: AuthUser, @Param() params: IdParam) {
+    return this.channelsService.getQrCode(user.companyId, params.id);
+  }
+
+  @Roles('admin', 'operator', 'viewer')
+  @Get(':id/status')
+  getStatus(@CurrentUser() user: AuthUser, @Param() params: IdParam) {
+    return this.channelsService.refreshConnectionStatus(user.companyId, params.id);
+  }
+
+  @Roles('admin', 'operator')
+  @Post(':id/disconnect')
+  disconnect(@CurrentUser() user: AuthUser, @Param() params: IdParam) {
+    return this.channelsService.disconnect(user.companyId, params.id);
   }
 
   @Roles('admin', 'operator')

@@ -6,6 +6,7 @@ import { AuthUser } from '../../common/auth/auth.types';
 import { Roles } from '../../common/auth/roles.decorator';
 import { RolesGuard } from '../../common/auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { LicenseGuard } from '../billing/license.guard';
 import { PresignUploadDto } from './dto/presign-upload.dto';
 import { StorageService } from './storage.service';
 
@@ -14,7 +15,7 @@ class PresignDownloadQuery {
   key!: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
 @Controller('storage')
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}

@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Repository } from 'typeorm';
 
+import { LicenseService } from '../billing/license.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserEntity } from './entities/user.entity';
@@ -16,6 +17,7 @@ export class UsersService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
+    private readonly licenseService: LicenseService,
   ) {}
 
   async list(companyId: string): Promise<Array<Omit<UserEntity, 'passwordHash'>>> {
@@ -40,6 +42,7 @@ export class UsersService {
   }
 
   async create(companyId: string, dto: CreateUserDto): Promise<Omit<UserEntity, 'passwordHash'>> {
+    await this.licenseService.assertPlanLimit(companyId, 'users');
     const entity = this.usersRepository.create({
       companyId,
       name: dto.name,

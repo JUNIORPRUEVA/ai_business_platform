@@ -14,8 +14,14 @@ export class BotEntity extends BaseEntity {
   @Column({ type: 'text', default: 'gpt-4o-mini' })
   model!: string;
 
+  @Column({ type: 'text', name: 'system_prompt', default: '' })
+  systemPrompt!: string;
+
   @Column({ type: 'double precision', default: 0.2 })
   temperature!: number;
+
+  @Column({ type: 'text', default: 'es' })
+  language!: string;
 
   @Column({ type: 'text', default: 'active' })
   status!: string;

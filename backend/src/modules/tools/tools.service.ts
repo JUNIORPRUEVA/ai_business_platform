@@ -29,6 +29,7 @@ export class ToolsService {
   create(companyId: string, dto: CreateToolDto) {
     const entity = this.toolsRepository.create({
       companyId,
+      botId: dto.botId ?? null,
       name: dto.name,
       type: dto.type,
       config: dto.config ?? {},

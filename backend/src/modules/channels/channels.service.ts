@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { LicenseService } from '../billing/license.service';
+import { EvolutionService, EvolutionInstanceConnectionStatus } from '../evolution/evolution.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelEntity } from './entities/channel.entity';
@@ -11,6 +13,8 @@ export class ChannelsService {
   constructor(
     @InjectRepository(ChannelEntity)
     private readonly channelsRepository: Repository<ChannelEntity>,
+    private readonly evolutionService: EvolutionService,
+    private readonly licenseService: LicenseService,
   ) {}
 
   list(companyId: string) {
@@ -28,7 +32,8 @@ export class ChannelsService {
     return channel;
   }
 
-  create(companyId: string, dto: CreateChannelDto) {
+  async create(companyId: string, dto: CreateChannelDto) {
+    await this.licenseService.assertPlanLimit(companyId, 'channels');
     const entity = this.channelsRepository.create({
       companyId,
       type: dto.type,
@@ -36,7 +41,34 @@ export class ChannelsService {
       status: dto.status ?? 'active',
       config: dto.config ?? {},
     });
-    return this.channelsRepository.save(entity);
+
+    const saved = await this.channelsRepository.save(entity);
+
+    if (saved.type === 'whatsapp') {
+      const instanceName = this.buildInstanceName(companyId, saved.id);
+      saved.instanceName = instanceName;
+      saved.connectionStatus = 'connecting';
+      await this.channelsRepository.save(saved);
+
+      try {
+        await this.evolutionService.createInstance({
+          instanceName,
+          qrcode: true,
+        });
+
+        await this.evolutionService.setWebhook({
+          instanceName,
+          url: this.evolutionService.buildWebhookUrl(saved.id),
+          events: ['messages.upsert'],
+        });
+      } catch (error) {
+        saved.connectionStatus = 'disconnected';
+        await this.channelsRepository.save(saved);
+        throw error;
+      }
+    }
+
+    return saved;
   }
 
   async update(companyId: string, id: string, dto: UpdateChannelDto) {
@@ -58,5 +90,57 @@ export class ChannelsService {
     const channel = await this.channelsRepository.findOne({ where: { id } });
     if (!channel) throw new NotFoundException('Channel not found.');
     return channel;
+  }
+
+  async getQrCode(companyId: string, id: string): Promise<{ instanceName: string; payload: unknown }> {
+    const channel = await this.get(companyId, id);
+    if (channel.type !== 'whatsapp') {
+      throw new NotFoundException('Channel is not a WhatsApp channel.');
+    }
+    if (!channel.instanceName) {
+      throw new NotFoundException('Channel has no Evolution instance configured.');
+    }
+
+    const payload = await this.evolutionService.getQrCode(channel.instanceName);
+    return { instanceName: channel.instanceName, payload };
+  }
+
+  async refreshConnectionStatus(
+    companyId: string,
+    id: string,
+  ): Promise<{ status: EvolutionInstanceConnectionStatus; raw: unknown }> {
+    const channel = await this.get(companyId, id);
+    if (channel.type !== 'whatsapp') {
+      throw new NotFoundException('Channel is not a WhatsApp channel.');
+    }
+    if (!channel.instanceName) {
+      throw new NotFoundException('Channel has no Evolution instance configured.');
+    }
+
+    const { status, raw } = await this.evolutionService.getInstanceStatus(channel.instanceName);
+    channel.connectionStatus = status;
+    await this.channelsRepository.save(channel);
+    return { status, raw };
+  }
+
+  async disconnect(companyId: string, id: string): Promise<{ ok: true }> {
+    const channel = await this.get(companyId, id);
+    if (channel.type !== 'whatsapp') {
+      throw new NotFoundException('Channel is not a WhatsApp channel.');
+    }
+    if (!channel.instanceName) {
+      throw new NotFoundException('Channel has no Evolution instance configured.');
+    }
+
+    await this.evolutionService.logoutInstance(channel.instanceName);
+    channel.connectionStatus = 'disconnected';
+    await this.channelsRepository.save(channel);
+    return { ok: true };
+  }
+
+  private buildInstanceName(companyId: string, channelId: string): string {
+    const companyPart = companyId.replace(/-/g, '');
+    const channelPart = channelId.replace(/-/g, '');
+    return `company_${companyPart}_channel_${channelPart}`;
   }
 }

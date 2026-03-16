@@ -18,6 +18,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import { ToolsModule } from './modules/tools/tools.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkersModule } from './modules/workers/workers.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { WorkersModule } from './modules/workers/workers.module';
     MemoryModule,
     ToolsModule,
     AutomationsModule,
+    BillingModule,
     StorageModule,
     WorkersModule,
     EvolutionWebhookModule,

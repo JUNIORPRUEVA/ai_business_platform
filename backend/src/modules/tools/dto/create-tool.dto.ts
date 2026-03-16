@@ -1,6 +1,10 @@
-import { IsBoolean, IsObject, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateToolDto {
+  @IsOptional()
+  @IsUUID()
+  botId?: string;
+
   @IsString()
   name!: string;
 
