@@ -11,6 +11,9 @@ import { DatabaseService } from './database.service';
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
+        const nodeEnv = configService.get<string>('NODE_ENV') ?? 'development';
+        const isProduction = nodeEnv === 'production';
+
         const host = configService.get<string>('POSTGRES_HOST') ?? 'localhost';
         const port = Number(configService.get<string>('POSTGRES_PORT') ?? 5432);
         const database =
@@ -18,6 +21,10 @@ import { DatabaseService } from './database.service';
         const username = configService.get<string>('POSTGRES_USER') ?? 'postgres';
         const password = configService.get<string>('POSTGRES_PASSWORD') ?? '';
         const ssl = (configService.get<string>('POSTGRES_SSL') ?? 'false') === 'true';
+
+        const migrations = isProduction
+          ? [join(process.cwd(), 'dist', 'migrations', '*.js')]
+          : [join(process.cwd(), 'src', 'migrations', '*.ts')];
 
         return {
           type: 'postgres' as const,
@@ -32,7 +39,7 @@ import { DatabaseService } from './database.service';
           migrationsRun:
             (configService.get<string>('TYPEORM_MIGRATIONS_RUN') ?? 'true') ===
             'true',
-          migrations: [join(__dirname, '..', '..', 'migrations', '*{.ts,.js}')],
+          migrations,
           logging:
             (configService.get<string>('TYPEORM_LOGGING') ?? 'false') ===
             'true',

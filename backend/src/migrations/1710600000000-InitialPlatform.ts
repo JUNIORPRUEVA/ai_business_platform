@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class InitialPlatform0001 implements MigrationInterface {
-  name = 'InitialPlatform0001';
+export class InitialPlatform1710600000000 implements MigrationInterface {
+  name = 'InitialPlatform1710600000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');

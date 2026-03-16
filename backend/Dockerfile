@@ -11,7 +11,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN rm -rf dist && npm run build
 
 # ---- runner (solo dependencias de producción + dist) ----
 FROM node:20-alpine AS runner
