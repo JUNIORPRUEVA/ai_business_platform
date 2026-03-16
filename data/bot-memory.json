@@ -1,0 +1,63 @@
+{
+  "messageRecords": [
+    {
+      "id": "895f2ec8-08fd-4b47-a383-2e55990c2e4f",
+      "conversationId": "5511999999999@s.whatsapp.net",
+      "senderId": "5511999999999@s.whatsapp.net",
+      "channel": "whatsapp",
+      "direction": "incoming",
+      "content": "Quero saber sobre os produtos do FULLPOS para cobranca automatica",
+      "createdAt": "2026-03-14T18:06:35.586Z",
+      "metadata": {
+        "event": "messages.upsert",
+        "instance": "fullpos-main-instance",
+        "rawMessage": {
+          "conversation": "Quero saber sobre os produtos do FULLPOS para cobranca automatica"
+        }
+      }
+    },
+    {
+      "id": "f0c09161-d8aa-472b-b1fa-161377122dcd",
+      "conversationId": "5511999999999@s.whatsapp.net",
+      "senderId": "5511999999999@s.whatsapp.net",
+      "channel": "whatsapp",
+      "direction": "outgoing",
+      "content": "Prepare pricing-policy with sender=5511999999999@s.whatsapp.net, intent=billing_question, then generate a grounded reply for Marina Costa using the returned business data.",
+      "createdAt": "2026-03-14T18:06:35.602Z",
+      "metadata": {
+        "selectedAction": "use_tool",
+        "selectedTool": "pricing-policy"
+      }
+    }
+  ],
+  "conversationSummaries": [],
+  "operationalStates": [
+    {
+      "id": "609c51e7-8ca9-4a6a-88a5-145f78c2197d",
+      "conversationId": "5511999999999@s.whatsapp.net",
+      "stage": "use_tool",
+      "lastIntent": "billing_question",
+      "assignedTool": "pricing-policy",
+      "needsHumanEscalation": false,
+      "updatedAt": "2026-03-14T18:06:35.592Z"
+    }
+  ],
+  "longTermFacts": [
+    {
+      "id": "global-tone-policy",
+      "scope": "longTerm",
+      "title": "Enterprise tone policy",
+      "content": "Responses must stay concise, accurate, and aligned with approved business policy.",
+      "relevanceScore": 0.74,
+      "createdAt": "2026-03-14T18:06:25.611Z"
+    },
+    {
+      "id": "global-product-grounding",
+      "scope": "longTerm",
+      "title": "Product grounding rule",
+      "content": "When answering about products or modules, use approved catalog facts and declared limitations only.",
+      "relevanceScore": 0.92,
+      "createdAt": "2026-03-14T18:06:25.611Z"
+    }
+  ]
+}

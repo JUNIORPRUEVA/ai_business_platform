@@ -1,0 +1,37 @@
+import { OnModuleInit } from '@nestjs/common';
+import { JsonFileStoreService } from '../../../common/persistence/json-file-store.service';
+import { CreatePromptTemplateDto } from '../dto/create-prompt-template.dto';
+import { CreateToolDto } from '../dto/create-tool.dto';
+import { UpdateEvolutionSettingsDto } from '../dto/update-evolution-settings.dto';
+import { UpdateGeneralSettingsDto } from '../dto/update-general-settings.dto';
+import { UpdateMemorySettingsDto } from '../dto/update-memory-settings.dto';
+import { UpdateOpenAiSettingsDto } from '../dto/update-openai-settings.dto';
+import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settings.dto';
+import { UpdatePromptTemplateDto } from '../dto/update-prompt-template.dto';
+import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
+import { UpdateToolDto } from '../dto/update-tool.dto';
+import { BotConfigurationBundle, PromptTemplate, InternalToolSettings } from '../types/bot-configuration.types';
+export declare class BotConfigurationService implements OnModuleInit {
+    private readonly fileStore;
+    private state;
+    constructor(fileStore: JsonFileStoreService);
+    onModuleInit(): Promise<void>;
+    getConfiguration(): BotConfigurationBundle;
+    getPromptById(promptId: string): PromptTemplate;
+    getActivePrompt(): PromptTemplate;
+    listPrompts(): PromptTemplate[];
+    listTools(): InternalToolSettings[];
+    updateGeneralSettings(payload: UpdateGeneralSettingsDto): Promise<BotConfigurationBundle['general']>;
+    updateEvolutionSettings(payload: UpdateEvolutionSettingsDto): Promise<BotConfigurationBundle['evolution']>;
+    updateOpenAiSettings(payload: UpdateOpenAiSettingsDto): Promise<BotConfigurationBundle['openai']>;
+    updateMemorySettings(payload: UpdateMemorySettingsDto): Promise<BotConfigurationBundle['memory']>;
+    updateOrchestratorSettings(payload: UpdateOrchestratorSettingsDto): Promise<BotConfigurationBundle['orchestrator']>;
+    updateSecuritySettings(payload: UpdateSecuritySettingsDto): Promise<BotConfigurationBundle['security']>;
+    createPrompt(payload: CreatePromptTemplateDto): Promise<PromptTemplate>;
+    updatePrompt(promptId: string, payload: UpdatePromptTemplateDto): Promise<PromptTemplate>;
+    deletePrompt(promptId: string): Promise<void>;
+    createTool(payload: CreateToolDto): Promise<InternalToolSettings>;
+    updateTool(toolId: string, payload: UpdateToolDto): Promise<InternalToolSettings>;
+    deleteTool(toolId: string): Promise<void>;
+    private persist;
+}

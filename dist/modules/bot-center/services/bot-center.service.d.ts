@@ -1,0 +1,37 @@
+import { DatabaseService } from '../../../common/database/database.service';
+import { BotConfigurationService } from '../../bot-configuration/services/bot-configuration.service';
+import { BotMemoryService } from '../../bot-memory/services/bot-memory.service';
+import { SendTestMessageDto } from '../dto/send-test-message.dto';
+import { UpdatePromptDto } from '../dto/update-prompt.dto';
+import { BotCenterOverviewResponse, BotContactContextResponse, BotConversationDetailResponse, BotConversationSummary, BotLogResponse, BotMemoryResponse, BotMessageResponse, BotPromptConfigResponse, BotStatusResponse, BotToolResponse, SendTestMessageResponse } from '../types/bot-center.types';
+export declare class BotCenterService {
+    private readonly botConfigurationService;
+    private readonly botMemoryService;
+    private readonly databaseService;
+    constructor(botConfigurationService: BotConfigurationService, botMemoryService: BotMemoryService, databaseService: DatabaseService);
+    private readonly dataStore;
+    getOverview(selectedConversationId?: string): Promise<BotCenterOverviewResponse>;
+    listConversations(): BotConversationSummary[];
+    getConversationMessages(conversationId: string): BotMessageResponse[];
+    getConversationContext(conversationId: string): BotContactContextResponse;
+    getConversationMemory(conversationId: string): Promise<BotMemoryResponse>;
+    listTools(): BotToolResponse[];
+    listLogs(): BotLogResponse[];
+    getStatus(): BotStatusResponse;
+    getPromptConfig(): BotPromptConfigResponse;
+    updatePromptConfig(payload: UpdatePromptDto): Promise<BotPromptConfigResponse>;
+    sendTestMessage(payload: SendTestMessageDto): Promise<SendTestMessageResponse>;
+    getConversationDetail(conversationId: string): Promise<BotConversationDetailResponse>;
+    private getConversationRecordOrThrow;
+    private buildConversationDetail;
+    private mapMemoryItem;
+    private prependLog;
+    private createSeedData;
+    private buildConversationRecord;
+    private buildMessage;
+    private buildMemoryItem;
+    private buildStatusCard;
+    private isoMinutesAgo;
+    private isoHoursAgo;
+    private isoDaysAgo;
+}
