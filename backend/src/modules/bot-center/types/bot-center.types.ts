@@ -58,6 +58,7 @@ export interface BotMemoryItemResponse {
   content: string;
   type: BotMemoryType;
   updatedAt: string;
+  isEditable?: boolean;
 }
 
 export interface BotMemoryResponse {

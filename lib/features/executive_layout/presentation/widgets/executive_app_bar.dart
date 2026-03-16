@@ -143,7 +143,10 @@ class ExecutiveAppBar extends ConsumerWidget {
                     _HoverIconButton(
                       icon: Icons.chat_bubble_outline_rounded,
                       tooltip: 'Mensajes',
-                      onPressed: () {},
+                      onPressed: () {
+                        ref.read(executiveSelectedIndexProvider.notifier).state =
+                            executiveMessagesIndex;
+                      },
                       size: iconSize,
                     ),
                     SizedBox(width: isMobile ? 8 : 12),

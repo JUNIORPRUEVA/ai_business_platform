@@ -103,9 +103,8 @@ class BotConfigurationCenterContent extends StatelessWidget {
             ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final contentPadding = embedded
-              ? 0.0
-              : (constraints.maxWidth >= 1200 ? 24.0 : 16.0);
+          final contentPadding =
+              embedded ? 0.0 : (constraints.maxWidth >= 1200 ? 24.0 : 16.0);
           final isDesktop = constraints.maxWidth >= 1320;
           final isMedium = constraints.maxWidth >= 980;
 
@@ -172,7 +171,7 @@ class _Header extends StatelessWidget {
     return ConfigurationShellCard(
       title: 'Centro de configuración del Bot FULLPOS',
       subtitle:
-        'Panel de control empresarial para integraciones, prompts, memoria, política de inteligencia y operaciones seguras del runtime.',
+          'Panel de control empresarial para integraciones, prompts, memoria, política de inteligencia y operaciones seguras del runtime.',
       trailing: Wrap(
         spacing: 12,
         runSpacing: 12,
@@ -328,6 +327,8 @@ class _Workspace extends StatelessWidget {
         return PromptsSettingsSection(controller: controller);
       case BotConfigurationSection.tools:
         return ToolsSettingsSection(controller: controller);
+      case BotConfigurationSection.documents:
+        return DocumentsSettingsSection(controller: controller);
       case BotConfigurationSection.security:
         return SecuritySettingsSection(controller: controller);
     }

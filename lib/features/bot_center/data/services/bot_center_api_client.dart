@@ -75,6 +75,28 @@ class BotCenterApiClient {
     return _decodeObject(response.body);
   }
 
+  Future<Map<String, dynamic>> patchJson(
+      String path, Map<String, dynamic> body) async {
+    final response = await _send(
+      () => _client.patch(
+        _buildUri(path),
+        headers: _headers,
+        body: jsonEncode(body),
+      ),
+    );
+    return _decodeObject(response.body);
+  }
+
+  Future<Map<String, dynamic>> deleteJson(String path) async {
+    final response = await _send(
+      () => _client.delete(
+        _buildUri(path),
+        headers: _headers,
+      ),
+    );
+    return _decodeObject(response.body);
+  }
+
   Map<String, String> get _headers => const {
         'Accept': 'application/json',
         'Content-Type': 'application/json',

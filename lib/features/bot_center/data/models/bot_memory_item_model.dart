@@ -8,6 +8,7 @@ class BotMemoryItemModel {
     required this.content,
     required this.type,
     required this.updatedAt,
+    required this.isEditable,
   });
 
   factory BotMemoryItemModel.fromJson(Map<String, dynamic> json) {
@@ -17,6 +18,7 @@ class BotMemoryItemModel {
       content: parseString(json['content']),
       type: parseMemoryType(parseString(json['type'])),
       updatedAt: parseDateTime(json['updatedAt']),
+      isEditable: json['isEditable'] == true,
     );
   }
 
@@ -25,6 +27,7 @@ class BotMemoryItemModel {
   final String content;
   final BotMemoryType type;
   final DateTime updatedAt;
+  final bool isEditable;
 
   BotMemoryItem toEntity() {
     return BotMemoryItem(
@@ -33,6 +36,7 @@ class BotMemoryItemModel {
       content: content,
       type: type,
       updatedAt: updatedAt,
+      isEditable: isEditable,
     );
   }
 }

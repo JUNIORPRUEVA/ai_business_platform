@@ -43,6 +43,25 @@ class PromptEditorPanel extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         TextField(
+          controller: controller.promptTitleController,
+          onChanged: controller.updatePromptTitle,
+          decoration: const InputDecoration(
+            labelText: 'Titulo del prompt',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: controller.promptDescriptionController,
+          onChanged: controller.updatePromptDescription,
+          minLines: 2,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Descripcion del prompt',
+            alignLabelWithHint: true,
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
           controller: controller.promptEditorController,
           onChanged: controller.updatePromptDraft,
           minLines: 14,
@@ -59,8 +78,8 @@ class PromptEditorPanel extends StatelessWidget {
             onPressed:
                 controller.isSavingPrompt ? null : controller.savePromptDraft,
             icon: const Icon(Icons.save_outlined),
-            label:
-                Text(controller.isSavingPrompt ? 'Guardando...' : 'Guardar prompt'),
+            label: Text(
+                controller.isSavingPrompt ? 'Guardando...' : 'Guardar prompt'),
           ),
         ),
       ],

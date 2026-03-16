@@ -257,6 +257,46 @@ class InternalToolConfig {
   }
 }
 
+class KnowledgeDocumentConfig {
+  const KnowledgeDocumentConfig({
+    required this.id,
+    required this.name,
+    required this.summary,
+    required this.status,
+    required this.kind,
+    required this.sizeLabel,
+    required this.isEnabled,
+  });
+
+  final String id;
+  final String name;
+  final String summary;
+  final String status;
+  final String kind;
+  final String sizeLabel;
+  final bool isEnabled;
+
+  KnowledgeDocumentConfig copyWith({
+    String? id,
+    String? name,
+    String? summary,
+    String? status,
+    String? kind,
+    String? sizeLabel,
+    bool? isEnabled,
+  }) {
+    return KnowledgeDocumentConfig(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      summary: summary ?? this.summary,
+      status: status ?? this.status,
+      kind: kind ?? this.kind,
+      sizeLabel: sizeLabel ?? this.sizeLabel,
+      isEnabled: isEnabled ?? this.isEnabled,
+    );
+  }
+}
+
 class SecuritySettingsConfig {
   const SecuritySettingsConfig({
     required this.internalApiToken,
@@ -294,6 +334,7 @@ class BotConfigurationBundle {
     required this.orchestrator,
     required this.prompts,
     required this.tools,
+    required this.documents,
     required this.security,
   });
 
@@ -304,6 +345,7 @@ class BotConfigurationBundle {
   final OrchestratorConfig orchestrator;
   final List<PromptTemplateConfig> prompts;
   final List<InternalToolConfig> tools;
+  final List<KnowledgeDocumentConfig> documents;
   final SecuritySettingsConfig security;
 
   BotConfigurationBundle copyWith({
@@ -314,6 +356,7 @@ class BotConfigurationBundle {
     OrchestratorConfig? orchestrator,
     List<PromptTemplateConfig>? prompts,
     List<InternalToolConfig>? tools,
+    List<KnowledgeDocumentConfig>? documents,
     SecuritySettingsConfig? security,
   }) {
     return BotConfigurationBundle(
@@ -324,6 +367,7 @@ class BotConfigurationBundle {
       orchestrator: orchestrator ?? this.orchestrator,
       prompts: prompts ?? this.prompts,
       tools: tools ?? this.tools,
+      documents: documents ?? this.documents,
       security: security ?? this.security,
     );
   }

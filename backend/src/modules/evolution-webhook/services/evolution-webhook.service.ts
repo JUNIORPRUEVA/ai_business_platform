@@ -62,6 +62,7 @@ export class EvolutionWebhookService {
       sender: 'client',
       content: normalized.message,
       type: 'text',
+      metadata: normalized.metadata,
     });
 
     await this.messageProcessingQueue.add(

@@ -13,24 +13,24 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
+    return const DefaultTabController(
       length: 4,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const ModuleHeader(
+          ModuleHeader(
             title: 'Configuración',
             subtitle:
                 'Ajustes de empresa, claves API, integraciones, seguridad y facturación. Configuración aislada por tenant.',
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           Align(
             alignment: Alignment.centerLeft,
             child: TabBar(
               isScrollable: true,
               dividerColor: Colors.transparent,
               tabAlignment: TabAlignment.start,
-              tabs: const [
+              tabs: [
                 Tab(text: 'Empresa'),
                 Tab(text: 'Claves API'),
                 Tab(text: 'Seguridad'),
@@ -38,8 +38,8 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          const Expanded(
+          SizedBox(height: 12),
+          Expanded(
             child: TabBarView(
               children: [
                 _CompanyPanel(),
@@ -425,7 +425,7 @@ class _CompanyPanelState extends ConsumerState<_CompanyPanel> {
             addressLine1: _addressLine1Controller.text,
             addressLine2: _addressLine2Controller.text,
             city: _cityController.text,
-            state: _stateController.text,
+            regionState: _stateController.text,
             country: _countryController.text,
             postalCode: _postalCodeController.text,
             description: _descriptionController.text,
@@ -472,10 +472,10 @@ class _SecurityPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return const SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
+        children: [
           ExecutiveGlassCard(
             child: SizedBox(
               height: 220,
@@ -497,10 +497,10 @@ class _BillingPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return const SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
+        children: [
           ExecutiveGlassCard(
             child: SizedBox(
               height: 220,

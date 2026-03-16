@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 
-import { AiEngineModule } from '../ai-engine/ai-engine.module';
+import { AiBrainModule } from '../ai_brain/ai-brain.module';
 import { BotsModule } from '../bots/bots.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { PromptsModule } from '../prompts/prompts.module';
@@ -27,7 +27,7 @@ import { MessageProcessingProcessor } from './processors/message-processing.proc
     BullModule.registerQueue({
       name: 'message-processing',
     }),
-    AiEngineModule,
+    AiBrainModule,
     BotsModule,
     ChannelsModule,
     PromptsModule,

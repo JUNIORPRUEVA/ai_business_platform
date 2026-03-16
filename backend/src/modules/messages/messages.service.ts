@@ -34,10 +34,20 @@ export class MessagesService {
       sender: 'user',
       content: dto.content,
       type: dto.type ?? 'text',
+      metadata: {},
     });
   }
 
-  async create(companyId: string, conversationId: string, params: { sender: MessageSender; content: string; type: MessageType }): Promise<MessageEntity> {
+  async create(
+    companyId: string,
+    conversationId: string,
+    params: {
+      sender: MessageSender;
+      content: string;
+      type: MessageType;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<MessageEntity> {
     const conversation = await this.conversationsRepository.findOne({ where: { id: conversationId } });
     if (!conversation) throw new NotFoundException('Conversation not found.');
     if (conversation.companyId !== companyId) throw new ForbiddenException();
@@ -47,6 +57,7 @@ export class MessagesService {
       sender: params.sender,
       content: params.content,
       type: params.type,
+      metadata: params.metadata ?? {},
     });
 
     return this.messagesRepository.save(entity);

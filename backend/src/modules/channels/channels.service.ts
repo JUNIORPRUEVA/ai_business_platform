@@ -110,6 +110,12 @@ export class ChannelsService {
     return channel;
   }
 
+  async getByInstanceNameUnsafe(instanceName: string): Promise<ChannelEntity> {
+    const channel = await this.channelsRepository.findOne({ where: { instanceName } });
+    if (!channel) throw new NotFoundException('Channel not found.');
+    return channel;
+  }
+
   async getQrCode(companyId: string, id: string): Promise<{ instanceName: string; payload: unknown }> {
     const channel = await this.get(companyId, id);
     if (channel.type !== 'whatsapp') {

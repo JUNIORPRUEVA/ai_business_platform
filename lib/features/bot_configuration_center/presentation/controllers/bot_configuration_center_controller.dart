@@ -48,6 +48,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
   String _selectedAutonomyLevel = 'Protegido';
   String _selectedFallbackStrategy = 'Escalar al operador';
   int _selectedPromptIndex = 0;
+  int _selectedDocumentIndex = 0;
   bool _isTesting = false;
   BotConfigurationSection? _activeSaveSection;
   String? _errorMessage;
@@ -60,6 +61,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
   String get selectedAutonomyLevel => _selectedAutonomyLevel;
   String get selectedFallbackStrategy => _selectedFallbackStrategy;
   int get selectedPromptIndex => _selectedPromptIndex;
+  int get selectedDocumentIndex => _selectedDocumentIndex;
   bool get isTesting => _isTesting;
   BotConfigurationSection? get activeSaveSection => _activeSaveSection;
   String? get errorMessage => _errorMessage;
@@ -78,16 +80,16 @@ class BotConfigurationCenterController extends ChangeNotifier {
       ];
 
   List<String> get availableAutonomyLevels => const <String>[
-      'Estricto',
-      'Protegido',
-      'Equilibrado',
-      'Agresivo',
+        'Estricto',
+        'Protegido',
+        'Equilibrado',
+        'Agresivo',
       ];
 
   List<String> get availableFallbackStrategies => const <String>[
-      'Escalar al operador',
-      'Solicitar aclaración',
-      'Usar respuesta segura predefinida',
+        'Escalar al operador',
+        'Solicitar aclaración',
+        'Usar respuesta segura predefinida',
       ];
 
   PromptTemplateConfig get selectedPrompt {
@@ -105,6 +107,15 @@ class BotConfigurationCenterController extends ChangeNotifier {
         .prompts[_selectedPromptIndex.clamp(0, _bundle.prompts.length - 1)];
   }
 
+  KnowledgeDocumentConfig? get selectedDocument {
+    if (_bundle.documents.isEmpty) {
+      return null;
+    }
+
+    return _bundle.documents[
+        _selectedDocumentIndex.clamp(0, _bundle.documents.length - 1)];
+  }
+
   void selectSection(BotConfigurationSection section) {
     _selectedSection = section;
     notifyListeners();
@@ -116,6 +127,15 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     _selectedPromptIndex = index;
+    notifyListeners();
+  }
+
+  void selectDocument(int index) {
+    if (index < 0 || index >= _bundle.documents.length) {
+      return;
+    }
+
+    _selectedDocumentIndex = index;
     notifyListeners();
   }
 
@@ -249,6 +269,62 @@ class BotConfigurationCenterController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleDocument(String documentId, bool value) {
+    final updatedDocuments = _bundle.documents
+        .map(
+          (document) => document.id == documentId
+              ? document.copyWith(isEnabled: value)
+              : document,
+        )
+        .toList(growable: false);
+    _bundle = _bundle.copyWith(documents: updatedDocuments);
+    notifyListeners();
+  }
+
+  void updateDocumentSummary(String documentId, String value) {
+    final updatedDocuments = _bundle.documents
+        .map(
+          (document) => document.id == documentId
+              ? document.copyWith(summary: value)
+              : document,
+        )
+        .toList(growable: false);
+    _bundle = _bundle.copyWith(documents: updatedDocuments);
+    notifyListeners();
+  }
+
+  void addDocument() {
+    final nextDocuments = _bundle.documents.toList(growable: true)
+      ..insert(
+        0,
+        KnowledgeDocumentConfig(
+          id: 'doc-${DateTime.now().microsecondsSinceEpoch}',
+          name: 'Nuevo documento empresarial',
+          summary:
+              'Describe aquí el contenido indexado que el cerebro debe usar como conocimiento.',
+          status: 'Pendiente',
+          kind: 'Documento',
+          sizeLabel: '-',
+          isEnabled: true,
+        ),
+      );
+    _bundle = _bundle.copyWith(documents: nextDocuments);
+    _selectedDocumentIndex = 0;
+    notifyListeners();
+  }
+
+  void removeDocument(String documentId) {
+    final nextDocuments = _bundle.documents
+        .where((document) => document.id != documentId)
+        .toList(growable: false);
+    _bundle = _bundle.copyWith(documents: nextDocuments);
+    if (_selectedDocumentIndex >= nextDocuments.length) {
+      _selectedDocumentIndex =
+          nextDocuments.isEmpty ? 0 : nextDocuments.length - 1;
+    }
+    notifyListeners();
+  }
+
   void updateSecuritySettings({bool? encryptSecrets, bool? auditLog}) {
     _bundle = _bundle.copyWith(
       security: _bundle.security.copyWith(
@@ -286,7 +362,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
     _activeSaveSection = null;
-    _successMessage = 'Configuración de ${section.label} guardada correctamente.';
+    _successMessage =
+        'Configuración de ${section.label} guardada correctamente.';
     notifyListeners();
   }
 

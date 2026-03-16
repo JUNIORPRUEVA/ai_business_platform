@@ -24,6 +24,8 @@ enum BotInspectorSection {
 class BotCenterController extends ChangeNotifier {
   BotCenterController({required BotCenterRepository repository})
       : _repository = repository,
+        promptTitleController = TextEditingController(),
+        promptDescriptionController = TextEditingController(),
         promptEditorController = TextEditingController(),
         messageComposerController = TextEditingController();
 
@@ -36,6 +38,8 @@ class BotCenterController extends ChangeNotifier {
   final BotCenterRepository _repository;
 
   final TextEditingController messageComposerController;
+  final TextEditingController promptTitleController;
+  final TextEditingController promptDescriptionController;
   final TextEditingController promptEditorController;
 
   final List<BotConversation> _conversations = <BotConversation>[];
@@ -62,6 +66,7 @@ class BotCenterController extends ChangeNotifier {
   bool _isConversationLoading = false;
   bool _isRefreshing = false;
   bool _isSavingPrompt = false;
+  bool _isMutatingMemory = false;
   bool _isSendingMessage = false;
   bool _hasLoaded = false;
 
@@ -77,6 +82,7 @@ class BotCenterController extends ChangeNotifier {
   bool get isConversationLoading => _isConversationLoading;
   bool get isRefreshing => _isRefreshing;
   bool get isSavingPrompt => _isSavingPrompt;
+  bool get isMutatingMemory => _isMutatingMemory;
   bool get isSendingMessage => _isSendingMessage;
   bool get hasLoaded => _hasLoaded;
   String? get errorMessage => _errorMessage;
@@ -215,9 +221,13 @@ class BotCenterController extends ChangeNotifier {
     }
   }
 
-  Future<void> selectConversation(String conversationId) async {
+  Future<void> selectConversation(
+    String conversationId, {
+    bool forceReload = false,
+  }) async {
     if (_selectedConversationId == conversationId &&
-        _messagesByConversation.containsKey(conversationId)) {
+        _messagesByConversation.containsKey(conversationId) &&
+        !forceReload) {
       return;
     }
 
@@ -266,6 +276,16 @@ class BotCenterController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updatePromptTitle(String value) {
+    _promptConfig = promptConfig.copyWith(title: value);
+    notifyListeners();
+  }
+
+  void updatePromptDescription(String value) {
+    _promptConfig = promptConfig.copyWith(description: value);
+    notifyListeners();
+  }
+
   void fillQuickAction(String value) {
     messageComposerController
       ..text = value
@@ -287,8 +307,8 @@ class BotCenterController extends ChangeNotifier {
 
     try {
       final updatedPrompt = await _repository.updatePrompt(
-        title: promptConfig.title,
-        description: promptConfig.description,
+        title: promptTitleController.text.trim(),
+        description: promptDescriptionController.text.trim(),
         content: content,
       );
 
@@ -316,6 +336,92 @@ class BotCenterController extends ChangeNotifier {
       _actionMessage = 'No se pudo guardar el prompt. ${error.toString()}';
     } finally {
       _isSavingPrompt = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> createMemoryItem({
+    required BotMemoryType type,
+    required String title,
+    required String content,
+  }) async {
+    if (_selectedConversationId.isEmpty) {
+      return;
+    }
+
+    _isMutatingMemory = true;
+    _actionMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.createMemory(
+        conversationId: _selectedConversationId,
+        title: title,
+        content: content,
+        type: type,
+      );
+      await selectConversation(_selectedConversationId, forceReload: true);
+      _actionMessage = 'Memoria creada correctamente.';
+    } catch (error) {
+      _actionMessage = 'No se pudo crear la memoria. ${error.toString()}';
+    } finally {
+      _isMutatingMemory = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateMemoryItem({
+    required String memoryId,
+    required BotMemoryType type,
+    required String title,
+    required String content,
+  }) async {
+    if (_selectedConversationId.isEmpty) {
+      return;
+    }
+
+    _isMutatingMemory = true;
+    _actionMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.updateMemory(
+        conversationId: _selectedConversationId,
+        memoryId: memoryId,
+        title: title,
+        content: content,
+        type: type,
+      );
+      await selectConversation(_selectedConversationId, forceReload: true);
+      _actionMessage = 'Memoria actualizada correctamente.';
+    } catch (error) {
+      _actionMessage = 'No se pudo actualizar la memoria. ${error.toString()}';
+    } finally {
+      _isMutatingMemory = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteMemoryItem(String memoryId) async {
+    if (_selectedConversationId.isEmpty) {
+      return;
+    }
+
+    _isMutatingMemory = true;
+    _actionMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.deleteMemory(
+        conversationId: _selectedConversationId,
+        memoryId: memoryId,
+      );
+      await selectConversation(_selectedConversationId, forceReload: true);
+      _actionMessage = 'Memoria eliminada correctamente.';
+    } catch (error) {
+      _actionMessage = 'No se pudo eliminar la memoria. ${error.toString()}';
+    } finally {
+      _isMutatingMemory = false;
       notifyListeners();
     }
   }
@@ -385,6 +491,20 @@ class BotCenterController extends ChangeNotifier {
         ..selection = TextSelection.collapsed(
             offset: overview.promptConfig.content.length);
     }
+    if (promptTitleController.text != overview.promptConfig.title) {
+      promptTitleController
+        ..text = overview.promptConfig.title
+        ..selection = TextSelection.collapsed(
+          offset: overview.promptConfig.title.length,
+        );
+    }
+    if (promptDescriptionController.text != overview.promptConfig.description) {
+      promptDescriptionController
+        ..text = overview.promptConfig.description
+        ..selection = TextSelection.collapsed(
+          offset: overview.promptConfig.description.length,
+        );
+    }
 
     final selectedConversationData = overview.selectedConversationData;
     if (selectedConversationData != null) {
@@ -427,6 +547,8 @@ class BotCenterController extends ChangeNotifier {
   @override
   void dispose() {
     messageComposerController.dispose();
+    promptTitleController.dispose();
+    promptDescriptionController.dispose();
     promptEditorController.dispose();
     super.dispose();
   }

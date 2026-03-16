@@ -19,6 +19,26 @@ abstract interface class BotCenterRepository {
 
   Future<List<BotMemoryItem>> getMemory(String conversationId);
 
+  Future<BotMemoryItem> createMemory({
+    required String conversationId,
+    required String title,
+    required String content,
+    required BotMemoryType type,
+  });
+
+  Future<BotMemoryItem> updateMemory({
+    required String conversationId,
+    required String memoryId,
+    required String title,
+    required String content,
+    required BotMemoryType type,
+  });
+
+  Future<void> deleteMemory({
+    required String conversationId,
+    required String memoryId,
+  });
+
   Future<List<BotTool>> getTools();
 
   Future<List<BotActivityLog>> getLogs();

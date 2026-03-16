@@ -451,7 +451,8 @@ class PromptsSettingsSection extends StatelessWidget {
           width: 280,
           child: ConfigurationShellCard(
             title: 'Activos de prompts',
-            subtitle: 'Selecciona un paquete de prompts para inspeccionar o actualizar.',
+            subtitle:
+                'Selecciona un paquete de prompts para inspeccionar o actualizar.',
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: prompts.length,
@@ -600,6 +601,185 @@ class ToolsSettingsSection extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class DocumentsSettingsSection extends StatelessWidget {
+  const DocumentsSettingsSection({required this.controller, super.key});
+
+  final BotConfigurationCenterController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedDocument = controller.selectedDocument;
+    final summaryController = selectedDocument == null
+        ? null
+        : (TextEditingController(text: selectedDocument.summary)
+          ..selection = TextSelection.collapsed(
+            offset: selectedDocument.summary.length,
+          ));
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 320,
+          child: ConfigurationShellCard(
+            title: 'Base documental',
+            subtitle:
+                'Activos indexados que alimentan el cerebro con conocimiento verificable.',
+            trailing: OutlinedButton.icon(
+              onPressed: controller.addDocument,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Registrar'),
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: controller.bundle.documents.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final document = controller.bundle.documents[index];
+                final isSelected = index == controller.selectedDocumentIndex;
+
+                return InkWell(
+                  onTap: () => controller.selectDocument(index),
+                  borderRadius: BorderRadius.circular(18),
+                  child: Ink(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFFEEF4FF)
+                          : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFFB2CCFF)
+                            : Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(document.name,
+                            style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${document.kind} • ${document.status} • ${document.sizeLabel}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          document.summary,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: ConfigurationShellCard(
+            title: selectedDocument?.name ?? 'Sin documentos',
+            subtitle: selectedDocument == null
+                ? 'Aún no hay activos documentales registrados.'
+                : 'Edita el resumen operativo que el cerebro usa en el contexto.',
+            child: selectedDocument == null
+                ? Center(
+                    child: Text(
+                      'Registra el primer documento empresarial para habilitar contexto documental.',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _twoColumn(
+                        context,
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color:
+                                  Theme.of(context).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Tipo',
+                                  style:
+                                      Theme.of(context).textTheme.labelLarge),
+                              const SizedBox(height: 8),
+                              Text(selectedDocument.kind),
+                            ],
+                          ),
+                        ),
+                        SettingSwitchTile(
+                          label: 'Documento activo',
+                          description:
+                              'Permite que este activo participe del contexto y recuperación del cerebro.',
+                          value: selectedDocument.isEnabled,
+                          onChanged: (value) => controller.toggleDocument(
+                            selectedDocument.id,
+                            value,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resumen indexado',
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: summaryController,
+                            maxLines: 8,
+                            onChanged: (value) =>
+                                controller.updateDocumentSummary(
+                                    selectedDocument.id, value),
+                            decoration: const InputDecoration(
+                              hintText:
+                                  'Resume el conocimiento que debe usar el cerebro.',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Spacer(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () =>
+                                controller.removeDocument(selectedDocument.id),
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Eliminar'),
+                          ),
+                          SectionActionBar(
+                            onSave: () => controller
+                                .saveSection(BotConfigurationSection.documents),
+                            isSaving: controller.activeSaveSection ==
+                                BotConfigurationSection.documents,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
           ),
         ),
       ],

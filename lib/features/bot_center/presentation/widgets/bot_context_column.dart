@@ -77,7 +77,8 @@ class BotContextColumn extends StatelessWidget {
                     children: [
                       _ContextBlock(
                         title: 'Contacto',
-                        child: _ContactBlock(contact: controller.selectedContact),
+                        child:
+                            _ContactBlock(contact: controller.selectedContact),
                       ),
                       const SizedBox(height: 10),
                       _ContextBlock(
@@ -92,7 +93,8 @@ class BotContextColumn extends StatelessWidget {
                       const SizedBox(height: 10),
                       _ContextBlock(
                         title: 'Etiquetas',
-                        child: _TagsBlock(tags: controller.selectedContact.tags),
+                        child:
+                            _TagsBlock(tags: controller.selectedContact.tags),
                       ),
                     ],
                   ),
@@ -153,7 +155,8 @@ class _ContactBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (contact.name == 'No disponible' && contact.phoneNumber == 'No disponible') {
+    if (contact.name == 'No disponible' &&
+        contact.phoneNumber == 'No disponible') {
       return Text(
         'Selecciona un chat para ver el perfil del contacto.',
         style: theme.textTheme.bodyMedium?.copyWith(
@@ -199,7 +202,8 @@ class _ContactBlock extends StatelessWidget {
         row('Nombre', contact.name),
         row('Teléfono', contact.phoneNumber),
         if (contact.role != 'No disponible') row('Rol', contact.role),
-        if (contact.businessType != 'No disponible') row('Negocio', contact.businessType),
+        if (contact.businessType != 'No disponible')
+          row('Negocio', contact.businessType),
         if (contact.city != 'No disponible') row('Ciudad', contact.city),
       ],
     );
@@ -266,18 +270,58 @@ class _MemoryBlock extends StatelessWidget {
         .toList(growable: false);
 
     if (sections.isEmpty) {
-      return Text(
-        'Sin memoria disponible para esta conversación.',
-        style: theme.textTheme.bodyMedium?.copyWith(
-          fontSize: 13,
-          color: const Color(0xFF475569),
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              tooltip: 'Agregar memoria',
+              onPressed: controller.hasConversationSelection &&
+                      !controller.isMutatingMemory
+                  ? () => _showMemoryEditor(context, controller)
+                  : null,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          Text(
+            'Sin memoria disponible para esta conversación.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontSize: 13,
+              color: const Color(0xFF475569),
+            ),
+          ),
+        ],
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Notas y memoria activa',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Agregar memoria',
+              onPressed: controller.hasConversationSelection &&
+                      !controller.isMutatingMemory
+                  ? () => _showMemoryEditor(context, controller)
+                  : null,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
         for (final entry in sections) ...[
           Text(
             entry.$1.label,
@@ -289,7 +333,7 @@ class _MemoryBlock extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           for (final item in entry.$2.take(3)) ...[
-            _MemoryItemRow(item: item),
+            _MemoryItemRow(item: item, controller: controller),
             const SizedBox(height: 8),
           ],
           const SizedBox(height: 10),
@@ -300,9 +344,10 @@ class _MemoryBlock extends StatelessWidget {
 }
 
 class _MemoryItemRow extends StatelessWidget {
-  const _MemoryItemRow({required this.item});
+  const _MemoryItemRow({required this.item, required this.controller});
 
   final BotMemoryItem item;
+  final BotCenterController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -332,6 +377,57 @@ class _MemoryItemRow extends StatelessWidget {
                   ),
                 ),
               ),
+              if (item.isEditable)
+                PopupMenuButton<String>(
+                  tooltip: 'Acciones de memoria',
+                  onSelected: (value) async {
+                    if (value == 'edit') {
+                      await _showMemoryEditor(
+                        context,
+                        controller,
+                        initialItem: item,
+                      );
+                      return;
+                    }
+
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Eliminar memoria'),
+                        content: const Text(
+                          'Esta nota se eliminará de la memoria manual del bot para esta conversación.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                          FilledButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(true),
+                            child: const Text('Eliminar'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirmed == true) {
+                      await controller.deleteMemoryItem(item.id);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<String>(
+                      value: 'edit',
+                      child: Text('Editar'),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Text('Eliminar'),
+                    ),
+                  ],
+                  icon: const Icon(Icons.more_horiz_rounded, size: 18),
+                ),
               const SizedBox(width: 8),
               Text(
                 formatRelativeTimestamp(item.updatedAt),
@@ -356,6 +452,131 @@ class _MemoryItemRow extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _showMemoryEditor(
+  BuildContext context,
+  BotCenterController controller, {
+  BotMemoryItem? initialItem,
+}) async {
+  final titleController = TextEditingController(text: initialItem?.title ?? '');
+  final contentController = TextEditingController(
+    text: initialItem?.content ?? '',
+  );
+  var selectedType = initialItem?.type ?? BotMemoryType.shortTerm;
+  String? errorMessage;
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title:
+                Text(initialItem == null ? 'Nueva memoria' : 'Editar memoria'),
+            content: SizedBox(
+              width: 460,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<BotMemoryType>(
+                    initialValue: selectedType,
+                    decoration:
+                        const InputDecoration(labelText: 'Tipo de memoria'),
+                    items: BotMemoryType.values
+                        .map(
+                          (type) => DropdownMenuItem<BotMemoryType>(
+                            value: type,
+                            child: Text(type.label),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value == null) {
+                        return;
+                      }
+                      setState(() => selectedType = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: titleController,
+                    decoration: const InputDecoration(labelText: 'Titulo'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: contentController,
+                    minLines: 4,
+                    maxLines: 8,
+                    decoration: const InputDecoration(
+                      labelText: 'Contenido',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        errorMessage!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: const Color(0xFFB42318),
+                            ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: controller.isMutatingMemory
+                    ? null
+                    : () async {
+                        final title = titleController.text.trim();
+                        final content = contentController.text.trim();
+                        if (title.isEmpty || content.isEmpty) {
+                          setState(() {
+                            errorMessage =
+                                'Completa el titulo y el contenido de la memoria.';
+                          });
+                          return;
+                        }
+
+                        if (initialItem == null) {
+                          await controller.createMemoryItem(
+                            type: selectedType,
+                            title: title,
+                            content: content,
+                          );
+                        } else {
+                          await controller.updateMemoryItem(
+                            memoryId: initialItem.id,
+                            type: selectedType,
+                            title: title,
+                            content: content,
+                          );
+                        }
+
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                        }
+                      },
+                child: Text(initialItem == null ? 'Crear' : 'Guardar'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  titleController.dispose();
+  contentController.dispose();
 }
 
 class _HistoryBlock extends StatelessWidget {

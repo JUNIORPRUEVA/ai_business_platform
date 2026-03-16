@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
 import { JsonFileStoreService } from '../../../common/persistence/json-file-store.service';
@@ -133,6 +133,65 @@ export class BotMemoryService implements OnModuleInit {
     return structuredClone(record);
   }
 
+  async createManualMemory(input: {
+    conversationId: string;
+    scope: 'shortTerm' | 'longTerm' | 'operational';
+    title: string;
+    content: string;
+  }) {
+    const record = {
+      id: randomUUID(),
+      conversationId: input.conversationId,
+      scope: input.scope,
+      title: input.title,
+      content: input.content,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.state.manualMemoryItems.push(record);
+    await this.persist();
+    return structuredClone(record);
+  }
+
+  async updateManualMemory(
+    memoryId: string,
+    input: {
+      title?: string;
+      content?: string;
+      scope?: 'shortTerm' | 'longTerm' | 'operational';
+    },
+  ) {
+    const index = this.state.manualMemoryItems.findIndex(
+      (item) => item.id === memoryId,
+    );
+
+    if (index == -1) {
+      throw new NotFoundException(`Memory item ${memoryId} was not found.`);
+    }
+
+    this.state.manualMemoryItems[index] = {
+      ...this.state.manualMemoryItems[index],
+      ...input,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.persist();
+    return structuredClone(this.state.manualMemoryItems[index]);
+  }
+
+  async deleteManualMemory(memoryId: string): Promise<void> {
+    const nextItems = this.state.manualMemoryItems.filter(
+      (item) => item.id !== memoryId,
+    );
+
+    if (nextItems.length == this.state.manualMemoryItems.length) {
+      throw new NotFoundException(`Memory item ${memoryId} was not found.`);
+    }
+
+    this.state.manualMemoryItems = nextItems;
+    await this.persist();
+  }
+
   getShortTermMemory(conversationId: string, limit = 12): MemoryLookupResult[] {
     return this.state.messageRecords
       .filter((item) => item.conversationId === conversationId)
@@ -179,21 +238,60 @@ export class BotMemoryService implements OnModuleInit {
   }
 
   buildMemoryContext(conversationId: string): MemoryContextResult {
-    const shortTerm = this.getShortTermMemory(conversationId);
-    const longTerm = this.getLongTermMemory(conversationId);
+    const manualItems = this.state.manualMemoryItems.filter(
+      (item) => item.conversationId === conversationId,
+    );
+    const manualShortTerm: MemoryLookupResult[] = manualItems
+      .filter((item) => item.scope === 'shortTerm')
+      .map((item) => ({
+        id: item.id,
+        scope: item.scope,
+        title: item.title,
+        content: item.content,
+        relevanceScore: 0.98,
+        createdAt: item.updatedAt,
+        isEditable: true,
+      }));
+    const manualLongTerm: MemoryLookupResult[] = manualItems
+      .filter((item) => item.scope === 'longTerm')
+      .map((item) => ({
+        id: item.id,
+        scope: item.scope,
+        title: item.title,
+        content: item.content,
+        relevanceScore: 0.96,
+        createdAt: item.updatedAt,
+        isEditable: true,
+      }));
+    const manualOperational: MemoryLookupResult[] = manualItems
+      .filter((item) => item.scope === 'operational')
+      .map((item) => ({
+        id: item.id,
+        scope: item.scope,
+        title: item.title,
+        content: item.content,
+        relevanceScore: 0.97,
+        createdAt: item.updatedAt,
+        isEditable: true,
+      }));
+    const shortTerm = [...manualShortTerm, ...this.getShortTermMemory(conversationId)];
+    const longTerm = [...manualLongTerm, ...this.getLongTermMemory(conversationId)];
     const operationalState = this.getOperationalMemory(conversationId);
-    const operational: MemoryLookupResult[] = operationalState
-      ? [
-          {
-            id: operationalState.id,
-            scope: 'operational',
-            title: 'Operational state',
-            content: `Stage=${operationalState.stage}; intent=${operationalState.lastIntent ?? 'unknown'}; tool=${operationalState.assignedTool ?? 'none'}; escalation=${operationalState.needsHumanEscalation}`,
-            relevanceScore: 0.9,
-            createdAt: operationalState.updatedAt,
-          },
-        ]
-      : [];
+    const operational: MemoryLookupResult[] = [
+      ...manualOperational,
+      ...(operationalState != null
+        ? [
+            {
+              id: operationalState.id,
+              scope: 'operational' as const,
+              title: 'Operational state',
+              content: `Stage=${operationalState.stage}; intent=${operationalState.lastIntent ?? 'unknown'}; tool=${operationalState.assignedTool ?? 'none'}; escalation=${operationalState.needsHumanEscalation}`,
+              relevanceScore: 0.9,
+              createdAt: operationalState.updatedAt,
+            },
+          ]
+        : []),
+    ];
     const summary = this.state.conversationSummaries.find(
       (item) => item.conversationId === conversationId,
     );
@@ -223,6 +321,7 @@ export class BotMemoryService implements OnModuleInit {
       summaries: this.state.conversationSummaries.length,
       operationalStates: this.state.operationalStates.length,
       longTermFacts: this.state.longTermFacts.length,
+      manualMemoryItems: this.state.manualMemoryItems.length,
     };
   }
 

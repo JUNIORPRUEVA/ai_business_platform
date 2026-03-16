@@ -19,4 +19,7 @@ export class MessageEntity extends BaseEntity {
 
   @Column({ type: 'text', default: 'text' })
   type!: MessageType;
+
+  @Column({ type: 'jsonb', default: () => `'{}'::jsonb` })
+  metadata!: Record<string, unknown>;
 }

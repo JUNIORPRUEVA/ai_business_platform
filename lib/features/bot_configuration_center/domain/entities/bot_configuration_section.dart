@@ -6,6 +6,7 @@ enum BotConfigurationSection {
   orchestrator,
   prompts,
   tools,
+  documents,
   security,
 }
 
@@ -26,6 +27,8 @@ extension BotConfigurationSectionX on BotConfigurationSection {
         return 'Prompts';
       case BotConfigurationSection.tools:
         return 'Herramientas';
+      case BotConfigurationSection.documents:
+        return 'Documentos';
       case BotConfigurationSection.security:
         return 'Seguridad';
     }
@@ -47,6 +50,8 @@ extension BotConfigurationSectionX on BotConfigurationSection {
         return 'Activos de prompt usados por el “cerebro” del bot empresarial.';
       case BotConfigurationSection.tools:
         return 'Estado de activación de herramientas internas e integraciones empresariales.';
+      case BotConfigurationSection.documents:
+        return 'Base documental del cerebro: catálogos, políticas, fichas y activos empresariales.';
       case BotConfigurationSection.security:
         return 'Gestión de secretos, confianza de webhooks y políticas de auditoría.';
     }

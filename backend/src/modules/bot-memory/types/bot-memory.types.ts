@@ -29,6 +29,15 @@ export interface OperationalStateRecord {
   updatedAt: string;
 }
 
+export interface ManualMemoryRecord {
+  id: string;
+  conversationId: string;
+  scope: StoredMemoryScope;
+  title: string;
+  content: string;
+  updatedAt: string;
+}
+
 export interface MemoryLookupResult {
   id: string;
   scope: StoredMemoryScope;
@@ -36,6 +45,7 @@ export interface MemoryLookupResult {
   content: string;
   relevanceScore: number;
   createdAt: string;
+  isEditable?: boolean;
 }
 
 export interface MemoryContextResult {
@@ -52,6 +62,7 @@ export interface BotMemoryStore {
   conversationSummaries: ConversationSummaryRecord[];
   operationalStates: OperationalStateRecord[];
   longTermFacts: MemoryLookupResult[];
+  manualMemoryItems: ManualMemoryRecord[];
 }
 
 export function createDefaultBotMemoryStore(): BotMemoryStore {
@@ -81,5 +92,6 @@ export function createDefaultBotMemoryStore(): BotMemoryStore {
         createdAt: now,
       },
     ],
+    manualMemoryItems: [],
   };
 }

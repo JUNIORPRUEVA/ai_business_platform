@@ -57,6 +57,50 @@ class BotCenterRemoteDataSource {
     return BotMemoryCollectionModel.fromJson(json);
   }
 
+  Future<BotMemoryItemModel> createMemory({
+    required String conversationId,
+    required String title,
+    required String content,
+    required String type,
+  }) async {
+    final json = await _apiClient.postJson(
+      '/bot-center/conversations/$conversationId/memory',
+      {
+        'title': title,
+        'content': content,
+        'type': type,
+      },
+    );
+    return BotMemoryItemModel.fromJson(json);
+  }
+
+  Future<BotMemoryItemModel> updateMemory({
+    required String conversationId,
+    required String memoryId,
+    required String title,
+    required String content,
+    required String type,
+  }) async {
+    final json = await _apiClient.patchJson(
+      '/bot-center/conversations/$conversationId/memory/$memoryId',
+      {
+        'title': title,
+        'content': content,
+        'type': type,
+      },
+    );
+    return BotMemoryItemModel.fromJson(json);
+  }
+
+  Future<void> deleteMemory({
+    required String conversationId,
+    required String memoryId,
+  }) async {
+    await _apiClient.deleteJson(
+      '/bot-center/conversations/$conversationId/memory/$memoryId',
+    );
+  }
+
   Future<List<BotToolModel>> getTools() async {
     final json = await _apiClient.getJsonList('/bot-center/tools');
     return json

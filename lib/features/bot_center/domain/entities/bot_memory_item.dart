@@ -24,6 +24,7 @@ class BotMemoryItem {
     required this.content,
     required this.type,
     required this.updatedAt,
+    this.isEditable = false,
   });
 
   final String id;
@@ -31,4 +32,5 @@ class BotMemoryItem {
   final String content;
   final BotMemoryType type;
   final DateTime updatedAt;
+  final bool isEditable;
 }

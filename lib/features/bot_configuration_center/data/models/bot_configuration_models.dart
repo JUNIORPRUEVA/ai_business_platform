@@ -182,7 +182,7 @@ class OrchestratorConfigModel {
       enableToolExecution: json['enableToolExecution'] as bool? ?? true,
       requireConfirmationForCriticalActions:
           json['requireConfirmationForCriticalActions'] as bool? ?? true,
-        autonomyLevel: json['autonomyLevel'] as String? ?? 'Protegido',
+      autonomyLevel: json['autonomyLevel'] as String? ?? 'Protegido',
       fallbackStrategy:
           json['fallbackStrategy'] as String? ?? 'Escalar al operador',
     );
@@ -285,6 +285,50 @@ class InternalToolConfigModel {
   }
 }
 
+class KnowledgeDocumentConfigModel {
+  const KnowledgeDocumentConfigModel({
+    required this.id,
+    required this.name,
+    required this.summary,
+    required this.status,
+    required this.kind,
+    required this.sizeLabel,
+    required this.isEnabled,
+  });
+
+  factory KnowledgeDocumentConfigModel.fromJson(Map<String, dynamic> json) {
+    return KnowledgeDocumentConfigModel(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      status: json['status'] as String? ?? 'Listo',
+      kind: json['kind'] as String? ?? 'Documento',
+      sizeLabel: json['sizeLabel'] as String? ?? '-',
+      isEnabled: json['isEnabled'] as bool? ?? true,
+    );
+  }
+
+  final String id;
+  final String name;
+  final String summary;
+  final String status;
+  final String kind;
+  final String sizeLabel;
+  final bool isEnabled;
+
+  KnowledgeDocumentConfig toEntity() {
+    return KnowledgeDocumentConfig(
+      id: id,
+      name: name,
+      summary: summary,
+      status: status,
+      kind: kind,
+      sizeLabel: sizeLabel,
+      isEnabled: isEnabled,
+    );
+  }
+}
+
 class SecuritySettingsConfigModel {
   const SecuritySettingsConfigModel({
     required this.internalApiToken,
@@ -326,6 +370,7 @@ class BotConfigurationBundleModel {
     required this.orchestrator,
     required this.prompts,
     required this.tools,
+    required this.documents,
     required this.security,
   });
 
@@ -352,7 +397,7 @@ class BotConfigurationBundleModel {
         maxTokens: 1400,
         isEnabled: true,
         systemPromptPreview:
-        'Asistente empresarial ajustado para ventas, soporte, guía de catálogo y escalado seguro para operadores.',
+            'Asistente empresarial ajustado para ventas, soporte, guía de catálogo y escalado seguro para operadores.',
       ),
       memory: const MemorySettingsConfigModel(
         enableShortTermMemory: true,
@@ -395,7 +440,8 @@ class BotConfigurationBundleModel {
         PromptTemplateConfigModel(
           id: 'prompt-003',
           title: 'Prompt de confirmación de acción crítica',
-          description: 'Controla el flujo de confirmación para acciones riesgosas.',
+          description:
+              'Controla el flujo de confirmación para acciones riesgosas.',
           content:
               'Para cancelaciones, sobrescrituras de precio, compromisos financieros y reconfiguración de canal, requiere confirmación antes de ejecutar.',
           updatedAt: DateTime.now().subtract(const Duration(days: 1)),
@@ -435,6 +481,28 @@ class BotConfigurationBundleModel {
           isEnabled: false,
         ),
       ],
+      documents: const <KnowledgeDocumentConfigModel>[
+        KnowledgeDocumentConfigModel(
+          id: 'doc-001',
+          name: 'Catalogo principal 2025',
+          summary:
+              'Catálogo maestro con líneas de producto, marcas priorizadas y restricciones de venta.',
+          status: 'Indexado',
+          kind: 'Catalogo',
+          sizeLabel: '2.4 MB',
+          isEnabled: true,
+        ),
+        KnowledgeDocumentConfigModel(
+          id: 'doc-002',
+          name: 'Politicas comerciales',
+          summary:
+              'Políticas de devoluciones, garantías, escalado y validación de descuentos.',
+          status: 'Listo',
+          kind: 'Politica',
+          sizeLabel: '640 KB',
+          isEnabled: true,
+        ),
+      ],
       security: const SecuritySettingsConfigModel(
         internalApiToken: 'fullpos_internal_********************************',
         webhookSigningSecret: 'sign_********************************',
@@ -451,6 +519,7 @@ class BotConfigurationBundleModel {
   final OrchestratorConfigModel orchestrator;
   final List<PromptTemplateConfigModel> prompts;
   final List<InternalToolConfigModel> tools;
+  final List<KnowledgeDocumentConfigModel> documents;
   final SecuritySettingsConfigModel security;
 
   BotConfigurationBundle toEntity() {
@@ -462,6 +531,8 @@ class BotConfigurationBundleModel {
       orchestrator: orchestrator.toEntity(),
       prompts: prompts.map((item) => item.toEntity()).toList(growable: false),
       tools: tools.map((item) => item.toEntity()).toList(growable: false),
+      documents:
+          documents.map((item) => item.toEntity()).toList(growable: false),
       security: security.toEntity(),
     );
   }

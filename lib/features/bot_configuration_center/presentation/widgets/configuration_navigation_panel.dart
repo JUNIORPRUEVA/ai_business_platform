@@ -129,6 +129,8 @@ IconData _sectionIcon(BotConfigurationSection section) {
       return Icons.edit_note_rounded;
     case BotConfigurationSection.tools:
       return Icons.extension_outlined;
+    case BotConfigurationSection.documents:
+      return Icons.library_books_outlined;
     case BotConfigurationSection.security:
       return Icons.verified_user_outlined;
   }

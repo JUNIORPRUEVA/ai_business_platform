@@ -73,6 +73,68 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
   }
 
   @override
+  Future<BotMemoryItem> createMemory({
+    required String conversationId,
+    required String title,
+    required String content,
+    required BotMemoryType type,
+  }) async {
+    final model = await _resolve(
+      () => _remoteDataSource.createMemory(
+        conversationId: conversationId,
+        title: title,
+        content: content,
+        type: _memoryTypeToApi(type),
+      ),
+      fallback: () => throw const BotCenterApiException(
+        'La memoria manual requiere el backend real del Bot Center.',
+      ),
+    );
+
+    return model.toEntity();
+  }
+
+  @override
+  Future<BotMemoryItem> updateMemory({
+    required String conversationId,
+    required String memoryId,
+    required String title,
+    required String content,
+    required BotMemoryType type,
+  }) async {
+    final model = await _resolve(
+      () => _remoteDataSource.updateMemory(
+        conversationId: conversationId,
+        memoryId: memoryId,
+        title: title,
+        content: content,
+        type: _memoryTypeToApi(type),
+      ),
+      fallback: () => throw const BotCenterApiException(
+        'La edición de memoria requiere el backend real del Bot Center.',
+      ),
+    );
+
+    return model.toEntity();
+  }
+
+  @override
+  Future<void> deleteMemory({
+    required String conversationId,
+    required String memoryId,
+  }) async {
+    await _resolve(
+      () => _remoteDataSource.deleteMemory(
+        conversationId: conversationId,
+        memoryId: memoryId,
+      ),
+      fallback: () => throw const BotCenterApiException(
+        'La eliminación de memoria requiere el backend real del Bot Center.',
+      ),
+    );
+  }
+
+  @override
   Future<List<BotMessage>> getMessages(String conversationId) async {
     final models = await _resolve(
       () => _remoteDataSource.getMessages(conversationId),
@@ -168,6 +230,17 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
         return fallback();
       }
       rethrow;
+    }
+  }
+
+  String _memoryTypeToApi(BotMemoryType type) {
+    switch (type) {
+      case BotMemoryType.shortTerm:
+        return 'shortTerm';
+      case BotMemoryType.longTerm:
+        return 'longTerm';
+      case BotMemoryType.operational:
+        return 'operational';
     }
   }
 }
