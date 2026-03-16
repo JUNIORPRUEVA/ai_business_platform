@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../modules/auth/application/auth_providers.dart';
+import '../../../../modules/auth/data/auth_api_client.dart';
 
 class UserProfileDialog extends ConsumerStatefulWidget {
   const UserProfileDialog({super.key});
@@ -232,12 +233,11 @@ class _UserProfileDialogState extends ConsumerState<UserProfileDialog> {
         _errorMessage = error.message;
       });
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
       }
-      setState(() {
-        _isSaving = false;
-      });
     }
   }
 

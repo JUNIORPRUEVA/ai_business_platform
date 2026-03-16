@@ -92,10 +92,11 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
               child: SafeArea(
                 child: ExecutiveSidebar(
                   items: widget.items,
-                  selectedIndex: _selectedIndex,
+                  selectedIndex: selectedIndex,
                   isCollapsed: false,
                   onSelect: (index) {
-                    setState(() => _selectedIndex = index);
+                    ref.read(executiveSelectedIndexProvider.notifier).state =
+                        index;
                     Navigator.of(context).maybePop();
                   },
                   onToggleCollapse: () {},
@@ -232,9 +233,9 @@ class _ExecutiveBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
+    return const Positioned.fill(
       child: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -246,7 +247,7 @@ class _ExecutiveBackground extends StatelessWidget {
           ),
         ),
         child: Stack(
-          children: const [
+          children: [
             _RadialGlow(
               alignment: Alignment.topLeft,
               color: Color(0xFF38BDF8),

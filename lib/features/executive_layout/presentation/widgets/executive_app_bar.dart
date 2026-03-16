@@ -184,7 +184,14 @@ class _TenantSwitcherState extends ConsumerState<_TenantSwitcher> {
           onExit: (_) => setState(() => _isHovered = false),
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
-            onTap: controller.isOpen ? controller.close : controller.open,
+            onTap: () {
+              if (tenants.length == 1) {
+                ref.read(executiveSelectedIndexProvider.notifier).state =
+                    executiveSettingsIndex;
+                return;
+              }
+              controller.isOpen ? controller.close() : controller.open();
+            },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 160),
               curve: Curves.easeOutCubic,
@@ -456,7 +463,7 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
           child: Text(companyName),
           onPressed: () {
             ref.read(executiveSelectedIndexProvider.notifier).state =
-                executiveDashboardIndex;
+                executiveSettingsIndex;
           },
         ),
         MenuItemButton(

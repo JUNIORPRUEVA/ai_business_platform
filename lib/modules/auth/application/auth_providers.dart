@@ -190,7 +190,57 @@ class AuthController extends Notifier<AuthState> {
       );
     } on AuthApiException catch (error) {
       state = currentState.copyWith(errorMessage: error.message);
-      throw error;
+      rethrow;
+    }
+  }
+
+  Future<void> updateCompany({
+    required String name,
+    String? phone,
+    String? email,
+    String? website,
+    String? taxId,
+    String? addressLine1,
+    String? addressLine2,
+    String? city,
+    String? state,
+    String? country,
+    String? postalCode,
+    String? description,
+  }) async {
+    final token = await _tokenStore.read();
+    if (token == null || token.trim().isEmpty) {
+      await logout();
+      throw const AuthApiException('Tu sesión expiró. Inicia sesión otra vez.');
+    }
+
+    final currentState = state;
+
+    try {
+      final session = await _apiClient.updateCompany(
+        token: token,
+        name: name,
+        phone: phone,
+        email: email,
+        website: website,
+        taxId: taxId,
+        addressLine1: addressLine1,
+        addressLine2: addressLine2,
+        city: city,
+        state: state,
+        country: country,
+        postalCode: postalCode,
+        description: description,
+      );
+
+      state = currentState.copyWith(
+        status: AuthStatus.authenticated,
+        session: session,
+        clearErrorMessage: true,
+      );
+    } on AuthApiException catch (error) {
+      state = currentState.copyWith(errorMessage: error.message);
+      rethrow;
     }
   }
 }

@@ -124,6 +124,45 @@ class AuthApiClient {
     return getSession(token);
   }
 
+  Future<AuthSession> updateCompany({
+    required String token,
+    required String name,
+    String? phone,
+    String? email,
+    String? website,
+    String? taxId,
+    String? addressLine1,
+    String? addressLine2,
+    String? city,
+    String? state,
+    String? country,
+    String? postalCode,
+    String? description,
+  }) async {
+    await _send(
+      () => _client.patch(
+        _buildUri('/companies/me'),
+        headers: _authorizedHeaders(token),
+        body: jsonEncode({
+          'name': name,
+          'phone': _normalizeOptional(phone),
+          'email': _normalizeOptional(email),
+          'website': _normalizeOptional(website),
+          'taxId': _normalizeOptional(taxId),
+          'addressLine1': _normalizeOptional(addressLine1),
+          'addressLine2': _normalizeOptional(addressLine2),
+          'city': _normalizeOptional(city),
+          'state': _normalizeOptional(state),
+          'country': _normalizeOptional(country),
+          'postalCode': _normalizeOptional(postalCode),
+          'description': _normalizeOptional(description),
+        }),
+      ),
+    );
+
+    return getSession(token);
+  }
+
   Future<String> uploadAvatar({
     required String token,
     required Uint8List bytes,
@@ -223,6 +262,14 @@ class AuthApiClient {
       }
     }
     return null;
+  }
+
+  String? _normalizeOptional(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed;
   }
 
   Future<String?> _resolveAvatarUrl(String token, String? avatarKey) async {
