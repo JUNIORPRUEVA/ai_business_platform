@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../../core/config/app_backend_config.dart';
 import '../domain/auth_session.dart';
 
 class AuthApiException implements Exception {
@@ -21,11 +22,10 @@ class AuthApiClient {
     String? baseUrl,
     Duration timeout = const Duration(seconds: 20),
   })  : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ??
-            const String.fromEnvironment(
-              'APP_BACKEND_URL',
-              defaultValue: 'http://localhost:3001',
-            ),
+        _baseUrl = resolveBackendUrl(
+          preferred: baseUrl,
+          fallback: const String.fromEnvironment('APP_BACKEND_URL'),
+        ),
         _timeout = timeout;
 
   final http.Client _client;

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -10,6 +10,8 @@ import { ChannelEntity } from './entities/channel.entity';
 
 @Injectable()
 export class ChannelsService {
+  private readonly logger = new Logger(ChannelsService.name);
+
   constructor(
     @InjectRepository(ChannelEntity)
     private readonly channelsRepository: Repository<ChannelEntity>,
@@ -61,11 +63,27 @@ export class ChannelsService {
           url: this.evolutionService.buildWebhookUrl(saved.id),
           events: ['messages.upsert'],
         });
+
+        saved.config = {
+          ...saved.config,
+          evolutionProvisioningStatus: 'ready',
+        };
       } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown Evolution error.';
+
+        this.logger.warn(
+          `Skipping Evolution provisioning for channel ${saved.id}: ${message}`,
+        );
+
         saved.connectionStatus = 'disconnected';
-        await this.channelsRepository.save(saved);
-        throw error;
+        saved.config = {
+          ...saved.config,
+          evolutionProvisioningStatus: 'failed',
+          evolutionProvisioningError: message,
+        };
       }
+
+      await this.channelsRepository.save(saved);
     }
 
     return saved;

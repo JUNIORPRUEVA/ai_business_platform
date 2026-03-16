@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { DataSource } from 'typeorm';
@@ -33,6 +34,8 @@ export type ProvisionedCompany = {
 
 @Injectable()
 export class ProvisioningService {
+  private readonly logger = new Logger(ProvisioningService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly evolutionService: EvolutionService,
@@ -145,21 +148,46 @@ export class ProvisioningService {
         name: 'WhatsApp principal',
         status: 'pending_connection',
         connectionStatus: 'connecting',
-        config: {},
+        config: {
+          autoProvisioned: true,
+        },
       });
       channel.instanceName = `company_${company.id}_main`;
-      const savedChannel = await channelsRepo.save(channel);
+      let savedChannel = await channelsRepo.save(channel);
 
-      await this.evolutionService.createInstance({
-        instanceName: savedChannel.instanceName!,
-        qrcode: true,
-      });
+      try {
+        await this.evolutionService.createInstance({
+          instanceName: savedChannel.instanceName!,
+          qrcode: true,
+        });
 
-      await this.evolutionService.setWebhook({
-        instanceName: savedChannel.instanceName!,
-        url: this.evolutionService.buildWebhookUrl(savedChannel.id),
-        events: ['messages.upsert'],
-      });
+        await this.evolutionService.setWebhook({
+          instanceName: savedChannel.instanceName!,
+          url: this.evolutionService.buildWebhookUrl(savedChannel.id),
+          events: ['messages.upsert'],
+        });
+
+        savedChannel.connectionStatus = 'connecting';
+        savedChannel.config = {
+          ...savedChannel.config,
+          evolutionProvisioningStatus: 'ready',
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown Evolution error.';
+
+        this.logger.warn(
+          `Skipping Evolution provisioning for company ${company.id}: ${message}`,
+        );
+
+        savedChannel.connectionStatus = 'disconnected';
+        savedChannel.config = {
+          ...savedChannel.config,
+          evolutionProvisioningStatus: 'failed',
+          evolutionProvisioningError: message,
+        };
+      }
+
+      savedChannel = await channelsRepo.save(savedChannel);
 
       const demoContact = await contactsRepo.save(
         contactsRepo.create({

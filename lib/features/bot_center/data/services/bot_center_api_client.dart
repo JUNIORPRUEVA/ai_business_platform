@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../../../core/config/app_backend_config.dart';
+
 class BotCenterApiException implements Exception {
   const BotCenterApiException(this.message, {this.statusCode});
 
@@ -19,9 +21,10 @@ class BotCenterApiClient {
     String? baseUrl,
     Duration timeout = const Duration(seconds: 15),
   })  : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ??
-            const String.fromEnvironment('BOT_CENTER_API_BASE_URL',
-                defaultValue: ''),
+        _baseUrl = resolveBackendUrl(
+          preferred: baseUrl,
+          fallback: const String.fromEnvironment('BOT_CENTER_API_BASE_URL'),
+        ),
         _timeout = timeout;
 
   final http.Client _client;
@@ -78,12 +81,6 @@ class BotCenterApiClient {
       };
 
   Uri _buildUri(String path, [Map<String, String>? queryParameters]) {
-    if (_baseUrl.trim().isEmpty) {
-      throw const BotCenterApiException(
-        'BOT_CENTER_API_BASE_URL is not configured. Set it with --dart-define before using the live API.',
-      );
-    }
-
     final normalizedBase = _baseUrl.endsWith('/')
         ? _baseUrl.substring(0, _baseUrl.length - 1)
         : _baseUrl;
