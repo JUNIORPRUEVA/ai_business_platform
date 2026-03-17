@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './common/database/database.module';
 import { HealthController } from './common/health/health.controller';
 import { EvolutionWebhookModule } from './modules/evolution-webhook/evolution-webhook.module';
+import { WhatsappInstancesModule } from './modules/whatsapp-instances/whatsapp-instances.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AutomationsModule } from './modules/automations/automations.module';
 import { BotsModule } from './modules/bots/bots.module';
@@ -48,6 +49,7 @@ import { AiBrainModule } from './modules/ai_brain/ai-brain.module';
     AiBrainModule,
     WorkersModule,
     EvolutionWebhookModule,
+    WhatsappInstancesModule,
     BotCenterModule,
   ],
   controllers: [HealthController],

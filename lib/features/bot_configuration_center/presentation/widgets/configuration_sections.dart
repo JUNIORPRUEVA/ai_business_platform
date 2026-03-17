@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../domain/entities/bot_configuration_section.dart';
 import '../controllers/bot_configuration_center_controller.dart';
@@ -150,6 +151,84 @@ class EvolutionApiSettingsSection extends StatelessWidget {
                     Text(
                       'Provisionamiento: ${controller.bundle.evolutionApi.provisioningStatus}',
                     ),
+                    if (controller.evolutionQrImageBytes != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Escanea este codigo QR con WhatsApp',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 10),
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
+                            ),
+                          ),
+                          child: Image.memory(
+                            controller.evolutionQrImageBytes!,
+                            width: 220,
+                            height: 220,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if ((controller.evolutionPairingCode ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Codigo de pareado',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outlineVariant,
+                          ),
+                        ),
+                        child: SelectableText(
+                          controller.evolutionPairingCode!,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    letterSpacing: 1.2,
+                                  ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Clipboard.setData(
+                                ClipboardData(
+                                  text: controller.evolutionPairingCode!,
+                                ),
+                              );
+                              controller.dismissBanners();
+                            },
+                            icon: const Icon(Icons.copy_rounded),
+                            label: const Text('Copiar codigo'),
+                          ),
+                        ],
+                      ),
+                    ],
                     if ((controller.bundle.evolutionApi.provisioningError ?? '')
                         .trim()
                         .isNotEmpty) ...[
@@ -164,7 +243,7 @@ class EvolutionApiSettingsSection extends StatelessWidget {
                     if ((controller.evolutionQrPayloadPreview ?? '').trim().isNotEmpty) ...[
                       const SizedBox(height: 12),
                       Text(
-                        'Respuesta QR / pairing',
+                        'Respuesta tecnica de Evolution',
                         style: Theme.of(context).textTheme.labelLarge,
                       ),
                       const SizedBox(height: 8),

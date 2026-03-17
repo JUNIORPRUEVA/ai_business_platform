@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -77,6 +78,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
   String? _errorMessage;
   String? _successMessage;
   String? _evolutionQrPayloadPreview;
+  Uint8List? _evolutionQrImageBytes;
+  String? _evolutionPairingCode;
 
   BotConfigurationBundle get bundle => _bundle;
   BotConfigurationSection get selectedSection => _selectedSection;
@@ -95,6 +98,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String? get successMessage => _successMessage;
   String? get evolutionQrPayloadPreview => _evolutionQrPayloadPreview;
+  Uint8List? get evolutionQrImageBytes => _evolutionQrImageBytes;
+  String? get evolutionPairingCode => _evolutionPairingCode;
 
   List<String> get availableLanguages => const <String>[
         'pt-BR',
@@ -180,6 +185,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
       _selectedDocumentIndex = 0;
       _applyBundleToControllers();
       _evolutionQrPayloadPreview = null;
+      _evolutionQrImageBytes = null;
+      _evolutionPairingCode = null;
       await _persistLocalBundle();
     } on BotConfigurationCenterApiException catch (error) {
       _errorMessage = error.message;
@@ -1062,13 +1069,139 @@ class BotConfigurationCenterController extends ChangeNotifier {
     final qrCode = response['qrCode'];
     if (qrCode == null) {
       _evolutionQrPayloadPreview = null;
+      _evolutionQrImageBytes = null;
+      _evolutionPairingCode = null;
     } else if (qrCode is String) {
-      _evolutionQrPayloadPreview = qrCode;
+      _evolutionQrImageBytes = _tryDecodeQrImage(qrCode);
+      _evolutionPairingCode = null;
+      _evolutionQrPayloadPreview =
+          _evolutionQrImageBytes == null ? qrCode : null;
     } else {
-      _evolutionQrPayloadPreview = const JsonEncoder.withIndent('  ').convert(qrCode);
+      _evolutionQrImageBytes = _extractQrImageBytes(qrCode);
+      _evolutionPairingCode = _extractPairingCode(qrCode);
+      _evolutionQrPayloadPreview = const JsonEncoder.withIndent('  ').convert(
+        _sanitizeEvolutionQrPayload(qrCode),
+      );
     }
 
     _applyBundleToControllers();
+  }
+
+  Uint8List? _extractQrImageBytes(dynamic qrCode) {
+    if (qrCode is Map) {
+      final candidates = <dynamic>[
+        qrCode['base64'],
+        qrCode['qrcode'],
+        qrCode['qrCode'],
+        qrCode['code'],
+        qrCode['image'],
+        (qrCode['data'] is Map) ? (qrCode['data'] as Map)['base64'] : null,
+        (qrCode['data'] is Map) ? (qrCode['data'] as Map)['qrcode'] : null,
+        (qrCode['data'] is Map) ? (qrCode['data'] as Map)['qrCode'] : null,
+        (qrCode['qrcode'] is Map) ? (qrCode['qrcode'] as Map)['base64'] : null,
+        (qrCode['qrCode'] is Map) ? (qrCode['qrCode'] as Map)['base64'] : null,
+      ];
+
+      for (final candidate in candidates) {
+        final bytes = _tryDecodeQrImage(candidate);
+        if (bytes != null) {
+          return bytes;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String? _extractPairingCode(dynamic qrCode) {
+    if (qrCode is! Map) {
+      return null;
+    }
+
+    final candidates = <dynamic>[
+      qrCode['pairingCode'],
+      qrCode['code'],
+      qrCode['pairing'],
+      (qrCode['data'] is Map) ? (qrCode['data'] as Map)['pairingCode'] : null,
+      (qrCode['data'] is Map) ? (qrCode['data'] as Map)['code'] : null,
+      (qrCode['qrcode'] is Map) ? (qrCode['qrcode'] as Map)['pairingCode'] : null,
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        final normalized = candidate.trim();
+        if (!_looksLikeBase64Image(normalized)) {
+          return normalized;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  Uint8List? _tryDecodeQrImage(dynamic value) {
+    if (value is! String) {
+      return null;
+    }
+
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    final normalized = trimmed.startsWith('data:image')
+        ? trimmed.substring(trimmed.indexOf(',') + 1)
+        : trimmed;
+
+    if (!_looksLikeBase64Image(normalized)) {
+      return null;
+    }
+
+    try {
+      return base64Decode(normalized);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _looksLikeBase64Image(String value) {
+    if (value.length < 100) {
+      return false;
+    }
+
+    return RegExp(r'^[A-Za-z0-9+/=\r\n]+$').hasMatch(value);
+  }
+
+  dynamic _sanitizeEvolutionQrPayload(dynamic value) {
+    if (value is Map) {
+      return value.map(
+        (key, raw) => MapEntry(
+          key,
+          _shouldMaskQrField(key.toString(), raw)
+              ? '<qr-image-hidden>'
+              : _sanitizeEvolutionQrPayload(raw),
+        ),
+      );
+    }
+
+    if (value is List) {
+      return value.map(_sanitizeEvolutionQrPayload).toList(growable: false);
+    }
+
+    return value;
+  }
+
+  bool _shouldMaskQrField(String key, dynamic value) {
+    final normalizedKey = key.toLowerCase();
+    if (value is! String) {
+      return false;
+    }
+
+    if (!['base64', 'qrcode', 'qr_code', 'image'].contains(normalizedKey)) {
+      return false;
+    }
+
+    return _tryDecodeQrImage(value) != null;
   }
 
   @override

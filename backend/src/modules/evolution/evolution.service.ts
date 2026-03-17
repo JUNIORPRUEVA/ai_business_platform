@@ -88,6 +88,41 @@ export class EvolutionService {
     });
   }
 
+  /**
+   * Compat helper: some Evolution versions expose QR via GET /instance/connect/{instanceName}
+   * instead of /instance/qrcode/{instanceName}.
+   */
+  async getQRCode(instanceName: string): Promise<unknown> {
+    try {
+      return await this.requestJson(
+        `/instance/connect/${encodeURIComponent(instanceName)}`,
+        { method: 'GET' },
+      );
+    } catch {
+      return this.getQrCode(instanceName);
+    }
+  }
+
+  /**
+   * Compat helper: some Evolution versions expose connection state via
+   * GET /instance/connectionState/{instanceName}.
+   */
+  async checkConnection(instanceName: string): Promise<{
+    status: EvolutionInstanceConnectionStatus;
+    raw: unknown;
+  }> {
+    try {
+      const raw = await this.requestJson<unknown>(
+        `/instance/connectionState/${encodeURIComponent(instanceName)}`,
+        { method: 'GET' },
+      );
+      const status = this.normalizeStatus(raw);
+      return { status, raw };
+    } catch {
+      return this.getInstanceStatus(instanceName);
+    }
+  }
+
   async setWebhook(params: {
     instanceName: string;
     url: string;
@@ -122,10 +157,17 @@ export class EvolutionService {
   }
 
   async logoutInstance(instanceName: string): Promise<unknown> {
-    return this.requestJson(`/instance/logout/${encodeURIComponent(instanceName)}`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
+    try {
+      return await this.requestJson(
+        `/instance/logout/${encodeURIComponent(instanceName)}`,
+        { method: 'DELETE' },
+      );
+    } catch {
+      return this.requestJson(`/instance/logout/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    }
   }
 
   async sendMessage(params: {
