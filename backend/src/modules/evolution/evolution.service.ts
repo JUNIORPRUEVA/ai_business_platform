@@ -35,14 +35,23 @@ export class EvolutionService {
 
     const url = `${settings.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
 
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: settings.apiKey,
-        ...(init.headers ?? {}),
-      },
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: settings.apiKey,
+          ...(init.headers ?? {}),
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown fetch error';
+      this.logger.error(`Evolution API network error: ${url} :: ${message}`);
+      throw new ServiceUnavailableException(
+        `No se pudo conectar con Evolution API en ${settings.baseUrl}.`,
+      );
+    }
 
     const text = await res.text().catch(() => '');
 
@@ -79,11 +88,17 @@ export class EvolutionService {
     instanceName: string;
     qrcode: boolean;
   }): Promise<unknown> {
+    const integration =
+      (this.configService.get<string>('EVOLUTION_INSTANCE_INTEGRATION') ??
+        'WHATSAPP-BAILEYS')
+        .trim() || 'WHATSAPP-BAILEYS';
+
     return this.requestJson('/instance/create', {
       method: 'POST',
       body: JSON.stringify({
         instanceName: params.instanceName,
         qrcode: params.qrcode,
+        integration,
       }),
     });
   }
