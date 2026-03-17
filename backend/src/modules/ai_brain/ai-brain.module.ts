@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AiEngineModule } from '../ai-engine/ai-engine.module';
+import { BillingModule } from '../billing/billing.module';
 import { BotsModule } from '../bots/bots.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { CompaniesModule } from '../companies/companies.module';
@@ -34,6 +35,7 @@ import { AiBrainToolRouterService } from './services/ai-brain-tool-router.servic
       ContactEntity,
       ToolEntity,
     ]),
+    BillingModule,
     AiEngineModule,
     CompaniesModule,
     ChannelsModule,
