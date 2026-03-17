@@ -1,4 +1,6 @@
-const String kDefaultBackendUrl =
+import 'package:flutter/foundation.dart';
+
+const String kDefaultHostedBackendUrl =
     'https://ai-business-platform-backend-ia.onqyr1.easypanel.host';
 
 String resolveBackendUrl({
@@ -15,5 +17,9 @@ String resolveBackendUrl({
     return normalizedFallback;
   }
 
-  return kDefaultBackendUrl;
+  if (kIsWeb) {
+    return kDefaultHostedBackendUrl;
+  }
+
+  return kDefaultHostedBackendUrl;
 }

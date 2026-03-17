@@ -248,6 +248,11 @@ class AuthApiClient {
   }
 
   String? _extractError(String source) {
+    final trimmed = source.trimLeft();
+    if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html')) {
+      return 'El backend devolvio una pagina HTML en lugar de JSON. Verifica que APP_BACKEND_URL apunte al API correcto y que el backend este encendido.';
+    }
+
     try {
       final decoded = jsonDecode(source);
       if (decoded is Map<String, dynamic>) {

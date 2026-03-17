@@ -203,6 +203,11 @@ class BotConfigurationCenterApiClient {
   }
 
   String? _extractError(String source) {
+    final trimmed = source.trimLeft();
+    if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html')) {
+      return 'El backend devolvio HTML en lugar de JSON. Revisa la URL del backend y confirma que el API este disponible.';
+    }
+
     try {
       final decoded = jsonDecode(source);
       if (decoded is Map<String, dynamic>) {

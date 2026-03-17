@@ -26,7 +26,7 @@ import { AiBrainModule } from './modules/ai_brain/ai-brain.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env/backend.env', '../.env/backend.env', '.env', '../.env'],
+      envFilePath: ['.env/backend.env', '../.env/backend.env'],
     }),
     DatabaseModule,
     AuthModule,
