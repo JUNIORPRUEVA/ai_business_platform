@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../modules/auth/data/auth_token_store.dart';
 import '../../data/models/bot_configuration_models.dart';
@@ -8,6 +11,8 @@ import '../../domain/entities/bot_configuration_bundle.dart';
 import '../../domain/entities/bot_configuration_section.dart';
 
 class BotConfigurationCenterController extends ChangeNotifier {
+  static const _localBundleKey = 'bot_configuration_center_bundle_v1';
+
   BotConfigurationCenterController({
     BotConfigurationCenterApiClient? apiClient,
     AuthTokenStore? tokenStore,
@@ -31,6 +36,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
         securityInternalApiTokenController = TextEditingController(),
         securityWebhookSigningSecretController = TextEditingController() {
     _applyBundleToControllers();
+      _attachDraftListeners();
   }
 
   final BotConfigurationCenterApiClient _apiClient;
@@ -64,9 +70,13 @@ class BotConfigurationCenterController extends ChangeNotifier {
   bool _isTesting = false;
   bool _isLoading = false;
   bool _isUploadingDocument = false;
+  bool _isProvisioningEvolution = false;
+  bool _isRefreshingEvolution = false;
+  bool _isApplyingBundleToControllers = false;
   BotConfigurationSection? _activeSaveSection;
   String? _errorMessage;
   String? _successMessage;
+  String? _evolutionQrPayloadPreview;
 
   BotConfigurationBundle get bundle => _bundle;
   BotConfigurationSection get selectedSection => _selectedSection;
@@ -79,9 +89,12 @@ class BotConfigurationCenterController extends ChangeNotifier {
   bool get isTesting => _isTesting;
   bool get isLoading => _isLoading;
   bool get isUploadingDocument => _isUploadingDocument;
+  bool get isProvisioningEvolution => _isProvisioningEvolution;
+  bool get isRefreshingEvolution => _isRefreshingEvolution;
   BotConfigurationSection? get activeSaveSection => _activeSaveSection;
   String? get errorMessage => _errorMessage;
   String? get successMessage => _successMessage;
+  String? get evolutionQrPayloadPreview => _evolutionQrPayloadPreview;
 
   List<String> get availableLanguages => const <String>[
         'pt-BR',
@@ -136,6 +149,15 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    final localBundle = await _readLocalBundle();
+    if (localBundle != null) {
+      _bundle = localBundle;
+      _selectedPromptIndex = 0;
+      _selectedDocumentIndex = 0;
+      _applyBundleToControllers();
+      notifyListeners();
+    }
+
     try {
       final token = await _requireToken();
       final configuration =
@@ -149,13 +171,16 @@ class BotConfigurationCenterController extends ChangeNotifier {
         documents = const <dynamic>[];
       }
 
-      _bundle = BotConfigurationBundleModel.fromBackendJson(
+      final remoteBundle = BotConfigurationBundleModel.fromBackendJson(
         configuration,
         documents: documents,
       ).toEntity();
+      _bundle = localBundle ?? remoteBundle;
       _selectedPromptIndex = 0;
       _selectedDocumentIndex = 0;
       _applyBundleToControllers();
+      _evolutionQrPayloadPreview = null;
+      await _persistLocalBundle();
     } on BotConfigurationCenterApiException catch (error) {
       _errorMessage = error.message;
     } catch (error) {
@@ -196,6 +221,10 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     _selectedLanguage = value;
+    _bundle = _bundle.copyWith(
+      general: _bundle.general.copyWith(defaultLanguage: value),
+    );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -205,6 +234,10 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     _selectedOpenAiModel = value;
+    _bundle = _bundle.copyWith(
+      openAi: _bundle.openAi.copyWith(model: value),
+    );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -214,6 +247,10 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     _selectedAutonomyLevel = value;
+    _bundle = _bundle.copyWith(
+      orchestrator: _bundle.orchestrator.copyWith(autonomyLevel: value),
+    );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -223,6 +260,10 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     _selectedFallbackStrategy = value;
+    _bundle = _bundle.copyWith(
+      orchestrator: _bundle.orchestrator.copyWith(fallbackStrategy: value),
+    );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -230,6 +271,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       general: _bundle.general.copyWith(isEnabled: value),
     );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -237,6 +279,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       evolutionApi: _bundle.evolutionApi.copyWith(isEnabled: value),
     );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -244,6 +287,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       openAi: _bundle.openAi.copyWith(isEnabled: value),
     );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -269,6 +313,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
         usePostgreSql: usePostgreSql ?? _bundle.memory.usePostgreSql,
       ),
     );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -295,6 +340,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
                 _bundle.orchestrator.requireConfirmationForCriticalActions,
       ),
     );
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -307,6 +353,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
     updatedPrompts[_selectedPromptIndex] =
         updatedPrompts[_selectedPromptIndex].copyWith(content: value);
     _bundle = _bundle.copyWith(prompts: updatedPrompts);
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -317,6 +364,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
         )
         .toList(growable: false);
     _bundle = _bundle.copyWith(tools: updatedTools);
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -329,6 +377,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
         )
         .toList(growable: false);
     _bundle = _bundle.copyWith(documents: updatedDocuments);
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -341,6 +390,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
         )
         .toList(growable: false);
     _bundle = _bundle.copyWith(documents: updatedDocuments);
+    _persistLocalBundle();
     notifyListeners();
   }
 
@@ -405,6 +455,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
       _errorMessage = error.toString();
     } finally {
       _isUploadingDocument = false;
+      _persistLocalBundle();
       notifyListeners();
     }
   }
@@ -433,6 +484,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
       _errorMessage = error.toString();
     } finally {
       _isUploadingDocument = false;
+      _persistLocalBundle();
       notifyListeners();
     }
   }
@@ -444,10 +496,16 @@ class BotConfigurationCenterController extends ChangeNotifier {
         auditLog: auditLog ?? _bundle.security.auditLog,
       ),
     );
+    _persistLocalBundle();
     notifyListeners();
   }
 
   Future<void> testConnection(BotConfigurationSection section) async {
+    if (section == BotConfigurationSection.evolutionApi) {
+      await refreshEvolutionConnection();
+      return;
+    }
+
     _clearBanners();
     _isTesting = true;
     notifyListeners();
@@ -487,18 +545,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
           );
           break;
         case BotConfigurationSection.evolutionApi:
-          await _apiClient.putJson(
-            '/bot-configuration/evolution',
-            {
-              'baseUrl': _bundle.evolutionApi.baseUrl,
-              'instanceName': _bundle.evolutionApi.instanceName,
-              'apiKey': _bundle.evolutionApi.apiKey,
-              'webhookSecret': _bundle.evolutionApi.webhookSecret,
-              'connectedNumber': _bundle.evolutionApi.connectedNumber,
-              'isEnabled': _bundle.evolutionApi.isEnabled,
-            },
-            token: token,
-          );
+          await _saveEvolutionSettings(token);
           break;
         case BotConfigurationSection.openAi:
           await _apiClient.putJson(
@@ -603,6 +650,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
           break;
       }
 
+      await _persistLocalBundle();
       await load();
       _successMessage =
           'Configuración de ${section.label} guardada correctamente.';
@@ -612,6 +660,58 @@ class BotConfigurationCenterController extends ChangeNotifier {
       _errorMessage = error.toString();
     } finally {
       _activeSaveSection = null;
+      notifyListeners();
+    }
+  }
+
+  Future<void> provisionEvolutionInstance() async {
+    _clearBanners();
+    _isProvisioningEvolution = true;
+    _syncDraftsIntoState();
+    notifyListeners();
+
+    try {
+      final token = await _requireToken();
+      await _saveEvolutionSettings(token);
+      final response = await _apiClient.postJson(
+        '/bot-configuration/evolution/provision',
+        const <String, dynamic>{},
+        token: token,
+      );
+      _applyEvolutionConnectionResponse(response);
+      await _persistLocalBundle();
+      _successMessage =
+          'Instancia de Evolution creada y vinculada al bot correctamente.';
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isProvisioningEvolution = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshEvolutionConnection() async {
+    _clearBanners();
+    _isRefreshingEvolution = true;
+    notifyListeners();
+
+    try {
+      final token = await _requireToken();
+      final response = await _apiClient.getJson(
+        '/bot-configuration/evolution/connection',
+        token: token,
+      );
+      _applyEvolutionConnectionResponse(response);
+      await _persistLocalBundle();
+      _successMessage = 'Estado de Evolution actualizado correctamente.';
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isRefreshingEvolution = false;
       notifyListeners();
     }
   }
@@ -664,9 +764,11 @@ class BotConfigurationCenterController extends ChangeNotifier {
             securityWebhookSigningSecretController.text.trim(),
       ),
     );
+    _persistLocalBundle();
   }
 
   void _applyBundleToControllers() {
+    _isApplyingBundleToControllers = true;
     generalBotNameController.text = _bundle.general.botName;
     generalEnvironmentController.text = _bundle.general.environmentLabel;
     evolutionBaseUrlController.text = _bundle.evolutionApi.baseUrl;
@@ -691,6 +793,49 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _selectedOpenAiModel = _bundle.openAi.model;
     _selectedAutonomyLevel = _bundle.orchestrator.autonomyLevel;
     _selectedFallbackStrategy = _bundle.orchestrator.fallbackStrategy;
+    _isApplyingBundleToControllers = false;
+  }
+
+  void _attachDraftListeners() {
+    final draftControllers = <TextEditingController>[
+      generalBotNameController,
+      generalEnvironmentController,
+      evolutionBaseUrlController,
+      evolutionInstanceController,
+      evolutionApiKeyController,
+      evolutionWebhookSecretController,
+      evolutionConnectedNumberController,
+      openAiApiKeyController,
+      openAiTemperatureController,
+      openAiMaxTokensController,
+      openAiSystemPromptPreviewController,
+      memoryWindowSizeController,
+      memoryTtlController,
+      securityInternalApiTokenController,
+      securityWebhookSigningSecretController,
+    ];
+
+    for (final controller in draftControllers) {
+      controller.addListener(_handleDraftControllerChanged);
+    }
+
+    promptContentController.addListener(_handlePromptDraftChanged);
+  }
+
+  void _handleDraftControllerChanged() {
+    if (_isApplyingBundleToControllers) {
+      return;
+    }
+
+    _syncDraftsIntoState();
+  }
+
+  void _handlePromptDraftChanged() {
+    if (_isApplyingBundleToControllers) {
+      return;
+    }
+
+    updatePromptContent(promptContentController.text);
   }
 
   void _clearBanners() {
@@ -758,6 +903,172 @@ class BotConfigurationCenterController extends ChangeNotifier {
       return 'faq';
     }
     return 'document';
+  }
+
+  Future<void> _persistLocalBundle() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(_localBundleKey, _encodeLocalBundle());
+  }
+
+  Future<BotConfigurationBundle?> _readLocalBundle() async {
+    final preferences = await SharedPreferences.getInstance();
+    final raw = preferences.getString(_localBundleKey);
+    if (raw == null || raw.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+
+      return BotConfigurationBundleModel.fromBackendJson(
+        decoded,
+        documents: decoded['documents'] is List<dynamic>
+            ? decoded['documents'] as List<dynamic>
+            : const <dynamic>[],
+      ).toEntity();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _encodeLocalBundle() {
+    return jsonEncode({
+      'general': {
+        'botName': _bundle.general.botName,
+        'defaultLanguage': _bundle.general.defaultLanguage,
+        'isEnabled': _bundle.general.isEnabled,
+        'environmentLabel': _bundle.general.environmentLabel,
+      },
+      'evolution': {
+        'baseUrl': _bundle.evolutionApi.baseUrl,
+        'instanceName': _bundle.evolutionApi.instanceName,
+        'apiKey': _bundle.evolutionApi.apiKey,
+        'webhookSecret': _bundle.evolutionApi.webhookSecret,
+        'connectedNumber': _bundle.evolutionApi.connectedNumber,
+        'channelId': _bundle.evolutionApi.channelId,
+        'connectionStatus': _bundle.evolutionApi.connectionStatus,
+        'provisioningStatus': _bundle.evolutionApi.provisioningStatus,
+        'provisioningError': _bundle.evolutionApi.provisioningError,
+        'isEnabled': _bundle.evolutionApi.isEnabled,
+      },
+      'openai': {
+        'apiKey': _bundle.openAi.apiKey,
+        'model': _bundle.openAi.model,
+        'temperature': _bundle.openAi.temperature,
+        'maxTokens': _bundle.openAi.maxTokens,
+        'isEnabled': _bundle.openAi.isEnabled,
+        'systemPromptPreview': _bundle.openAi.systemPromptPreview,
+      },
+      'memory': {
+        'enableShortTermMemory': _bundle.memory.enableShortTermMemory,
+        'enableLongTermMemory': _bundle.memory.enableLongTermMemory,
+        'enableOperationalMemory': _bundle.memory.enableOperationalMemory,
+        'recentMessageWindowSize': _bundle.memory.recentMessageWindowSize,
+        'automaticSummarization': _bundle.memory.automaticSummarization,
+        'memoryTtl': _bundle.memory.memoryTtl,
+        'useRedis': _bundle.memory.useRedis,
+        'usePostgreSql': _bundle.memory.usePostgreSql,
+      },
+      'orchestrator': {
+        'automaticMode': _bundle.orchestrator.automaticMode,
+        'assistedMode': _bundle.orchestrator.assistedMode,
+        'enableRoleDetection': _bundle.orchestrator.enableRoleDetection,
+        'enableIntentClassification':
+            _bundle.orchestrator.enableIntentClassification,
+        'enableToolExecution': _bundle.orchestrator.enableToolExecution,
+        'requireConfirmationForCriticalActions':
+            _bundle.orchestrator.requireConfirmationForCriticalActions,
+        'autonomyLevel': _mapAutonomyLevelToBackend(
+          _bundle.orchestrator.autonomyLevel,
+        ),
+        'fallbackStrategy': _bundle.orchestrator.fallbackStrategy,
+      },
+      'prompts': _bundle.prompts
+          .map(
+            (prompt) => {
+              'id': prompt.id,
+              'title': prompt.title,
+              'description': prompt.description,
+              'content': prompt.content,
+              'updatedAt': prompt.updatedAt.toIso8601String(),
+            },
+          )
+          .toList(growable: false),
+      'tools': _bundle.tools
+          .map(
+            (tool) => {
+              'id': tool.id,
+              'name': tool.name,
+              'description': tool.description,
+              'category': tool.category,
+              'isEnabled': tool.isEnabled,
+            },
+          )
+          .toList(growable: false),
+      'documents': _bundle.documents
+          .map(
+            (document) => {
+              'id': document.id,
+              'name': document.name,
+              'summary': document.summary,
+              'status': document.status,
+              'kind': document.kind,
+              'sizeLabel': document.sizeLabel,
+              'isEnabled': document.isEnabled,
+            },
+          )
+          .toList(growable: false),
+      'security': {
+        'internalApiToken': _bundle.security.internalApiToken,
+        'webhookSigningSecret': _bundle.security.webhookSigningSecret,
+        'encryptSecrets': _bundle.security.encryptSecrets,
+        'auditLog': _bundle.security.auditLog,
+      },
+    });
+  }
+
+  Future<void> _saveEvolutionSettings(String token) {
+    return _apiClient.putJson(
+      '/bot-configuration/evolution',
+      {
+        'baseUrl': _bundle.evolutionApi.baseUrl,
+        'instanceName': _bundle.evolutionApi.instanceName,
+        'apiKey': _bundle.evolutionApi.apiKey,
+        'webhookSecret': _bundle.evolutionApi.webhookSecret,
+        'connectedNumber': _bundle.evolutionApi.connectedNumber,
+        'isEnabled': _bundle.evolutionApi.isEnabled,
+      },
+      token: token,
+    );
+  }
+
+  void _applyEvolutionConnectionResponse(Map<String, dynamic> response) {
+    _bundle = _bundle.copyWith(
+      evolutionApi: _bundle.evolutionApi.copyWith(
+        channelId: response['channelId'] as String?,
+        instanceName:
+            response['instanceName'] as String? ?? _bundle.evolutionApi.instanceName,
+        connectionStatus: response['connectionStatus'] as String? ??
+            _bundle.evolutionApi.connectionStatus,
+        provisioningStatus: response['provisioningStatus'] as String? ??
+            _bundle.evolutionApi.provisioningStatus,
+        provisioningError: response['provisioningError'] as String?,
+      ),
+    );
+
+    final qrCode = response['qrCode'];
+    if (qrCode == null) {
+      _evolutionQrPayloadPreview = null;
+    } else if (qrCode is String) {
+      _evolutionQrPayloadPreview = qrCode;
+    } else {
+      _evolutionQrPayloadPreview = const JsonEncoder.withIndent('  ').convert(qrCode);
+    }
+
+    _applyBundleToControllers();
   }
 
   @override

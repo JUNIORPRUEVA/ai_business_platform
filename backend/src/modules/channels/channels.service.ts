@@ -47,7 +47,9 @@ export class ChannelsService {
     const saved = await this.channelsRepository.save(entity);
 
     if (saved.type === 'whatsapp') {
-      const instanceName = this.buildInstanceName(companyId, saved.id);
+      const instanceName =
+        this.readConfiguredInstanceName(dto.config) ??
+        this.buildInstanceName(companyId, saved.id);
       saved.instanceName = instanceName;
       saved.connectionStatus = 'connecting';
       await this.channelsRepository.save(saved);
@@ -166,5 +168,17 @@ export class ChannelsService {
     const companyPart = companyId.replace(/-/g, '');
     const channelPart = channelId.replace(/-/g, '');
     return `company_${companyPart}_channel_${channelPart}`;
+  }
+
+  private readConfiguredInstanceName(
+    config?: Record<string, unknown>,
+  ): string | null {
+    const raw = config?.instanceName;
+    if (typeof raw !== 'string') {
+      return null;
+    }
+
+    const normalized = raw.trim().replace(/\s+/g, '_');
+    return normalized.length > 0 ? normalized : null;
   }
 }

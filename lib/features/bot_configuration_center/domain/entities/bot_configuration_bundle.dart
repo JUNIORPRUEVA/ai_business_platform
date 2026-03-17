@@ -33,6 +33,10 @@ class EvolutionApiConfig {
     required this.apiKey,
     required this.webhookSecret,
     required this.connectedNumber,
+    required this.channelId,
+    required this.connectionStatus,
+    required this.provisioningStatus,
+    required this.provisioningError,
     required this.isEnabled,
   });
 
@@ -41,6 +45,10 @@ class EvolutionApiConfig {
   final String apiKey;
   final String webhookSecret;
   final String connectedNumber;
+  final String? channelId;
+  final String connectionStatus;
+  final String provisioningStatus;
+  final String? provisioningError;
   final bool isEnabled;
 
   EvolutionApiConfig copyWith({
@@ -49,6 +57,10 @@ class EvolutionApiConfig {
     String? apiKey,
     String? webhookSecret,
     String? connectedNumber,
+    String? channelId,
+    String? connectionStatus,
+    String? provisioningStatus,
+    String? provisioningError,
     bool? isEnabled,
   }) {
     return EvolutionApiConfig(
@@ -57,6 +69,10 @@ class EvolutionApiConfig {
       apiKey: apiKey ?? this.apiKey,
       webhookSecret: webhookSecret ?? this.webhookSecret,
       connectedNumber: connectedNumber ?? this.connectedNumber,
+      channelId: channelId ?? this.channelId,
+      connectionStatus: connectionStatus ?? this.connectionStatus,
+      provisioningStatus: provisioningStatus ?? this.provisioningStatus,
+      provisioningError: provisioningError ?? this.provisioningError,
       isEnabled: isEnabled ?? this.isEnabled,
     );
   }

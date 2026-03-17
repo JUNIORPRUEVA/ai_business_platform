@@ -120,6 +120,89 @@ class EvolutionApiSettingsSection extends StatelessWidget {
                   onChanged: controller.toggleEvolutionEnabled,
                 ),
               ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Estado de la instancia',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Canal: ${controller.bundle.evolutionApi.channelId ?? 'Sin canal enlazado'}',
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Conexión: ${controller.bundle.evolutionApi.connectionStatus}',
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Provisionamiento: ${controller.bundle.evolutionApi.provisioningStatus}',
+                    ),
+                    if ((controller.bundle.evolutionApi.provisioningError ?? '')
+                        .trim()
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        controller.bundle.evolutionApi.provisioningError!,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFFB42318),
+                            ),
+                      ),
+                    ],
+                    if ((controller.evolutionQrPayloadPreview ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Respuesta QR / pairing',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      SelectableText(controller.evolutionQrPayloadPreview!),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: controller.isRefreshingEvolution
+                        ? null
+                        : controller.refreshEvolutionConnection,
+                    icon: const Icon(Icons.sync_rounded),
+                    label: Text(
+                      controller.isRefreshingEvolution
+                          ? 'Actualizando...'
+                          : 'Actualizar estado',
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: controller.isProvisioningEvolution
+                        ? null
+                        : controller.provisionEvolutionInstance,
+                    icon: const Icon(Icons.add_link_rounded),
+                    label: Text(
+                      controller.isProvisioningEvolution
+                          ? 'Creando instancia...'
+                          : 'Crear instancia',
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 18),
               Align(
                 alignment: Alignment.centerRight,

@@ -1,5 +1,9 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+import { BotConfigurationEntity } from '../bot-configuration/entities/bot-configuration.entity';
 
 export type EvolutionInstanceConnectionStatus =
   | 'connecting'
@@ -9,36 +13,33 @@ export type EvolutionInstanceConnectionStatus =
 @Injectable()
 export class EvolutionService {
   private readonly logger = new Logger(EvolutionService.name);
+  private static readonly configurationScope = 'default';
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(BotConfigurationEntity)
+    private readonly botConfigurationRepository: Repository<BotConfigurationEntity>,
+  ) {}
 
-  private get baseUrl(): string {
-    const url = this.configService.get<string>('EVOLUTION_API_URL') ?? '';
-    return url.replace(/\/$/, '');
-  }
-
-  private get apiKey(): string {
-    return this.configService.get<string>('EVOLUTION_API_KEY') ?? '';
-  }
-
-  private assertConfigured(): void {
-    if (!this.baseUrl || !this.apiKey) {
+  private assertConfigured(settings: { baseUrl: string; apiKey: string }): void {
+    if (!settings.baseUrl || !settings.apiKey) {
       throw new ServiceUnavailableException(
-        'Evolution API is not configured (EVOLUTION_API_URL/EVOLUTION_API_KEY).',
+        'Evolution API is not configured. Save base URL and API key in Bot Configuration or define EVOLUTION_API_URL/EVOLUTION_API_KEY.',
       );
     }
   }
 
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
-    this.assertConfigured();
+    const settings = await this.getRuntimeSettings();
+    this.assertConfigured(settings);
 
-    const url = `${this.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+    const url = `${settings.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
 
     const res = await fetch(url, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
-        apikey: this.apiKey,
+        apikey: settings.apiKey,
         ...(init.headers ?? {}),
       },
     });
@@ -171,5 +172,33 @@ export class EvolutionService {
     if (s.includes('close') || s.includes('disconnect') || s.includes('offline')) return 'disconnected';
 
     return 'disconnected';
+  }
+
+  private async getRuntimeSettings(): Promise<{ baseUrl: string; apiKey: string }> {
+    const snapshot = await this.botConfigurationRepository.findOne({
+      where: { scope: EvolutionService.configurationScope },
+    });
+
+    const payload = snapshot?.payload as
+      | { evolution?: Record<string, unknown> }
+      | undefined;
+    const evolution = payload?.evolution;
+    const configuredBaseUrl = this.readString(evolution?.baseUrl);
+    const configuredApiKey = this.readString(evolution?.apiKey);
+
+    return {
+      baseUrl: (configuredBaseUrl ||
+              this.configService.get<string>('EVOLUTION_API_URL') ||
+              '')
+          .replace(/\/$/, ''),
+      apiKey:
+          configuredApiKey ||
+          this.configService.get<string>('EVOLUTION_API_KEY') ||
+          '',
+    };
+  }
+
+  private readString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
   }
 }

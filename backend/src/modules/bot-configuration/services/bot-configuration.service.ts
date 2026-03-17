@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
 
 import { JsonFileStoreService } from '../../../common/persistence/json-file-store.service';
+import { ChannelsService } from '../../channels/channels.service';
 import { CreatePromptTemplateDto } from '../dto/create-prompt-template.dto';
 import { CreateToolDto } from '../dto/create-tool.dto';
 import { UpdateEvolutionSettingsDto } from '../dto/update-evolution-settings.dto';
@@ -18,6 +19,7 @@ import { BotConfigurationEntity } from '../entities/bot-configuration.entity';
 import {
   BotConfigurationBundle,
   createDefaultBotConfiguration,
+  EvolutionSettings,
   PromptTemplate,
   InternalToolSettings,
 } from '../types/bot-configuration.types';
@@ -32,6 +34,7 @@ export class BotConfigurationService implements OnModuleInit {
     private readonly fileStore: JsonFileStoreService,
     @InjectRepository(BotConfigurationEntity)
     private readonly configurationRepository: Repository<BotConfigurationEntity>,
+    private readonly channelsService: ChannelsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -108,6 +111,87 @@ export class BotConfigurationService implements OnModuleInit {
     };
     await this.persist();
     return structuredClone(this.state.evolution);
+  }
+
+  async getEvolutionConnection(companyId: string): Promise<{
+    channelId: string | null;
+    instanceName: string;
+    connectionStatus: string;
+    provisioningStatus: string;
+    provisioningError: string | null;
+    qrCode: unknown;
+  }> {
+    const evolution = this.state.evolution;
+    if (!evolution.channelId) {
+      return {
+        channelId: null,
+        instanceName: evolution.instanceName,
+        connectionStatus: evolution.connectionStatus ?? 'disconnected',
+        provisioningStatus: evolution.provisioningStatus ?? 'idle',
+        provisioningError: evolution.provisioningError ?? null,
+        qrCode: null,
+      };
+    }
+
+    try {
+      const channel = await this.channelsService.get(companyId, evolution.channelId);
+      return this.captureEvolutionChannelState(companyId, channel.id, {
+        fallbackInstanceName: channel.instanceName ?? evolution.instanceName,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Canal no disponible.';
+      await this.updateEvolutionRuntimeState({
+        channelId: null,
+        connectionStatus: 'disconnected',
+        provisioningStatus: 'failed',
+        provisioningError: message,
+      });
+
+      return {
+        channelId: null,
+        instanceName: evolution.instanceName,
+        connectionStatus: 'disconnected',
+        provisioningStatus: 'failed',
+        provisioningError: message,
+        qrCode: null,
+      };
+    }
+  }
+
+  async provisionEvolutionChannel(companyId: string): Promise<{
+    channelId: string | null;
+    instanceName: string;
+    connectionStatus: string;
+    provisioningStatus: string;
+    provisioningError: string | null;
+    qrCode: unknown;
+  }> {
+    const evolution = this.state.evolution;
+
+    if (evolution.channelId) {
+      try {
+        await this.channelsService.get(companyId, evolution.channelId);
+        return this.captureEvolutionChannelState(companyId, evolution.channelId, {
+          fallbackInstanceName: evolution.instanceName,
+        });
+      } catch (_) {
+        await this.updateEvolutionRuntimeState({ channelId: null });
+      }
+    }
+
+    const createdChannel = await this.channelsService.create(companyId, {
+      type: 'whatsapp',
+      name: this.buildEvolutionChannelName(),
+      config: {
+        instanceName: evolution.instanceName,
+        connectedNumber: evolution.connectedNumber,
+        webhookSecret: evolution.webhookSecret,
+      },
+    });
+
+    return this.captureEvolutionChannelState(companyId, createdChannel.id, {
+      fallbackInstanceName: createdChannel.instanceName ?? evolution.instanceName,
+    });
   }
 
   async updateOpenAiSettings(
@@ -251,5 +335,75 @@ export class BotConfigurationService implements OnModuleInit {
     const savedSnapshot = await this.configurationRepository.save(snapshot);
     this.snapshotId = savedSnapshot.id;
     await this.fileStore.write('bot-configuration.json', this.state);
+  }
+
+  private async captureEvolutionChannelState(
+    companyId: string,
+    channelId: string,
+    options: { fallbackInstanceName: string },
+  ): Promise<{
+    channelId: string | null;
+    instanceName: string;
+    connectionStatus: string;
+    provisioningStatus: string;
+    provisioningError: string | null;
+    qrCode: unknown;
+  }> {
+    let connectionStatus = this.state.evolution.connectionStatus ?? 'connecting';
+    let provisioningStatus = 'ready';
+    let provisioningError: string | null = null;
+    let qrCode: unknown = null;
+    let instanceName = options.fallbackInstanceName;
+
+    try {
+      const status = await this.channelsService.refreshConnectionStatus(companyId, channelId);
+      connectionStatus = status.status;
+    } catch (error) {
+      connectionStatus = 'disconnected';
+      provisioningStatus = 'failed';
+      provisioningError = error instanceof Error ? error.message : 'No se pudo consultar el estado.';
+    }
+
+    try {
+      const qr = await this.channelsService.getQrCode(companyId, channelId);
+      qrCode = qr.payload;
+      instanceName = qr.instanceName;
+    } catch (_) {
+      qrCode = null;
+    }
+
+    await this.updateEvolutionRuntimeState({
+      channelId,
+      instanceName,
+      connectionStatus,
+      provisioningStatus,
+      provisioningError,
+    });
+
+    return {
+      channelId,
+      instanceName,
+      connectionStatus,
+      provisioningStatus,
+      provisioningError,
+      qrCode,
+    };
+  }
+
+  private async updateEvolutionRuntimeState(
+    payload: Partial<EvolutionSettings>,
+  ): Promise<void> {
+    this.state.evolution = {
+      ...this.state.evolution,
+      ...payload,
+    };
+    await this.persist();
+  }
+
+  private buildEvolutionChannelName(): string {
+    const botName = this.state.general.botName.trim();
+    return botName.length > 0
+        ? `${botName} WhatsApp`
+        : 'Canal WhatsApp principal';
   }
 }

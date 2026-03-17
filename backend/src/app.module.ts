@@ -19,6 +19,7 @@ import { ToolsModule } from './modules/tools/tools.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkersModule } from './modules/workers/workers.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { BotConfigurationModule } from './modules/bot-configuration/bot-configuration.module';
 import { BotCenterModule } from './modules/bot-center/bot-center.module';
 import { AiBrainModule } from './modules/ai_brain/ai-brain.module';
 
@@ -42,6 +43,7 @@ import { AiBrainModule } from './modules/ai_brain/ai-brain.module';
     ToolsModule,
     AutomationsModule,
     BillingModule,
+    BotConfigurationModule,
     StorageModule,
     AiBrainModule,
     WorkersModule,

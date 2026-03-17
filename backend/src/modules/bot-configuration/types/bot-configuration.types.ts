@@ -11,6 +11,10 @@ export interface EvolutionSettings {
   apiKey: string;
   webhookSecret: string;
   connectedNumber: string;
+  channelId?: string | null;
+  connectionStatus?: string;
+  provisioningStatus?: string;
+  provisioningError?: string | null;
   isEnabled: boolean;
 }
 
@@ -95,6 +99,10 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
       apiKey: '',
       webhookSecret: '',
       connectedNumber: '+55 11 4004-1000',
+      channelId: null,
+      connectionStatus: 'disconnected',
+      provisioningStatus: 'idle',
+      provisioningError: null,
       isEnabled: true,
     },
     openai: {

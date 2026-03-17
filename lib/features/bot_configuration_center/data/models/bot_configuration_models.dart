@@ -39,6 +39,10 @@ class EvolutionApiConfigModel {
     required this.apiKey,
     required this.webhookSecret,
     required this.connectedNumber,
+    required this.channelId,
+    required this.connectionStatus,
+    required this.provisioningStatus,
+    required this.provisioningError,
     required this.isEnabled,
   });
 
@@ -49,6 +53,10 @@ class EvolutionApiConfigModel {
       apiKey: json['apiKey'] as String? ?? '',
       webhookSecret: json['webhookSecret'] as String? ?? '',
       connectedNumber: json['connectedNumber'] as String? ?? '',
+      channelId: json['channelId'] as String?,
+      connectionStatus: json['connectionStatus'] as String? ?? 'disconnected',
+      provisioningStatus: json['provisioningStatus'] as String? ?? 'idle',
+      provisioningError: json['provisioningError'] as String?,
       isEnabled: json['isEnabled'] as bool? ?? false,
     );
   }
@@ -58,6 +66,10 @@ class EvolutionApiConfigModel {
   final String apiKey;
   final String webhookSecret;
   final String connectedNumber;
+  final String? channelId;
+  final String connectionStatus;
+  final String provisioningStatus;
+  final String? provisioningError;
   final bool isEnabled;
 
   EvolutionApiConfig toEntity() {
@@ -67,6 +79,10 @@ class EvolutionApiConfigModel {
       apiKey: apiKey,
       webhookSecret: webhookSecret,
       connectedNumber: connectedNumber,
+      channelId: channelId,
+      connectionStatus: connectionStatus,
+      provisioningStatus: provisioningStatus,
+      provisioningError: provisioningError,
       isEnabled: isEnabled,
     );
   }
@@ -408,6 +424,10 @@ class BotConfigurationBundleModel {
         apiKey: 'evo_live_********************************',
         webhookSecret: 'whsec_********************************',
         connectedNumber: '+55 11 4004-1000',
+        channelId: null,
+        connectionStatus: 'disconnected',
+        provisioningStatus: 'idle',
+        provisioningError: null,
         isEnabled: true,
       ),
       openAi: const OpenAiConfigModel(
