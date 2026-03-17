@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { PersistenceModule } from '../../common/persistence/persistence.module';
 import { BotConfigurationController } from './controllers/bot-configuration.controller';
+import { BotConfigurationEntity } from './entities/bot-configuration.entity';
 import { BotConfigurationService } from './services/bot-configuration.service';
 
 @Module({
-  imports: [PersistenceModule],
+  imports: [PersistenceModule, TypeOrmModule.forFeature([BotConfigurationEntity])],
   controllers: [BotConfigurationController],
   providers: [BotConfigurationService],
   exports: [BotConfigurationService],

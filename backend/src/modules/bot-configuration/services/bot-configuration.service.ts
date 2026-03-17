@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
+import { Repository } from 'typeorm';
 
 import { JsonFileStoreService } from '../../../common/persistence/json-file-store.service';
 import { CreatePromptTemplateDto } from '../dto/create-prompt-template.dto';
@@ -12,6 +14,7 @@ import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settin
 import { UpdatePromptTemplateDto } from '../dto/update-prompt-template.dto';
 import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
 import { UpdateToolDto } from '../dto/update-tool.dto';
+import { BotConfigurationEntity } from '../entities/bot-configuration.entity';
 import {
   BotConfigurationBundle,
   createDefaultBotConfiguration,
@@ -21,15 +24,42 @@ import {
 
 @Injectable()
 export class BotConfigurationService implements OnModuleInit {
+  private static constScope = 'default';
   private state!: BotConfigurationBundle;
+  private snapshotId: string | null = null;
 
-  constructor(private readonly fileStore: JsonFileStoreService) {}
+  constructor(
+    private readonly fileStore: JsonFileStoreService,
+    @InjectRepository(BotConfigurationEntity)
+    private readonly configurationRepository: Repository<BotConfigurationEntity>,
+  ) {}
 
   async onModuleInit(): Promise<void> {
-    this.state = await this.fileStore.readOrCreate(
+    const fileSnapshot = await this.fileStore.readOrCreate(
       'bot-configuration.json',
       createDefaultBotConfiguration,
     );
+
+    const persistedSnapshot = await this.configurationRepository.findOne({
+      where: { scope: BotConfigurationService.constScope },
+    });
+
+    if (persistedSnapshot) {
+      this.snapshotId = persistedSnapshot.id;
+      this.state = structuredClone(persistedSnapshot.payload);
+      await this.fileStore.write('bot-configuration.json', this.state);
+      return;
+    }
+
+    const createdSnapshot = await this.configurationRepository.save(
+      this.configurationRepository.create({
+        scope: BotConfigurationService.constScope,
+        payload: fileSnapshot,
+      }),
+    );
+
+    this.snapshotId = createdSnapshot.id;
+    this.state = structuredClone(createdSnapshot.payload);
   }
 
   getConfiguration(): BotConfigurationBundle {
@@ -212,6 +242,14 @@ export class BotConfigurationService implements OnModuleInit {
   }
 
   private async persist(): Promise<void> {
+    const snapshot = this.configurationRepository.create({
+      id: this.snapshotId ?? undefined,
+      scope: BotConfigurationService.constScope,
+      payload: this.state,
+    });
+
+    const savedSnapshot = await this.configurationRepository.save(snapshot);
+    this.snapshotId = savedSnapshot.id;
     await this.fileStore.write('bot-configuration.json', this.state);
   }
 }
