@@ -530,11 +530,7 @@ class PromptsSettingsSection extends StatelessWidget {
                 Expanded(
                   child: TextField(
                     key: ValueKey<String>(controller.selectedPrompt.id),
-                    controller: TextEditingController(
-                        text: controller.selectedPrompt.content)
-                      ..selection = TextSelection.collapsed(
-                        offset: controller.selectedPrompt.content.length,
-                      ),
+                    controller: controller.promptContentController,
                     onChanged: controller.updatePromptContent,
                     expands: true,
                     minLines: null,

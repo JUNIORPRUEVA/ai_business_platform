@@ -25,6 +25,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
         openAiTemperatureController = TextEditingController(),
         openAiMaxTokensController = TextEditingController(),
         openAiSystemPromptPreviewController = TextEditingController(),
+        promptContentController = TextEditingController(),
         memoryWindowSizeController = TextEditingController(),
         memoryTtlController = TextEditingController(),
         securityInternalApiTokenController = TextEditingController(),
@@ -46,6 +47,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
   final TextEditingController openAiTemperatureController;
   final TextEditingController openAiMaxTokensController;
   final TextEditingController openAiSystemPromptPreviewController;
+  final TextEditingController promptContentController;
   final TextEditingController memoryWindowSizeController;
   final TextEditingController memoryTtlController;
   final TextEditingController securityInternalApiTokenController;
@@ -138,8 +140,14 @@ class BotConfigurationCenterController extends ChangeNotifier {
       final token = await _requireToken();
       final configuration =
           await _apiClient.getJson('/bot-configuration', token: token);
-      final documents =
-          await _apiClient.getJsonList('/ai-brain/documents', token: token);
+
+      List<dynamic> documents = const <dynamic>[];
+      try {
+        documents =
+            await _apiClient.getJsonList('/ai-brain/documents', token: token);
+      } on BotConfigurationCenterApiException catch (_) {
+        documents = const <dynamic>[];
+      }
 
       _bundle = BotConfigurationBundleModel.fromBackendJson(
         configuration,
@@ -169,6 +177,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     _selectedPromptIndex = index;
+    promptContentController.text = _bundle.prompts[index].content;
     notifyListeners();
   }
 
@@ -671,6 +680,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
     openAiMaxTokensController.text = _bundle.openAi.maxTokens.toString();
     openAiSystemPromptPreviewController.text =
         _bundle.openAi.systemPromptPreview;
+    promptContentController.text = selectedPrompt.content;
     memoryWindowSizeController.text =
         _bundle.memory.recentMessageWindowSize.toString();
     memoryTtlController.text = _bundle.memory.memoryTtl;
@@ -763,6 +773,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
     openAiTemperatureController.dispose();
     openAiMaxTokensController.dispose();
     openAiSystemPromptPreviewController.dispose();
+    promptContentController.dispose();
     memoryWindowSizeController.dispose();
     memoryTtlController.dispose();
     securityInternalApiTokenController.dispose();
