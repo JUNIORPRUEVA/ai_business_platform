@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -13,6 +14,9 @@ import '../../domain/entities/bot_configuration_section.dart';
 
 class BotConfigurationCenterController extends ChangeNotifier {
   static const _localBundleKey = 'bot_configuration_center_bundle_v1';
+
+  static const Duration _localPersistDebounce = Duration(milliseconds: 350);
+  static const Duration _remoteAutoSaveDebounce = Duration(milliseconds: 900);
 
   BotConfigurationCenterController({
     BotConfigurationCenterApiClient? apiClient,
@@ -37,7 +41,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
         securityInternalApiTokenController = TextEditingController(),
         securityWebhookSigningSecretController = TextEditingController() {
     _applyBundleToControllers();
-      _attachDraftListeners();
+    _attachDraftListeners();
   }
 
   final BotConfigurationCenterApiClient _apiClient;
@@ -80,6 +84,15 @@ class BotConfigurationCenterController extends ChangeNotifier {
   String? _evolutionQrPayloadPreview;
   Uint8List? _evolutionQrImageBytes;
   String? _evolutionPairingCode;
+
+  Timer? _localPersistTimer;
+  Timer? _remoteAutoSaveTimer;
+  bool _isFlushingAutoSave = false;
+  final Set<BotConfigurationSection> _pendingSectionAutoSaves =
+      <BotConfigurationSection>{};
+  final Set<String> _pendingToolAutoSaves = <String>{};
+  final Set<String> _pendingDocumentAutoSaves = <String>{};
+  final Set<String> _pendingPromptAutoSaves = <String>{};
 
   BotConfigurationBundle get bundle => _bundle;
   BotConfigurationSection get selectedSection => _selectedSection;
@@ -154,17 +167,17 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    final localBundle = await _readLocalBundle();
-    if (localBundle != null) {
-      _bundle = localBundle;
-      _selectedPromptIndex = 0;
-      _selectedDocumentIndex = 0;
-      _applyBundleToControllers();
-      notifyListeners();
-    }
-
     try {
       final token = await _requireToken();
+      final localBundle = await _readLocalBundle();
+      if (localBundle != null) {
+        _bundle = localBundle;
+        _selectedPromptIndex = 0;
+        _selectedDocumentIndex = 0;
+        _applyBundleToControllers();
+        notifyListeners();
+      }
+
       final configuration =
           await _apiClient.getJson('/bot-configuration', token: token);
 
@@ -180,7 +193,9 @@ class BotConfigurationCenterController extends ChangeNotifier {
         configuration,
         documents: documents,
       ).toEntity();
-      _bundle = localBundle ?? remoteBundle;
+
+      // Remote (DB) is the source of truth. Local cache is only a fallback.
+      _bundle = remoteBundle;
       _selectedPromptIndex = 0;
       _selectedDocumentIndex = 0;
       _applyBundleToControllers();
@@ -190,6 +205,15 @@ class BotConfigurationCenterController extends ChangeNotifier {
       await _persistLocalBundle();
     } on BotConfigurationCenterApiException catch (error) {
       _errorMessage = error.message;
+
+      // Fall back to local cache if backend is temporarily unavailable.
+      final localBundle = await _readLocalBundle();
+      if (localBundle != null) {
+        _bundle = localBundle;
+        _selectedPromptIndex = 0;
+        _selectedDocumentIndex = 0;
+        _applyBundleToControllers();
+      }
     } catch (error) {
       _errorMessage = error.toString();
     } finally {
@@ -231,7 +255,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       general: _bundle.general.copyWith(defaultLanguage: value),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.general);
     notifyListeners();
   }
 
@@ -244,7 +269,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       openAi: _bundle.openAi.copyWith(model: value),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.openAi);
     notifyListeners();
   }
 
@@ -257,7 +283,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       orchestrator: _bundle.orchestrator.copyWith(autonomyLevel: value),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.orchestrator);
     notifyListeners();
   }
 
@@ -270,7 +297,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       orchestrator: _bundle.orchestrator.copyWith(fallbackStrategy: value),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.orchestrator);
     notifyListeners();
   }
 
@@ -278,7 +306,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       general: _bundle.general.copyWith(isEnabled: value),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.general);
     notifyListeners();
   }
 
@@ -286,7 +315,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       evolutionApi: _bundle.evolutionApi.copyWith(isEnabled: value),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.evolutionApi);
     notifyListeners();
   }
 
@@ -294,7 +324,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       openAi: _bundle.openAi.copyWith(isEnabled: value),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.openAi);
     notifyListeners();
   }
 
@@ -320,7 +351,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
         usePostgreSql: usePostgreSql ?? _bundle.memory.usePostgreSql,
       ),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.memory);
     notifyListeners();
   }
 
@@ -347,7 +379,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
                 _bundle.orchestrator.requireConfirmationForCriticalActions,
       ),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.orchestrator);
     notifyListeners();
   }
 
@@ -360,7 +393,11 @@ class BotConfigurationCenterController extends ChangeNotifier {
     updatedPrompts[_selectedPromptIndex] =
         updatedPrompts[_selectedPromptIndex].copyWith(content: value);
     _bundle = _bundle.copyWith(prompts: updatedPrompts);
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    final promptId = updatedPrompts[_selectedPromptIndex].id;
+    if (promptId.trim().isNotEmpty) {
+      _scheduleAutoSavePrompt(promptId);
+    }
     notifyListeners();
   }
 
@@ -371,7 +408,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
         )
         .toList(growable: false);
     _bundle = _bundle.copyWith(tools: updatedTools);
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveTool(toolId);
     notifyListeners();
   }
 
@@ -384,7 +422,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
         )
         .toList(growable: false);
     _bundle = _bundle.copyWith(documents: updatedDocuments);
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveDocument(documentId);
     notifyListeners();
   }
 
@@ -397,7 +436,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
         )
         .toList(growable: false);
     _bundle = _bundle.copyWith(documents: updatedDocuments);
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveDocument(documentId);
     notifyListeners();
   }
 
@@ -462,7 +502,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
       _errorMessage = error.toString();
     } finally {
       _isUploadingDocument = false;
-      _persistLocalBundle();
+      _scheduleLocalPersist();
       notifyListeners();
     }
   }
@@ -491,7 +531,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
       _errorMessage = error.toString();
     } finally {
       _isUploadingDocument = false;
-      _persistLocalBundle();
+      _scheduleLocalPersist();
       notifyListeners();
     }
   }
@@ -503,7 +543,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
         auditLog: auditLog ?? _bundle.security.auditLog,
       ),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
+    _scheduleAutoSaveSection(BotConfigurationSection.security);
     notifyListeners();
   }
 
@@ -574,12 +615,9 @@ class BotConfigurationCenterController extends ChangeNotifier {
             {
               'enableShortTermMemory': _bundle.memory.enableShortTermMemory,
               'enableLongTermMemory': _bundle.memory.enableLongTermMemory,
-              'enableOperationalMemory':
-                  _bundle.memory.enableOperationalMemory,
-              'recentMessageWindowSize':
-                  _bundle.memory.recentMessageWindowSize,
-              'automaticSummarization':
-                  _bundle.memory.automaticSummarization,
+              'enableOperationalMemory': _bundle.memory.enableOperationalMemory,
+              'recentMessageWindowSize': _bundle.memory.recentMessageWindowSize,
+              'automaticSummarization': _bundle.memory.automaticSummarization,
               'memoryTtl': _bundle.memory.memoryTtl,
               'useRedis': _bundle.memory.useRedis,
               'usePostgreSql': _bundle.memory.usePostgreSql,
@@ -599,8 +637,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
               'enableToolExecution': _bundle.orchestrator.enableToolExecution,
               'requireConfirmationForCriticalActions':
                   _bundle.orchestrator.requireConfirmationForCriticalActions,
-              'autonomyLevel':
-                  _mapAutonomyLevelToBackend(_bundle.orchestrator.autonomyLevel),
+              'autonomyLevel': _mapAutonomyLevelToBackend(
+                  _bundle.orchestrator.autonomyLevel),
               'fallbackStrategy': _bundle.orchestrator.fallbackStrategy,
             },
             token: token,
@@ -771,7 +809,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
             securityWebhookSigningSecretController.text.trim(),
       ),
     );
-    _persistLocalBundle();
+    _scheduleLocalPersist();
   }
 
   void _applyBundleToControllers() {
@@ -835,6 +873,9 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     _syncDraftsIntoState();
+
+    // Auto-save to backend the section currently being edited.
+    _scheduleAutoSaveSection(_selectedSection);
   }
 
   void _handlePromptDraftChanged() {
@@ -843,6 +884,254 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     updatePromptContent(promptContentController.text);
+  }
+
+  void _scheduleLocalPersist() {
+    _localPersistTimer?.cancel();
+    _localPersistTimer = Timer(_localPersistDebounce, () async {
+      try {
+        await _persistLocalBundle();
+      } catch (_) {
+        // Ignore local cache persistence errors.
+      }
+    });
+  }
+
+  void _scheduleAutoSaveSection(BotConfigurationSection section) {
+    // Ignore documents section here; it has dedicated per-document patch autosave.
+    if (section == BotConfigurationSection.documents) {
+      return;
+    }
+
+    _pendingSectionAutoSaves.add(section);
+    _debounceRemoteAutoSave();
+  }
+
+  void _scheduleAutoSaveTool(String toolId) {
+    if (toolId.trim().isEmpty) {
+      return;
+    }
+    _pendingToolAutoSaves.add(toolId);
+    _debounceRemoteAutoSave();
+  }
+
+  void _scheduleAutoSaveDocument(String documentId) {
+    if (documentId.trim().isEmpty) {
+      return;
+    }
+    _pendingDocumentAutoSaves.add(documentId);
+    _debounceRemoteAutoSave();
+  }
+
+  void _scheduleAutoSavePrompt(String promptId) {
+    if (promptId.trim().isEmpty) {
+      return;
+    }
+    _pendingPromptAutoSaves.add(promptId);
+    _debounceRemoteAutoSave();
+  }
+
+  void _debounceRemoteAutoSave() {
+    _remoteAutoSaveTimer?.cancel();
+    _remoteAutoSaveTimer = Timer(_remoteAutoSaveDebounce, () {
+      _flushRemoteAutoSaves();
+    });
+  }
+
+  Future<void> _flushRemoteAutoSaves() async {
+    if (_isFlushingAutoSave) {
+      return;
+    }
+
+    if (_isLoading || _activeSaveSection != null) {
+      return;
+    }
+
+    final token = await _tokenStore.read();
+    if (token == null || token.trim().isEmpty) {
+      return;
+    }
+
+    // Capture pending operations and clear early so new edits can schedule again.
+    final sections = _pendingSectionAutoSaves.toList(growable: false);
+    final tools = _pendingToolAutoSaves.toList(growable: false);
+    final documents = _pendingDocumentAutoSaves.toList(growable: false);
+    final prompts = _pendingPromptAutoSaves.toList(growable: false);
+    _pendingSectionAutoSaves.clear();
+    _pendingToolAutoSaves.clear();
+    _pendingDocumentAutoSaves.clear();
+    _pendingPromptAutoSaves.clear();
+
+    _isFlushingAutoSave = true;
+    try {
+      _syncDraftsIntoState();
+
+      for (final section in sections) {
+        await _saveSectionSilently(section, token);
+      }
+
+      for (final promptId in prompts) {
+        final prompt = _bundle.prompts
+            .where((item) => item.id == promptId)
+            .toList(growable: false);
+        if (prompt.isEmpty) {
+          continue;
+        }
+
+        final current = prompt.first;
+        await _apiClient.putJson(
+          '/bot-configuration/prompts/${current.id}',
+          {
+            'title': current.title,
+            'description': current.description,
+            'content': current.content,
+          },
+          token: token,
+        );
+      }
+
+      for (final toolId in tools) {
+        final tool = _bundle.tools
+            .where((item) => item.id == toolId)
+            .toList(growable: false);
+        if (tool.isEmpty) {
+          continue;
+        }
+
+        await _apiClient.putJson(
+          '/bot-configuration/tools/$toolId',
+          {'isEnabled': tool.first.isEnabled},
+          token: token,
+        );
+      }
+
+      for (final documentId in documents) {
+        final document = _bundle.documents
+            .where((item) => item.id == documentId)
+            .toList(growable: false);
+        if (document.isEmpty) {
+          continue;
+        }
+
+        final current = document.first;
+        await _apiClient.patchJson(
+          '/ai-brain/documents/${current.id}',
+          {
+            'name': current.name,
+            'summary': current.summary,
+            'status': current.isEnabled ? current.status : 'disabled',
+          },
+          token: token,
+        );
+      }
+
+      await _persistLocalBundle();
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+      notifyListeners();
+    } catch (error) {
+      _errorMessage = error.toString();
+      notifyListeners();
+    } finally {
+      _isFlushingAutoSave = false;
+
+      // If new edits arrived during the flush, schedule another pass.
+      if (_pendingSectionAutoSaves.isNotEmpty ||
+          _pendingToolAutoSaves.isNotEmpty ||
+          _pendingDocumentAutoSaves.isNotEmpty ||
+          _pendingPromptAutoSaves.isNotEmpty) {
+        _debounceRemoteAutoSave();
+      }
+    }
+  }
+
+  Future<void> _saveSectionSilently(
+    BotConfigurationSection section,
+    String token,
+  ) async {
+    switch (section) {
+      case BotConfigurationSection.general:
+        await _apiClient.putJson(
+          '/bot-configuration/general',
+          {
+            'botName': _bundle.general.botName,
+            'defaultLanguage': _bundle.general.defaultLanguage,
+            'isEnabled': _bundle.general.isEnabled,
+            'environmentLabel': _bundle.general.environmentLabel,
+          },
+          token: token,
+        );
+        break;
+      case BotConfigurationSection.evolutionApi:
+        await _saveEvolutionSettings(token);
+        break;
+      case BotConfigurationSection.openAi:
+        await _apiClient.putJson(
+          '/bot-configuration/openai',
+          {
+            'apiKey': _bundle.openAi.apiKey,
+            'model': _bundle.openAi.model,
+            'temperature': _bundle.openAi.temperature,
+            'maxTokens': _bundle.openAi.maxTokens,
+            'isEnabled': _bundle.openAi.isEnabled,
+            'systemPromptPreview': _bundle.openAi.systemPromptPreview,
+          },
+          token: token,
+        );
+        break;
+      case BotConfigurationSection.memory:
+        await _apiClient.putJson(
+          '/bot-configuration/memory',
+          {
+            'enableShortTermMemory': _bundle.memory.enableShortTermMemory,
+            'enableLongTermMemory': _bundle.memory.enableLongTermMemory,
+            'enableOperationalMemory': _bundle.memory.enableOperationalMemory,
+            'recentMessageWindowSize': _bundle.memory.recentMessageWindowSize,
+            'automaticSummarization': _bundle.memory.automaticSummarization,
+            'memoryTtl': _bundle.memory.memoryTtl,
+            'useRedis': _bundle.memory.useRedis,
+            'usePostgreSql': _bundle.memory.usePostgreSql,
+          },
+          token: token,
+        );
+        break;
+      case BotConfigurationSection.orchestrator:
+        await _apiClient.putJson(
+          '/bot-configuration/orchestrator',
+          {
+            'automaticMode': _bundle.orchestrator.automaticMode,
+            'assistedMode': _bundle.orchestrator.assistedMode,
+            'enableRoleDetection': _bundle.orchestrator.enableRoleDetection,
+            'enableIntentClassification':
+                _bundle.orchestrator.enableIntentClassification,
+            'enableToolExecution': _bundle.orchestrator.enableToolExecution,
+            'requireConfirmationForCriticalActions':
+                _bundle.orchestrator.requireConfirmationForCriticalActions,
+            'autonomyLevel':
+                _mapAutonomyLevelToBackend(_bundle.orchestrator.autonomyLevel),
+            'fallbackStrategy': _bundle.orchestrator.fallbackStrategy,
+          },
+          token: token,
+        );
+        break;
+      case BotConfigurationSection.security:
+        await _apiClient.putJson(
+          '/bot-configuration/security',
+          {
+            'internalApiToken': _bundle.security.internalApiToken,
+            'webhookSigningSecret': _bundle.security.webhookSigningSecret,
+            'encryptSecrets': _bundle.security.encryptSecrets,
+            'auditLog': _bundle.security.auditLog,
+          },
+          token: token,
+        );
+        break;
+      case BotConfigurationSection.prompts:
+      case BotConfigurationSection.tools:
+      case BotConfigurationSection.documents:
+        // These are handled via per-item autosaves (prompts/tools/documents).
+        break;
+    }
   }
 
   void _clearBanners() {
@@ -915,6 +1204,35 @@ class BotConfigurationCenterController extends ChangeNotifier {
   Future<void> _persistLocalBundle() async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_localBundleKey, _encodeLocalBundle());
+  }
+
+  @override
+  void dispose() {
+    _localPersistTimer?.cancel();
+    _remoteAutoSaveTimer?.cancel();
+
+    for (final controller in <TextEditingController>[
+      generalBotNameController,
+      generalEnvironmentController,
+      evolutionBaseUrlController,
+      evolutionInstanceController,
+      evolutionApiKeyController,
+      evolutionWebhookSecretController,
+      evolutionConnectedNumberController,
+      openAiApiKeyController,
+      openAiTemperatureController,
+      openAiMaxTokensController,
+      openAiSystemPromptPreviewController,
+      promptContentController,
+      memoryWindowSizeController,
+      memoryTtlController,
+      securityInternalApiTokenController,
+      securityWebhookSigningSecretController,
+    ]) {
+      controller.dispose();
+    }
+
+    super.dispose();
   }
 
   Future<BotConfigurationBundle?> _readLocalBundle() async {
@@ -1056,8 +1374,8 @@ class BotConfigurationCenterController extends ChangeNotifier {
     _bundle = _bundle.copyWith(
       evolutionApi: _bundle.evolutionApi.copyWith(
         channelId: response['channelId'] as String?,
-        instanceName:
-            response['instanceName'] as String? ?? _bundle.evolutionApi.instanceName,
+        instanceName: response['instanceName'] as String? ??
+            _bundle.evolutionApi.instanceName,
         connectionStatus: response['connectionStatus'] as String? ??
             _bundle.evolutionApi.connectionStatus,
         provisioningStatus: response['provisioningStatus'] as String? ??
@@ -1124,7 +1442,9 @@ class BotConfigurationCenterController extends ChangeNotifier {
       qrCode['pairing'],
       (qrCode['data'] is Map) ? (qrCode['data'] as Map)['pairingCode'] : null,
       (qrCode['data'] is Map) ? (qrCode['data'] as Map)['code'] : null,
-      (qrCode['qrcode'] is Map) ? (qrCode['qrcode'] as Map)['pairingCode'] : null,
+      (qrCode['qrcode'] is Map)
+          ? (qrCode['qrcode'] as Map)['pairingCode']
+          : null,
     ];
 
     for (final candidate in candidates) {
@@ -1202,26 +1522,5 @@ class BotConfigurationCenterController extends ChangeNotifier {
     }
 
     return _tryDecodeQrImage(value) != null;
-  }
-
-  @override
-  void dispose() {
-    generalBotNameController.dispose();
-    generalEnvironmentController.dispose();
-    evolutionBaseUrlController.dispose();
-    evolutionInstanceController.dispose();
-    evolutionApiKeyController.dispose();
-    evolutionWebhookSecretController.dispose();
-    evolutionConnectedNumberController.dispose();
-    openAiApiKeyController.dispose();
-    openAiTemperatureController.dispose();
-    openAiMaxTokensController.dispose();
-    openAiSystemPromptPreviewController.dispose();
-    promptContentController.dispose();
-    memoryWindowSizeController.dispose();
-    memoryTtlController.dispose();
-    securityInternalApiTokenController.dispose();
-    securityWebhookSigningSecretController.dispose();
-    super.dispose();
   }
 }

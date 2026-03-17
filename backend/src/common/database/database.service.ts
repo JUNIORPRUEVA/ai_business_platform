@@ -5,21 +5,16 @@ import {
   DatabaseHealthReport,
   PostgresConnectionSettings,
 } from './database.types';
+import { resolvePostgresConnectionSettings } from './postgres-config.util';
 
 @Injectable()
 export class DatabaseService {
   constructor(private readonly configService: ConfigService) {}
 
   getPostgresSettings(): PostgresConnectionSettings {
-    return {
-      host: this.configService.get<string>('POSTGRES_HOST') ?? 'localhost',
-      port: Number(this.configService.get<string>('POSTGRES_PORT') ?? 5432),
-      database:
-        this.configService.get<string>('POSTGRES_DATABASE') ?? 'fullpos_bot',
-      username: this.configService.get<string>('POSTGRES_USER') ?? 'postgres',
-      password: this.configService.get<string>('POSTGRES_PASSWORD') ?? '',
-      ssl: (this.configService.get<string>('POSTGRES_SSL') ?? 'false') === 'true',
-    };
+    return resolvePostgresConnectionSettings(
+      (key) => this.configService.get<string>(key),
+    );
   }
 
   getHealth(): DatabaseHealthReport {

@@ -3,26 +3,23 @@ import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import { DataSource } from 'typeorm';
 
+import { resolvePostgresConnectionSettings } from './postgres-config.util';
+
 loadEnv({ path: '.env/backend.env' });
 loadEnv({ path: '../.env/backend.env' });
 loadEnv({ path: '.env' });
 loadEnv({ path: '../.env' });
 
-const host = process.env.POSTGRES_HOST ?? 'localhost';
-const port = Number(process.env.POSTGRES_PORT ?? 5432);
-const database = process.env.POSTGRES_DATABASE ?? 'fulltech_bot';
-const username = process.env.POSTGRES_USER ?? 'postgres';
-const password = process.env.POSTGRES_PASSWORD ?? '';
-const ssl = (process.env.POSTGRES_SSL ?? 'false') === 'true';
+const settings = resolvePostgresConnectionSettings((key) => process.env[key]);
 
 export default new DataSource({
   type: 'postgres',
-  host,
-  port,
-  database,
-  username,
-  password,
-  ssl: ssl ? { rejectUnauthorized: false } : false,
+  host: settings.host,
+  port: settings.port,
+  database: settings.database,
+  username: settings.username,
+  password: settings.password,
+  ssl: settings.ssl ? { rejectUnauthorized: false } : false,
   entities: ['src/**/*.entity.ts'],
   migrations: ['src/migrations/*.ts'],
 });

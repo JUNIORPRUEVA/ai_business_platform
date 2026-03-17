@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'node:path';
 
 import { DatabaseService } from './database.service';
+import { resolvePostgresConnectionSettings } from './postgres-config.util';
 
 @Module({
   imports: [
@@ -14,13 +15,9 @@ import { DatabaseService } from './database.service';
         const nodeEnv = configService.get<string>('NODE_ENV') ?? 'development';
         const isProduction = nodeEnv === 'production';
 
-        const host = configService.get<string>('POSTGRES_HOST') ?? 'localhost';
-        const port = Number(configService.get<string>('POSTGRES_PORT') ?? 5432);
-        const database =
-          configService.get<string>('POSTGRES_DATABASE') ?? 'fulltech_bot';
-        const username = configService.get<string>('POSTGRES_USER') ?? 'postgres';
-        const password = configService.get<string>('POSTGRES_PASSWORD') ?? '';
-        const ssl = (configService.get<string>('POSTGRES_SSL') ?? 'false') === 'true';
+        const finalSettings = resolvePostgresConnectionSettings(
+          (key) => configService.get<string>(key),
+        );
 
         const migrations = isProduction
           ? [join(process.cwd(), 'dist', 'migrations', '*.js')]
@@ -28,12 +25,12 @@ import { DatabaseService } from './database.service';
 
         return {
           type: 'postgres' as const,
-          host,
-          port,
-          database,
-          username,
-          password,
-          ssl: ssl ? { rejectUnauthorized: false } : false,
+          host: finalSettings.host,
+          port: finalSettings.port,
+          database: finalSettings.database,
+          username: finalSettings.username,
+          password: finalSettings.password,
+          ssl: finalSettings.ssl ? { rejectUnauthorized: false } : false,
           autoLoadEntities: true,
           synchronize: false,
           migrationsRun:
