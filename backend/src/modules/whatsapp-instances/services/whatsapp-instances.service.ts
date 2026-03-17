@@ -126,6 +126,95 @@ export class WhatsappInstancesService {
     return { ok: true };
   }
 
+  async updateInstance(
+    tenantId: string,
+    instanceName: string,
+    newInstanceName: string,
+  ) {
+    const entity = await this.getByInstanceName(tenantId, instanceName);
+    const currentName = entity.instanceName;
+    const normalizedNewName = this.normalizeInstanceName(newInstanceName);
+
+    if (currentName === normalizedNewName) {
+      return this.toPublic(entity);
+    }
+
+    if (entity.status === 'connected') {
+      throw new ConflictException(
+        'No puedes editar el nombre de una instancia conectada. Desconéctala o elimínala primero.',
+      );
+    }
+
+    const existing = await this.repo.findOne({ where: { instanceName: normalizedNewName } });
+    if (existing) {
+      if (existing.tenantId === tenantId) {
+        throw new ConflictException('Instance name already exists for this tenant.');
+      }
+      throw new ConflictException('Instance name already exists.');
+    }
+
+    await this.evolutionService.createInstance({
+      instanceName: normalizedNewName,
+      qrcode: true,
+    });
+
+    const instanceWebhookUrl =
+      (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_URL') ?? '').trim();
+    if (instanceWebhookUrl) {
+      try {
+        await this.evolutionService.setWebhook({
+          instanceName: normalizedNewName,
+          url: instanceWebhookUrl,
+          events: ['connection.update', 'qr.updated', 'messages.upsert'],
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown Evolution webhook error.';
+        this.logger.warn(`Failed to set Evolution instance webhook for renamed instance: ${message}`);
+      }
+    }
+
+    try {
+      await this.evolutionService.deleteInstance(currentName);
+    } catch (error) {
+      try {
+        await this.evolutionService.deleteInstance(normalizedNewName);
+      } catch (rollbackError) {
+        const rollbackMessage =
+          rollbackError instanceof Error ? rollbackError.message : 'Unknown rollback error.';
+        this.logger.error(`Failed to rollback replacement instance ${normalizedNewName}: ${rollbackMessage}`);
+      }
+
+      const message = error instanceof Error ? error.message : 'Unknown Evolution deletion error.';
+      throw new ConflictException(
+        `No se pudo reemplazar la instancia actual. ${message}`,
+      );
+    }
+
+    entity.instanceName = normalizedNewName;
+    entity.status = 'created';
+    entity.qrCode = null;
+    entity.phoneNumber = null;
+    entity.sessionData = null;
+    entity.evolutionUrl =
+      (this.configService.get<string>('EVOLUTION_API_URL') ?? '').trim() ||
+      entity.evolutionUrl;
+    entity.evolutionApiKey =
+      (this.configService.get<string>('EVOLUTION_API_KEY') ?? '').trim() ||
+      entity.evolutionApiKey;
+
+    const saved = await this.repo.save(entity);
+    return this.toPublic(saved);
+  }
+
+  async deleteInstance(tenantId: string, instanceName: string): Promise<{ ok: true }> {
+    const entity = await this.getByInstanceName(tenantId, instanceName);
+
+    await this.evolutionService.deleteInstance(entity.instanceName);
+    await this.repo.remove(entity);
+
+    return { ok: true };
+  }
+
   async applyWebhook(payload: {
     event?: string;
     instance?: string;

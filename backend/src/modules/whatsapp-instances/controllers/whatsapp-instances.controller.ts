@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { IsString, MinLength } from 'class-validator';
 
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
@@ -9,6 +9,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { LicenseGuard } from '../../billing/license.guard';
 import { CreateWhatsappInstanceDto } from '../dto/create-whatsapp-instance.dto';
 import { LogoutWhatsappInstanceDto } from '../dto/logout-whatsapp-instance.dto';
+import { UpdateWhatsappInstanceDto } from '../dto/update-whatsapp-instance.dto';
 import { WhatsappInstancesService } from '../services/whatsapp-instances.service';
 
 class InstanceParam {
@@ -50,5 +51,25 @@ export class WhatsappInstancesController {
   @Post('logout')
   logout(@CurrentUser() user: AuthUser, @Body() dto: LogoutWhatsappInstanceDto) {
     return this.whatsappInstancesService.logoutInstance(user.companyId, dto.instanceName);
+  }
+
+  @Roles('admin', 'operator')
+  @Patch('instances/:instance')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param() params: InstanceParam,
+    @Body() dto: UpdateWhatsappInstanceDto,
+  ) {
+    return this.whatsappInstancesService.updateInstance(
+      user.companyId,
+      params.instance,
+      dto.newInstanceName,
+    );
+  }
+
+  @Roles('admin', 'operator')
+  @Delete('instances/:instance')
+  delete(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
+    return this.whatsappInstancesService.deleteInstance(user.companyId, params.instance);
   }
 }

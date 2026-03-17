@@ -108,6 +108,36 @@ class WhatsappInstancesApiClient {
     return _decodeObject(response.body);
   }
 
+  Future<Map<String, dynamic>> updateInstance({
+    required String token,
+    required String instanceName,
+    required String newInstanceName,
+  }) async {
+    final response = await _send(
+      () => _client.patch(
+        _buildUri('/whatsapp/instances/${Uri.encodeComponent(instanceName)}'),
+        headers: _authorizedHeaders(token),
+        body: jsonEncode({'newInstanceName': newInstanceName}),
+      ),
+    );
+
+    return _decodeObject(response.body);
+  }
+
+  Future<Map<String, dynamic>> deleteInstance({
+    required String token,
+    required String instanceName,
+  }) async {
+    final response = await _send(
+      () => _client.delete(
+        _buildUri('/whatsapp/instances/${Uri.encodeComponent(instanceName)}'),
+        headers: _authorizedHeaders(token),
+      ),
+    );
+
+    return _decodeObject(response.body);
+  }
+
   Map<String, String> get _jsonHeaders => const {
         'Accept': 'application/json',
         'Content-Type': 'application/json',

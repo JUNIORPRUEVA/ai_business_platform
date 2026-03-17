@@ -185,6 +185,13 @@ export class EvolutionService {
     }
   }
 
+  async deleteInstance(instanceName: string): Promise<unknown> {
+    return this.requestJson(
+      `/instance/delete/${encodeURIComponent(instanceName)}`,
+      { method: 'DELETE' },
+    );
+  }
+
   async sendMessage(params: {
     instanceName: string;
     phone: string;
@@ -223,9 +230,9 @@ export class EvolutionService {
     const value = candidates.find((v) => typeof v === 'string') as string | undefined;
     const s = (value ?? '').toLowerCase();
 
+    if (s.includes('connecting') || s.includes('pair')) return 'connecting';
     if (s.includes('connect') && !s.includes('disconnect')) return 'connected';
     if (s.includes('open')) return 'connected';
-    if (s.includes('connecting') || s.includes('pair')) return 'connecting';
     if (s.includes('close') || s.includes('disconnect') || s.includes('offline')) return 'disconnected';
 
     return 'disconnected';

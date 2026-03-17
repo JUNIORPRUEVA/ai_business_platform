@@ -37,6 +37,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   String? _requestError;
   Timer? _pollTimer;
   bool _loadingExisting = true;
+  bool _isMutatingInstance = false;
 
   @override
   void initState() {
@@ -154,6 +155,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       _requestError = null;
       _qrBase64 = null;
       _activeInstanceName = instanceName;
+      _isMutatingInstance = true;
     });
 
     try {
@@ -175,8 +177,18 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       setState(() {
         _status = WhatsappChannelUiStatus.notConfigured;
         _requestError = e.message;
+        _isMutatingInstance = false;
       });
+      return;
     }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isMutatingInstance = false;
+    });
   }
 
   Future<void> _fetchQr() async {
@@ -239,6 +251,235 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       }
     } on WhatsappInstancesApiException {
       // Avoid spamming errors during polling.
+    }
+  }
+
+  Future<void> _logoutInstance() async {
+    final instanceName = _activeInstanceName?.trim();
+    if (instanceName == null || instanceName.isEmpty) {
+      return;
+    }
+
+    final token = await _readToken();
+    if (token == null || token.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = 'Tu sesión expiró. Inicia sesión otra vez.';
+      });
+      return;
+    }
+
+    setState(() {
+      _requestError = null;
+      _isMutatingInstance = true;
+    });
+
+    try {
+      await _api.logout(token: token, instanceName: instanceName);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _status = WhatsappChannelUiStatus.disconnected;
+        _qrBase64 = null;
+        _isMutatingInstance = false;
+      });
+
+      await _fetchQr();
+      _startPolling();
+    } on WhatsappInstancesApiException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = e.message;
+        _isMutatingInstance = false;
+      });
+    }
+  }
+
+  Future<void> _renameInstance() async {
+    final currentName = _activeInstanceName?.trim();
+    if (currentName == null || currentName.isEmpty) {
+      return;
+    }
+
+    final controller = TextEditingController(text: currentName);
+    final nextName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Editar instancia'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Cambiar el nombre técnico recreará la instancia con el nuevo nombre. Si está conectada, primero debes desconectarla.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Nuevo nombre de instancia',
+                  hintText: 'mi-instancia-v2',
+                ),
+                autofocus: true,
+                onSubmitted: (value) =>
+                    Navigator.of(dialogContext).pop(value.trim()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('Guardar cambio'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+
+    final normalizedName = nextName?.trim();
+    if (normalizedName == null ||
+        normalizedName.isEmpty ||
+        normalizedName == currentName) {
+      return;
+    }
+
+    final token = await _readToken();
+    if (token == null || token.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = 'Tu sesión expiró. Inicia sesión otra vez.';
+      });
+      return;
+    }
+
+    setState(() {
+      _requestError = null;
+      _fieldError = null;
+      _isMutatingInstance = true;
+    });
+
+    try {
+      final updated = await _api.updateInstance(
+        token: token,
+        instanceName: currentName,
+        newInstanceName: normalizedName,
+      );
+      final savedName =
+          (updated['instanceName'] as String?)?.trim() ?? normalizedName;
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _activeInstanceName = savedName;
+        _instanceController.text = savedName;
+        _status = WhatsappChannelUiStatus.waitingScan;
+        _qrBase64 = null;
+        _isMutatingInstance = false;
+      });
+
+      await _fetchQr();
+      _startPolling();
+    } on WhatsappInstancesApiException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = e.message;
+        _isMutatingInstance = false;
+      });
+    }
+  }
+
+  Future<void> _deleteInstance() async {
+    final currentName = _activeInstanceName?.trim();
+    if (currentName == null || currentName.isEmpty) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar instancia'),
+          content: Text(
+            'Se eliminará la instancia "$currentName" de Evolution y de esta cuenta. Esta acción no se puede deshacer.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    final token = await _readToken();
+    if (token == null || token.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = 'Tu sesión expiró. Inicia sesión otra vez.';
+      });
+      return;
+    }
+
+    setState(() {
+      _requestError = null;
+      _isMutatingInstance = true;
+    });
+
+    try {
+      await _api.deleteInstance(token: token, instanceName: currentName);
+
+      _pollTimer?.cancel();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _activeInstanceName = null;
+        _instanceController.clear();
+        _status = WhatsappChannelUiStatus.notConfigured;
+        _qrBase64 = null;
+        _isMutatingInstance = false;
+      });
+    } on WhatsappInstancesApiException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = e.message;
+        _isMutatingInstance = false;
+      });
     }
   }
 
@@ -430,7 +671,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                     const Icon(Icons.settings_ethernet_rounded),
                               ),
                               enabled:
-                                  _status != WhatsappChannelUiStatus.creating,
+                                  _status != WhatsappChannelUiStatus.creating &&
+                                      !_isMutatingInstance,
                               onChanged: (_) {
                                 if (_fieldError != null) {
                                   setState(() {
@@ -447,12 +689,17 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                               children: [
                                 FilledButton.icon(
                                   onPressed: (_status ==
-                                          WhatsappChannelUiStatus.creating)
+                                              WhatsappChannelUiStatus
+                                                  .creating ||
+                                          _isMutatingInstance)
                                       ? null
                                       : _createInstance,
                                   icon: const Icon(Icons.add_circle_outline),
                                   label: Text(
-                                    _status == WhatsappChannelUiStatus.creating
+                                    _status ==
+                                                WhatsappChannelUiStatus
+                                                    .creating ||
+                                            _isMutatingInstance
                                         ? 'Creando instancia...'
                                         : 'Crear instancia',
                                   ),
@@ -461,6 +708,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   onPressed: (_status ==
                                               WhatsappChannelUiStatus
                                                   .creating ||
+                                          _isMutatingInstance ||
                                           _activeInstanceName == null)
                                       ? null
                                       : () async {
@@ -472,6 +720,23 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                         },
                                   icon: const Icon(Icons.refresh_rounded),
                                   label: const Text('Actualizar'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: (_activeInstanceName == null ||
+                                          _isMutatingInstance)
+                                      ? null
+                                      : _renameInstance,
+                                  icon: const Icon(Icons.edit_outlined),
+                                  label: const Text('Editar'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: (_activeInstanceName == null ||
+                                          _isMutatingInstance)
+                                      ? null
+                                      : _deleteInstance,
+                                  icon:
+                                      const Icon(Icons.delete_outline_rounded),
+                                  label: const Text('Eliminar'),
                                 ),
                               ],
                             ),
@@ -710,6 +975,51 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           theme.textTheme.bodyMedium?.copyWith(
                                         fontWeight: FontWeight.w800,
                                       ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: _isMutatingInstance
+                                            ? null
+                                            : _refreshStatus,
+                                        icon: const Icon(Icons.sync_rounded),
+                                        label: const Text('Actualizar estado'),
+                                      ),
+                                      OutlinedButton.icon(
+                                        onPressed: _isMutatingInstance
+                                            ? null
+                                            : _logoutInstance,
+                                        icon:
+                                            const Icon(Icons.link_off_rounded),
+                                        label: const Text('Desconectar'),
+                                      ),
+                                      OutlinedButton.icon(
+                                        onPressed: _isMutatingInstance
+                                            ? null
+                                            : _deleteInstance,
+                                        icon: const Icon(
+                                            Icons.delete_outline_rounded),
+                                        label: const Text('Eliminar'),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    'Opciones de la instancia',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Puedes actualizar el estado de conexión, desconectar la instancia para volver a vincularla o eliminarla. Para cambiar su nombre técnico, primero debes desconectarla.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.68),
                                     ),
                                   ),
                                 ],
