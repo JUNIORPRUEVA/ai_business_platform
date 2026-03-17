@@ -30,16 +30,7 @@ export class WhatsappInstancesService {
     });
 
     // Never expose secrets
-    return items.map((i) => ({
-      id: i.id,
-      tenantId: i.tenantId,
-      instanceName: i.instanceName,
-      status: i.status,
-      qrCode: i.qrCode,
-      phoneNumber: i.phoneNumber,
-      createdAt: i.createdAt,
-      updatedAt: i.updatedAt,
-    }));
+    return items.map((i) => this.toPublic(i));
   }
 
   async getByInstanceName(tenantId: string, instanceName: string): Promise<WhatsappInstanceEntity> {
@@ -63,6 +54,20 @@ export class WhatsappInstancesService {
 
     await this.evolutionService.createInstance({ instanceName: normalized, qrcode: true });
 
+    const instanceWebhookUrl = (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_URL') ?? '').trim();
+    if (instanceWebhookUrl) {
+      try {
+        await this.evolutionService.setWebhook({
+          instanceName: normalized,
+          url: instanceWebhookUrl,
+          events: ['connection.update', 'qr.updated', 'messages.upsert'],
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown Evolution webhook error.';
+        this.logger.warn(`Failed to set Evolution instance webhook: ${message}`);
+      }
+    }
+
     const entity = this.repo.create({
       tenantId,
       instanceName: normalized,
@@ -74,10 +79,11 @@ export class WhatsappInstancesService {
       sessionData: null,
     });
 
-    return this.repo.save(entity);
+    const saved = await this.repo.save(entity);
+    return this.toPublic(saved);
   }
 
-  async getQRCode(tenantId: string, instanceName: string): Promise<{ qrCode: string | null; raw: unknown }> {
+  async getQRCode(tenantId: string, instanceName: string): Promise<{ qrCode: string | null }> {
     const entity = await this.getByInstanceName(tenantId, instanceName);
 
     const raw = await this.evolutionService.getQRCode(entity.instanceName);
@@ -89,13 +95,13 @@ export class WhatsappInstancesService {
     }
 
     await this.repo.save(entity);
-    return { qrCode, raw };
+    return { qrCode };
   }
 
-  async refreshStatus(tenantId: string, instanceName: string): Promise<{ status: WhatsappInstanceStatus; phoneNumber: string | null; raw: unknown }> {
+  async refreshStatus(tenantId: string, instanceName: string): Promise<{ status: WhatsappInstanceStatus; phoneNumber: string | null }> {
     const entity = await this.getByInstanceName(tenantId, instanceName);
 
-    const { status: evoStatus, raw } = await this.evolutionService.checkConnection(entity.instanceName);
+    const { status: evoStatus } = await this.evolutionService.checkConnection(entity.instanceName);
 
     entity.status = this.mapEvolutionStatus(evoStatus);
     if (entity.status === 'connected') {
@@ -103,7 +109,7 @@ export class WhatsappInstancesService {
     }
 
     await this.repo.save(entity);
-    return { status: entity.status, phoneNumber: entity.phoneNumber, raw };
+    return { status: entity.status, phoneNumber: entity.phoneNumber };
   }
 
   async logoutInstance(tenantId: string, instanceName: string): Promise<{ ok: true }> {
@@ -269,5 +275,18 @@ export class WhatsappInstancesService {
     }
 
     return null;
+  }
+
+  private toPublic(entity: WhatsappInstanceEntity) {
+    return {
+      id: entity.id,
+      tenantId: entity.tenantId,
+      instanceName: entity.instanceName,
+      status: entity.status,
+      qrCode: entity.qrCode,
+      phoneNumber: entity.phoneNumber,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    };
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/presentation/widgets/module_header.dart';
 import '../../../../features/executive_layout/presentation/widgets/executive_content_container.dart';
+import 'whatsapp_channel_screen.dart';
 
 class ChannelsScreen extends StatelessWidget {
   const ChannelsScreen({super.key});
@@ -33,11 +34,18 @@ class ChannelsScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                const _ChannelCard(
+                _ChannelCard(
                   title: 'WhatsApp Evolution API',
                   subtitle: 'Gateway principal vía servidor Evolution',
                   connected: true,
                   icon: Icons.chat_rounded,
+                  onConfigure: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const WhatsappChannelScreen(),
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 const _ChannelCard(
@@ -82,12 +90,14 @@ class _ChannelCard extends StatelessWidget {
     required this.subtitle,
     required this.connected,
     required this.icon,
+    this.onConfigure,
   });
 
   final String title;
   final String subtitle;
   final bool connected;
   final IconData icon;
+  final VoidCallback? onConfigure;
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +169,7 @@ class _ChannelCard extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           OutlinedButton.icon(
-            onPressed: () {},
+            onPressed: onConfigure,
             icon: const Icon(Icons.settings_outlined),
             label: const Text('Configurar'),
           ),
