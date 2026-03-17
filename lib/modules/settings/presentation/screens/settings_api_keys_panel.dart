@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../features/executive_layout/presentation/widgets/executive_content_container.dart';
+import '../../../auth/application/auth_providers.dart';
+import '../../../auth/data/auth_token_store.dart';
+import '../../../auth/data/auth_api_client.dart';
+import '../../../auth/domain/auth_session.dart';
+import '../../../../features/bot_configuration_center/data/services/bot_configuration_center_api_client.dart';
 
-class SettingsApiKeysPanel extends StatefulWidget {
+class SettingsApiKeysPanel extends ConsumerStatefulWidget {
   const SettingsApiKeysPanel({super.key});
 
   @override
-  State<SettingsApiKeysPanel> createState() => _SettingsApiKeysPanelState();
+  ConsumerState<SettingsApiKeysPanel> createState() =>
+      _SettingsApiKeysPanelState();
 }
 
-class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
+class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
   final openAiKey = TextEditingController();
   final evolutionUrl = TextEditingController();
   final evolutionKey = TextEditingController();
@@ -17,10 +24,19 @@ class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
   final metaPhoneNumberId = TextEditingController();
   final instagramToken = TextEditingController();
   final webhookUrl = TextEditingController();
+  final _apiClient = BotConfigurationCenterApiClient();
 
   bool isTesting = false;
+  bool _isLoading = true;
+  bool _isSaving = false;
   String? banner;
   bool bannerIsError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(_load);
+  }
 
   @override
   void dispose() {
@@ -34,22 +50,203 @@ class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
     super.dispose();
   }
 
-  Future<void> _testConnection(String label, bool ok) async {
+  Future<String> _requireToken() async {
+    final token = await ref.read(authTokenStoreProvider).read();
+    if (token == null || token.trim().isEmpty) {
+      throw const AuthApiException('Tu sesión expiró. Inicia sesión otra vez.');
+    }
+    return token;
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      banner = null;
+    });
+
+    try {
+      final token = await _requireToken();
+      final configuration =
+          await _apiClient.getJson('/bot-configuration', token: token);
+
+      final openAi = _asMap(configuration['openai']);
+      final evolution = _asMap(configuration['evolution']);
+      final integrations = _asMap(configuration['integrations']);
+
+      openAiKey.text = _readString(openAi, 'apiKey');
+      evolutionUrl.text = _readString(evolution, 'baseUrl');
+      evolutionKey.text = _readString(evolution, 'apiKey');
+      metaToken.text = _readString(integrations, 'metaCloudApiToken');
+      metaPhoneNumberId.text = _readString(integrations, 'metaPhoneNumberId');
+      instagramToken.text = _readString(integrations, 'instagramToken');
+      webhookUrl.text = _readString(integrations, 'webhookUrl');
+    } on BotConfigurationCenterApiException catch (error) {
+      bannerIsError = true;
+      banner = error.message;
+    } on AuthApiException catch (error) {
+      bannerIsError = true;
+      banner = error.message;
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _saveAll() async {
+    setState(() {
+      _isSaving = true;
+      banner = null;
+    });
+
+    try {
+      final token = await _requireToken();
+
+      await _apiClient.putJson(
+        '/bot-configuration/openai',
+        {
+          'apiKey': openAiKey.text.trim(),
+        },
+        token: token,
+      );
+
+      await _apiClient.putJson(
+        '/bot-configuration/evolution',
+        {
+          'baseUrl': evolutionUrl.text.trim(),
+          'apiKey': evolutionKey.text.trim(),
+        },
+        token: token,
+      );
+
+      await _apiClient.putJson(
+        '/bot-configuration/integrations',
+        {
+          'metaCloudApiToken': metaToken.text.trim(),
+          'metaPhoneNumberId': metaPhoneNumberId.text.trim(),
+          'instagramToken': instagramToken.text.trim(),
+          'webhookUrl': webhookUrl.text.trim(),
+        },
+        token: token,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        bannerIsError = false;
+        banner = 'Credenciales guardadas correctamente.';
+      });
+    } on BotConfigurationCenterApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        bannerIsError = true;
+        banner = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        bannerIsError = true;
+        banner = error.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSaving = false;
+      });
+    }
+  }
+
+  Future<void> _testEvolutionConnection() async {
     setState(() {
       isTesting = true;
       banner = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 650));
+    try {
+      final token = await _requireToken();
+      await _apiClient.putJson(
+        '/bot-configuration/evolution',
+        {
+          'baseUrl': evolutionUrl.text.trim(),
+          'apiKey': evolutionKey.text.trim(),
+        },
+        token: token,
+      );
 
-    if (!mounted) return;
+      final response = await _apiClient.getJson(
+        '/bot-configuration/evolution/connection',
+        token: token,
+      );
+
+      final status =
+          (response['connectionStatus'] as String? ?? 'desconocido').trim();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        bannerIsError = false;
+        banner = 'Estado de Evolution: $status.';
+      });
+    } on BotConfigurationCenterApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        bannerIsError = true;
+        banner = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        bannerIsError = true;
+        banner = error.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        isTesting = false;
+      });
+    }
+  }
+
+  Future<void> _testWebhook() async {
+    setState(() {
+      isTesting = true;
+      banner = null;
+    });
+
+    final parsedUrl = Uri.tryParse(webhookUrl.text.trim());
+    final isValid = parsedUrl != null &&
+        (parsedUrl.scheme == 'http' || parsedUrl.scheme == 'https') &&
+        (parsedUrl.host.isNotEmpty);
+
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       isTesting = false;
-      bannerIsError = !ok;
-      banner = ok
-          ? 'Conexión a $label OK.'
-          : 'Falló la conexión a $label. Verifica credenciales y acceso de red.';
+      bannerIsError = !isValid;
+      banner = isValid
+          ? 'Webhook válido y listo para guardarse.'
+          : 'La URL del webhook no es válida.';
     });
   }
 
@@ -67,7 +264,9 @@ class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
               child: Row(
                 children: [
                   Icon(
-                    bannerIsError ? Icons.error_outline_rounded : Icons.check_circle_outline,
+                    bannerIsError
+                        ? Icons.error_outline_rounded
+                        : Icons.check_circle_outline,
                     color: bannerIsError
                         ? const Color(0xFFFB7185).withValues(alpha: 0.90)
                         : const Color(0xFF22C55E).withValues(alpha: 0.90),
@@ -81,6 +280,13 @@ class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (_isLoading) ...[
+            const ExecutiveGlassCard(
+              padding: EdgeInsets.all(16),
+              child: LinearProgressIndicator(),
             ),
             const SizedBox(height: 12),
           ],
@@ -104,28 +310,29 @@ class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
                       label: 'Clave API de OpenAI',
                       hint: 'sk-…',
                       obscure: true,
+                      enabled: !_isLoading && !_isSaving,
                     ),
                     _KeyField(
                       controller: evolutionUrl,
                       label: 'URL de Evolution API',
                       hint: 'https://evolution.example.com',
+                      enabled: !_isLoading && !_isSaving,
                     ),
                     _KeyField(
                       controller: evolutionKey,
                       label: 'Clave de Evolution API',
                       hint: 'evo_…',
                       obscure: true,
+                      enabled: !_isLoading && !_isSaving,
                     ),
                     FilledButton.icon(
-                      onPressed: isTesting
+                      onPressed: isTesting || _isLoading || _isSaving
                           ? null
-                          : () => _testConnection(
-                                'Evolution',
-                                evolutionUrl.text.trim().isNotEmpty &&
-                                    evolutionKey.text.trim().isNotEmpty,
-                              ),
+                          : _testEvolutionConnection,
                       icon: const Icon(Icons.bolt_rounded),
-                      label: Text(isTesting ? 'Probando…' : 'Probar conexión Evolution'),
+                      label: Text(isTesting
+                          ? 'Probando…'
+                          : 'Probar conexión Evolution'),
                     ),
                   ],
                   right: [
@@ -134,30 +341,31 @@ class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
                       label: 'Token de Meta Cloud API',
                       hint: 'EAAG…',
                       obscure: true,
+                      enabled: !_isLoading && !_isSaving,
                     ),
                     _KeyField(
                       controller: metaPhoneNumberId,
                       label: 'ID de número telefónico (Meta)',
                       hint: '123456789',
+                      enabled: !_isLoading && !_isSaving,
                     ),
                     _KeyField(
                       controller: instagramToken,
                       label: 'Token de Instagram',
                       hint: 'IGQV…',
                       obscure: true,
+                      enabled: !_isLoading && !_isSaving,
                     ),
                     _KeyField(
                       controller: webhookUrl,
                       label: 'URL del webhook',
                       hint: 'https://yourdomain.com/webhook',
+                      enabled: !_isLoading && !_isSaving,
                     ),
                     FilledButton.icon(
-                      onPressed: isTesting
+                      onPressed: isTesting || _isLoading || _isSaving
                           ? null
-                          : () => _testConnection(
-                                'Webhook',
-                                webhookUrl.text.trim().startsWith('http'),
-                              ),
+                          : _testWebhook,
                       icon: const Icon(Icons.wifi_tethering_rounded),
                       label: Text(isTesting ? 'Probando…' : 'Probar webhook'),
                     ),
@@ -168,17 +376,24 @@ class _SettingsApiKeysPanelState extends State<SettingsApiKeysPanel> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Las claves se almacenan por tenant. Asegúrate de no reutilizar credenciales entre empresas.',
+                        'Las claves se almacenan por tenant. OpenAI, Evolution, Meta, Instagram y webhook ahora se guardan en la configuración central del backend.',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.62),
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.62),
                         ),
                       ),
                     ),
                     const SizedBox(width: 10),
                     FilledButton.icon(
-                      onPressed: () => _testConnection('Guardado', true),
-                      icon: const Icon(Icons.save_rounded),
-                      label: const Text('Guardar'),
+                      onPressed: _isLoading || _isSaving ? null : _saveAll,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(_isSaving ? 'Guardando...' : 'Guardar'),
                     ),
                   ],
                 ),
@@ -197,12 +412,14 @@ class _KeyField extends StatelessWidget {
     required this.label,
     required this.hint,
     this.obscure = false,
+    this.enabled = true,
   });
 
   final TextEditingController controller;
   final String label;
   final String hint;
   final bool obscure;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -211,6 +428,7 @@ class _KeyField extends StatelessWidget {
       child: TextField(
         controller: controller,
         obscureText: obscure,
+        enabled: enabled,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -218,6 +436,19 @@ class _KeyField extends StatelessWidget {
       ),
     );
   }
+}
+
+Map<String, dynamic> _asMap(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+
+  return const <String, dynamic>{};
+}
+
+String _readString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  return value is String ? value : '';
 }
 
 class _TwoColumnForm extends StatelessWidget {

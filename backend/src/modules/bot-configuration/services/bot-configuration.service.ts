@@ -9,6 +9,7 @@ import { CreatePromptTemplateDto } from '../dto/create-prompt-template.dto';
 import { CreateToolDto } from '../dto/create-tool.dto';
 import { UpdateEvolutionSettingsDto } from '../dto/update-evolution-settings.dto';
 import { UpdateGeneralSettingsDto } from '../dto/update-general-settings.dto';
+import { UpdateIntegrationsSettingsDto } from '../dto/update-integrations-settings.dto';
 import { UpdateMemorySettingsDto } from '../dto/update-memory-settings.dto';
 import { UpdateOpenAiSettingsDto } from '../dto/update-openai-settings.dto';
 import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settings.dto';
@@ -22,6 +23,7 @@ import {
   EvolutionSettings,
   PromptTemplate,
   InternalToolSettings,
+  normalizeBotConfiguration,
 } from '../types/bot-configuration.types';
 
 @Injectable()
@@ -38,10 +40,10 @@ export class BotConfigurationService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const fileSnapshot = await this.fileStore.readOrCreate(
+    const fileSnapshot = normalizeBotConfiguration(await this.fileStore.readOrCreate(
       'bot-configuration.json',
       createDefaultBotConfiguration,
-    );
+    ));
 
     const persistedSnapshot = await this.configurationRepository.findOne({
       where: { scope: BotConfigurationService.constScope },
@@ -49,7 +51,7 @@ export class BotConfigurationService implements OnModuleInit {
 
     if (persistedSnapshot) {
       this.snapshotId = persistedSnapshot.id;
-      this.state = structuredClone(persistedSnapshot.payload);
+      this.state = normalizeBotConfiguration(structuredClone(persistedSnapshot.payload));
       await this.fileStore.write('bot-configuration.json', this.state);
       return;
     }
@@ -203,6 +205,17 @@ export class BotConfigurationService implements OnModuleInit {
     };
     await this.persist();
     return structuredClone(this.state.openai);
+  }
+
+  async updateIntegrationsSettings(
+    payload: UpdateIntegrationsSettingsDto,
+  ): Promise<BotConfigurationBundle['integrations']> {
+    this.state.integrations = {
+      ...this.state.integrations,
+      ...payload,
+    };
+    await this.persist();
+    return structuredClone(this.state.integrations);
   }
 
   async updateMemorySettings(

@@ -10,6 +10,7 @@ import { CreatePromptTemplateDto } from '../dto/create-prompt-template.dto';
 import { CreateToolDto } from '../dto/create-tool.dto';
 import { UpdateEvolutionSettingsDto } from '../dto/update-evolution-settings.dto';
 import { UpdateGeneralSettingsDto } from '../dto/update-general-settings.dto';
+import { UpdateIntegrationsSettingsDto } from '../dto/update-integrations-settings.dto';
 import { UpdateMemorySettingsDto } from '../dto/update-memory-settings.dto';
 import { UpdateOpenAiSettingsDto } from '../dto/update-openai-settings.dto';
 import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settings.dto';
@@ -60,6 +61,12 @@ export class BotConfigurationController {
   @Put('openai')
   updateOpenAi(@Body() payload: UpdateOpenAiSettingsDto) {
     return this.botConfigurationService.updateOpenAiSettings(payload);
+  }
+
+  @Roles('admin', 'operator')
+  @Put('integrations')
+  updateIntegrations(@Body() payload: UpdateIntegrationsSettingsDto) {
+    return this.botConfigurationService.updateIntegrationsSettings(payload);
   }
 
   @Roles('admin', 'operator')

@@ -27,6 +27,13 @@ export interface OpenAiSettings {
   systemPromptPreview: string;
 }
 
+export interface IntegrationsSettings {
+  metaCloudApiToken: string;
+  metaPhoneNumberId: string;
+  instagramToken: string;
+  webhookUrl: string;
+}
+
 export interface MemorySettings {
   enableShortTermMemory: boolean;
   enableLongTermMemory: boolean;
@@ -78,6 +85,7 @@ export interface BotConfigurationBundle {
   general: GeneralSettings;
   evolution: EvolutionSettings;
   openai: OpenAiSettings;
+  integrations: IntegrationsSettings;
   memory: MemorySettings;
   orchestrator: OrchestratorSettings;
   prompts: PromptTemplate[];
@@ -113,6 +121,12 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
       isEnabled: true,
       systemPromptPreview:
         'Enterprise assistant tuned for sales, support, catalog guidance, and operator-safe escalation.',
+    },
+    integrations: {
+      metaCloudApiToken: '',
+      metaPhoneNumberId: '',
+      instagramToken: '',
+      webhookUrl: '',
     },
     memory: {
       enableShortTermMemory: true,
@@ -179,6 +193,47 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
       webhookSigningSecret: '',
       encryptSecrets: true,
       auditLog: true,
+    },
+  };
+}
+
+export function normalizeBotConfiguration(
+  snapshot: Partial<BotConfigurationBundle> | undefined,
+): BotConfigurationBundle {
+  const defaults = createDefaultBotConfiguration();
+
+  return {
+    ...defaults,
+    ...snapshot,
+    general: {
+      ...defaults.general,
+      ...(snapshot?.general ?? {}),
+    },
+    evolution: {
+      ...defaults.evolution,
+      ...(snapshot?.evolution ?? {}),
+    },
+    openai: {
+      ...defaults.openai,
+      ...(snapshot?.openai ?? {}),
+    },
+    integrations: {
+      ...defaults.integrations,
+      ...(snapshot?.integrations ?? {}),
+    },
+    memory: {
+      ...defaults.memory,
+      ...(snapshot?.memory ?? {}),
+    },
+    orchestrator: {
+      ...defaults.orchestrator,
+      ...(snapshot?.orchestrator ?? {}),
+    },
+    prompts: snapshot?.prompts ?? defaults.prompts,
+    tools: snapshot?.tools ?? defaults.tools,
+    security: {
+      ...defaults.security,
+      ...(snapshot?.security ?? {}),
     },
   };
 }
