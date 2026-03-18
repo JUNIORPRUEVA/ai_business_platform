@@ -277,11 +277,13 @@ export class WhatsappChannelConfigService {
 
   private buildWebhookPayload(entity: WhatsappChannelConfigEntity): Record<string, unknown> {
     return {
-      enabled: entity.webhookEnabled,
-      webhook: entity.webhookUrl,
-      webhookByEvents: entity.webhookByEvents,
-      webhookBase64: entity.webhookBase64,
-      events: entity.webhookEventsJson,
+      webhook: {
+        enabled: entity.webhookEnabled,
+        url: entity.webhookUrl,
+        webhookByEvents: entity.webhookByEvents,
+        webhookBase64: entity.webhookBase64,
+        events: entity.webhookEventsJson.map((event) => this.normalizeWebhookEvent(event)),
+      },
     };
   }
 
@@ -292,7 +294,7 @@ export class WhatsappChannelConfigService {
     const remoteUrl = this.readWebhookUrl(remote);
     const remoteEvents = this.readWebhookEvents(remote);
     return remoteUrl === (entity.webhookUrl ?? '') &&
-      JSON.stringify(remoteEvents.sort()) === JSON.stringify([...entity.webhookEventsJson].sort());
+      JSON.stringify(remoteEvents.sort()) === JSON.stringify(entity.webhookEventsJson.map((event) => this.normalizeWebhookEvent(event)).sort());
   }
 
   private readWebhookUrl(remote: Record<string, unknown>): string {
@@ -320,18 +322,45 @@ export class WhatsappChannelConfigService {
   private readWebhookEvents(remote: Record<string, unknown>): string[] {
     const direct = this.readStringArray(remote['events']);
     if (direct.length > 0) {
-      return direct;
+      return direct.map((event) => this.normalizeWebhookEvent(event));
     }
 
     const nestedCandidates = [remote['data'], remote['instance'], remote['webhookData']];
     for (const candidate of nestedCandidates) {
       const nested = this.readStringArray(this.readMap(candidate)['events']);
       if (nested.length > 0) {
-        return nested;
+        return nested.map((event) => this.normalizeWebhookEvent(event));
       }
     }
 
     return [];
+  }
+
+  private normalizeWebhookEvent(event: string): string {
+    const normalized = event.trim().toUpperCase();
+    switch (normalized) {
+      case 'MESSAGES_UPSERT':
+      case 'MESSAGES.UPSERT':
+        return 'MESSAGES_UPSERT';
+      case 'MESSAGES_UPDATE':
+      case 'MESSAGES.UPDATE':
+        return 'MESSAGES_UPDATE';
+      case 'MESSAGES_DELETE':
+      case 'MESSAGES.DELETE':
+        return 'MESSAGES_DELETE';
+      case 'SEND_MESSAGE':
+      case 'SEND.MESSAGE':
+        return 'SEND_MESSAGE';
+      case 'CONNECTION_UPDATE':
+      case 'CONNECTION.UPDATE':
+        return 'CONNECTION_UPDATE';
+      case 'QRCODE_UPDATED':
+      case 'QR_UPDATED':
+      case 'QR.UPDATED':
+        return 'QRCODE_UPDATED';
+      default:
+        return normalized;
+    }
   }
 
   private normalizeInstanceName(value: string): string {

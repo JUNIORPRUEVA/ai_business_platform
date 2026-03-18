@@ -14,6 +14,15 @@ export const EVOLUTION_INSTANCE_WEBHOOK_EVENTS = [
   'qr.updated',
 ] as const;
 
+const EVOLUTION_EVENT_TO_API_EVENT: Record<string, string> = {
+  'messages.upsert': 'MESSAGES_UPSERT',
+  'messages.update': 'MESSAGES_UPDATE',
+  'messages.delete': 'MESSAGES_DELETE',
+  'send.message': 'SEND_MESSAGE',
+  'connection.update': 'CONNECTION_UPDATE',
+  'qr.updated': 'QRCODE_UPDATED',
+};
+
 export type EvolutionInstanceConnectionStatus =
   | 'connecting'
   | 'connected'
@@ -126,7 +135,10 @@ export class EvolutionService {
     );
 
     if (!res.ok) {
-      throw new ServiceUnavailableException(`Evolution API error (${res.status}).`);
+      const detail = this.extractErrorMessage(text);
+      throw new ServiceUnavailableException(
+        detail ? `Evolution API error (${res.status}): ${detail}` : `Evolution API error (${res.status}).`,
+      );
     }
 
     if (!text) return {} as T;
@@ -244,23 +256,60 @@ export class EvolutionService {
     webhookUrl: string;
     events?: string[];
   }): Promise<unknown> {
-    const payload = {
-      webhook: params.webhookUrl,
-      events: params.events ?? this.getDefaultInstanceWebhookEvents(),
+    const normalizedEvents = this.normalizeEventsForApi(
+      params.events ?? this.getDefaultInstanceWebhookEvents(),
+    );
+
+    const objectPayload = {
+      webhook: {
+        enabled: true,
+        url: params.webhookUrl,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events: normalizedEvents,
+      },
     };
 
-    return this.requestJsonWithTracing(
-      `/webhook/set/${encodeURIComponent(params.instanceName)}`,
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      },
-      {
-        action: 'set',
-        instanceName: params.instanceName,
-        payload,
-      },
-    );
+    try {
+      return await this.requestJsonWithTracing(
+        `/webhook/set/${encodeURIComponent(params.instanceName)}`,
+        {
+          method: 'POST',
+          body: JSON.stringify(objectPayload),
+        },
+        {
+          action: 'set-object',
+          instanceName: params.instanceName,
+          payload: objectPayload,
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown Evolution webhook error.';
+      if (!this.shouldRetryWebhookWithFlatPayload(message)) {
+        throw error;
+      }
+
+      const flatPayload = {
+        enabled: true,
+        url: params.webhookUrl,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events: normalizedEvents,
+      };
+
+      return this.requestJsonWithTracing(
+        `/webhook/set/${encodeURIComponent(params.instanceName)}`,
+        {
+          method: 'POST',
+          body: JSON.stringify(flatPayload),
+        },
+        {
+          action: 'set-flat-fallback',
+          instanceName: params.instanceName,
+          payload: flatPayload,
+        },
+      );
+    }
   }
 
   async reapplyWebhook(instanceName: string): Promise<{
@@ -420,5 +469,54 @@ export class EvolutionService {
     } catch {
       return '[unserializable]';
     }
+  }
+
+  private normalizeEventsForApi(events: string[]): string[] {
+    return events.map((event) => EVOLUTION_EVENT_TO_API_EVENT[event] ?? event.toUpperCase());
+  }
+
+  private shouldRetryWebhookWithFlatPayload(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('url is required') ||
+      normalized.includes('enabled is required') ||
+      normalized.includes('webhookbyevents') ||
+      normalized.includes('webhookbase64') ||
+      normalized.includes('should not exist');
+  }
+
+  private extractErrorMessage(source: string): string {
+    if (!source.trim()) {
+      return '';
+    }
+
+    try {
+      const parsed = JSON.parse(source) as Record<string, unknown>;
+      const collected = this.collectMessages(parsed);
+      return collected.join(' | ').trim();
+    } catch {
+      return source.trim();
+    }
+  }
+
+  private collectMessages(value: unknown): string[] {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed ? [trimmed] : [];
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => this.collectMessages(item));
+    }
+
+    if (typeof value === 'object' && value != null) {
+      const map = value as Record<string, unknown>;
+      return [
+        ...this.collectMessages(map['message']),
+        ...this.collectMessages(map['error']),
+        ...this.collectMessages(map['response']),
+      ];
+    }
+
+    return [];
   }
 }

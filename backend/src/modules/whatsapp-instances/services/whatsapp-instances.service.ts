@@ -495,7 +495,7 @@ export class WhatsappInstancesService {
     const matchesExpectedUrl = remoteWebhookUrl === expectedWebhookUrl;
     const matchesExpectedEvents =
       remoteEvents.length > 0 &&
-      expectedEvents.every((event) => remoteEvents.includes(event));
+      expectedEvents.every((event) => remoteEvents.includes(this.normalizeWebhookEvent(event)));
 
     return {
       instanceName,
@@ -599,7 +599,7 @@ export class WhatsappInstancesService {
   private readWebhookEvents(source: Record<string, unknown>): string[] {
     const direct = this.readStringArrayFromMap(source, 'events');
     if (direct.length > 0) {
-      return direct;
+      return direct.map((event) => this.normalizeWebhookEvent(event));
     }
 
     const nestedCandidates = [
@@ -616,11 +616,38 @@ export class WhatsappInstancesService {
 
       const nested = this.readStringArrayFromMap(candidate as Record<string, unknown>, 'events');
       if (nested.length > 0) {
-        return nested;
+        return nested.map((event) => this.normalizeWebhookEvent(event));
       }
     }
 
     return [];
+  }
+
+  private normalizeWebhookEvent(event: string): string {
+    const normalized = event.trim().toUpperCase();
+    switch (normalized) {
+      case 'MESSAGES_UPSERT':
+      case 'MESSAGES.UPSERT':
+        return 'MESSAGES_UPSERT';
+      case 'MESSAGES_UPDATE':
+      case 'MESSAGES.UPDATE':
+        return 'MESSAGES_UPDATE';
+      case 'MESSAGES_DELETE':
+      case 'MESSAGES.DELETE':
+        return 'MESSAGES_DELETE';
+      case 'SEND_MESSAGE':
+      case 'SEND.MESSAGE':
+        return 'SEND_MESSAGE';
+      case 'CONNECTION_UPDATE':
+      case 'CONNECTION.UPDATE':
+        return 'CONNECTION_UPDATE';
+      case 'QRCODE_UPDATED':
+      case 'QR_UPDATED':
+      case 'QR.UPDATED':
+        return 'QRCODE_UPDATED';
+      default:
+        return normalized;
+    }
   }
 
   private readStringArrayFromMap(
