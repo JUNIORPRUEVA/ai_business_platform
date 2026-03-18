@@ -213,7 +213,7 @@ export class WhatsappWebhookService {
       config,
       remoteJid,
       canonicalRemoteJid,
-      rawRemoteJid: rawRemoteJid.isEmpty ? null : rawRemoteJid,
+        rawRemoteJid: rawRemoteJid ? rawRemoteJid : null,
       pushName: this.readString(data['pushName']) || null,
       evolutionMessageId: messageId,
       fromMe,
