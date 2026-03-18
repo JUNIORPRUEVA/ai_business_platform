@@ -221,6 +221,7 @@ export class WhatsappInstancesService {
     remoteEvents: string[];
     isConfigured: boolean;
     matchesExpected: boolean;
+    autoConfigured: boolean;
     remote: Record<string, unknown> | null;
     error: string | null;
   }> {
@@ -229,26 +230,38 @@ export class WhatsappInstancesService {
     const expectedEvents = await this.getConfiguredWebhookEvents();
 
     try {
-      const remote = await this.evolutionService.findWebhook(entity.instanceName);
-      const remoteWebhookUrl =
-        this.readStringFromMap(remote, 'url') ||
-        this.readStringFromMap(remote, 'webhookUrl');
-      const remoteEvents = this.readStringArrayFromMap(remote, 'events');
-      const matchesExpectedUrl = remoteWebhookUrl === expectedWebhookUrl;
-      const matchesExpectedEvents =
-        remoteEvents.length > 0 &&
-        expectedEvents.every((event) => remoteEvents.includes(event));
-
-      return {
-        instanceName: entity.instanceName,
+      const currentStatus = await this.readWebhookStatus(
+        entity.instanceName,
         expectedWebhookUrl,
         expectedEvents,
-        remoteWebhookUrl,
-        remoteEvents,
-        isConfigured: remoteWebhookUrl.length > 0,
-        matchesExpected: matchesExpectedUrl && matchesExpectedEvents,
-        remote,
-        error: null,
+      );
+
+      if (currentStatus.matchesExpected) {
+        return {
+          ...currentStatus,
+          autoConfigured: false,
+          error: null,
+        };
+      }
+
+      await this.evolutionService.setWebhook({
+        instanceName: entity.instanceName,
+        url: expectedWebhookUrl,
+        events: expectedEvents,
+      });
+
+      const repairedStatus = await this.readWebhookStatus(
+        entity.instanceName,
+        expectedWebhookUrl,
+        expectedEvents,
+      );
+
+      return {
+        ...repairedStatus,
+        autoConfigured: repairedStatus.matchesExpected,
+        error: repairedStatus.matchesExpected
+            ? null
+            : 'No se pudo dejar el webhook sincronizado en Evolution.',
       };
     } catch (error) {
       return {
@@ -259,6 +272,7 @@ export class WhatsappInstancesService {
         remoteEvents: [],
         isConfigured: false,
         matchesExpected: false,
+        autoConfigured: false,
         remote: null,
         error: error instanceof Error ? error.message : 'No se pudo consultar el webhook en Evolution.',
       };
@@ -447,6 +461,42 @@ export class WhatsappInstancesService {
 
   private buildWebhookEvents(): string[] {
     return ['connection.update', 'qr.updated', 'messages.upsert'];
+  }
+
+  private async readWebhookStatus(
+    instanceName: string,
+    expectedWebhookUrl: string,
+    expectedEvents: string[],
+  ): Promise<{
+    instanceName: string;
+    expectedWebhookUrl: string;
+    expectedEvents: string[];
+    remoteWebhookUrl: string;
+    remoteEvents: string[];
+    isConfigured: boolean;
+    matchesExpected: boolean;
+    remote: Record<string, unknown> | null;
+  }> {
+    const remote = await this.evolutionService.findWebhook(instanceName);
+    const remoteWebhookUrl =
+      this.readStringFromMap(remote, 'url') ||
+      this.readStringFromMap(remote, 'webhookUrl');
+    const remoteEvents = this.readStringArrayFromMap(remote, 'events');
+    const matchesExpectedUrl = remoteWebhookUrl === expectedWebhookUrl;
+    const matchesExpectedEvents =
+      remoteEvents.length > 0 &&
+      expectedEvents.every((event) => remoteEvents.includes(event));
+
+    return {
+      instanceName,
+      expectedWebhookUrl,
+      expectedEvents,
+      remoteWebhookUrl,
+      remoteEvents,
+      isConfigured: remoteWebhookUrl.length > 0,
+      matchesExpected: matchesExpectedUrl && matchesExpectedEvents,
+      remote,
+    };
   }
 
   private async getWhatsappSettings(): Promise<{

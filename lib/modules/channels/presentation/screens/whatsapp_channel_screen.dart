@@ -254,6 +254,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       );
 
       final matchesExpected = response['matchesExpected'] == true;
+        final autoConfigured = response['autoConfigured'] == true;
       final isConfigured = response['isConfigured'] == true;
       final remoteWebhookUrl =
           (response['remoteWebhookUrl'] as String? ?? '').trim();
@@ -266,8 +267,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       setState(() {
         _webhookStatusIsError = !matchesExpected;
         if (matchesExpected) {
-          _webhookStatusMessage =
-              'Webhook conectado correctamente en Evolution.';
+          _webhookStatusMessage = autoConfigured
+              ? 'Webhook configurado automaticamente y conectado correctamente en Evolution.'
+              : 'Webhook conectado correctamente en Evolution.';
         } else if (error.isNotEmpty) {
           _webhookStatusMessage = error;
         } else if (!isConfigured) {
