@@ -9,18 +9,26 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { BotConfigurationEntity } from '../../bot-configuration/entities/bot-configuration.entity';
+import { ChannelsService } from '../../channels/channels.service';
 import { EvolutionService } from '../../evolution/evolution.service';
+import { EvolutionWebhookService } from '../../evolution-webhook/services/evolution-webhook.service';
 import { WhatsappInstanceEntity, WhatsappInstanceStatus } from '../entities/whatsapp-instance.entity';
 
 @Injectable()
 export class WhatsappInstancesService {
   private readonly logger = new Logger(WhatsappInstancesService.name);
+  private static readonly configurationScope = 'default';
 
   constructor(
     @InjectRepository(WhatsappInstanceEntity)
     private readonly repo: Repository<WhatsappInstanceEntity>,
+    @InjectRepository(BotConfigurationEntity)
+    private readonly botConfigurationRepository: Repository<BotConfigurationEntity>,
     private readonly evolutionService: EvolutionService,
     private readonly configService: ConfigService,
+    private readonly channelsService: ChannelsService,
+    private readonly evolutionWebhookService: EvolutionWebhookService,
   ) {}
 
   async list(tenantId: string) {
@@ -53,20 +61,7 @@ export class WhatsappInstancesService {
     }
 
     await this.evolutionService.createInstance({ instanceName: normalized, qrcode: true });
-
-    const instanceWebhookUrl = (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_URL') ?? '').trim();
-    if (instanceWebhookUrl) {
-      try {
-        await this.evolutionService.setWebhook({
-          instanceName: normalized,
-          url: instanceWebhookUrl,
-          events: ['connection.update', 'qr.updated', 'messages.upsert'],
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown Evolution webhook error.';
-        this.logger.warn(`Failed to set Evolution instance webhook: ${message}`);
-      }
-    }
+    await this.tryConfigureWebhook(normalized);
 
     const entity = this.repo.create({
       tenantId,
@@ -157,21 +152,7 @@ export class WhatsappInstancesService {
       instanceName: normalizedNewName,
       qrcode: true,
     });
-
-    const instanceWebhookUrl =
-      (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_URL') ?? '').trim();
-    if (instanceWebhookUrl) {
-      try {
-        await this.evolutionService.setWebhook({
-          instanceName: normalizedNewName,
-          url: instanceWebhookUrl,
-          events: ['connection.update', 'qr.updated', 'messages.upsert'],
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown Evolution webhook error.';
-        this.logger.warn(`Failed to set Evolution instance webhook for renamed instance: ${message}`);
-      }
-    }
+    await this.tryConfigureWebhook(normalizedNewName);
 
     try {
       await this.evolutionService.deleteInstance(currentName);
@@ -215,6 +196,26 @@ export class WhatsappInstancesService {
     return { ok: true };
   }
 
+  async configureWebhook(tenantId: string, instanceName: string): Promise<{ ok: true; webhookUrl: string; events: string[] }> {
+    const entity = await this.getByInstanceName(tenantId, instanceName);
+    const webhookUrl = await this.getConfiguredWebhookUrl();
+    const webhookEvents = await this.getConfiguredWebhookEvents();
+
+    if (!webhookUrl) {
+      throw new BadRequestException(
+        'No hay URL de webhook configurada. Guárdala primero en Configuración > Claves API.',
+      );
+    }
+
+    await this.evolutionService.setWebhook({
+      instanceName: entity.instanceName,
+      url: webhookUrl,
+      events: webhookEvents,
+    });
+
+    return { ok: true, webhookUrl, events: webhookEvents };
+  }
+
   async applyWebhook(payload: {
     event?: string;
     instance?: string;
@@ -256,6 +257,46 @@ export class WhatsappInstancesService {
         entity.qrCode = null;
       }
 
+      await this.repo.save(entity);
+      return { updated: true, instanceName };
+    }
+
+    if (event === 'messages.upsert' || event === 'message.upsert') {
+      const normalizedMessageType = this.guessInboundMessageType(data);
+      const channel = await this.findChannelByInstanceName(entity.instanceName);
+
+      entity.sessionData = {
+        ...(entity.sessionData ?? {}),
+        lastInboundMessage: {
+          receivedAt: new Date().toISOString(),
+          event,
+          inferredType: normalizedMessageType,
+          channelId: channel?.id ?? null,
+        },
+      };
+      await this.repo.save(entity);
+
+      if (channel) {
+        await this.evolutionWebhookService.processIncomingMessage({
+          channelId: channel.id,
+          payload: payload as never,
+        });
+      }
+
+      return { updated: true, instanceName };
+    }
+
+    if (event.includes('call')) {
+      const whatsappSettings = await this.getWhatsappSettings();
+      entity.sessionData = {
+        ...(entity.sessionData ?? {}),
+        lastCallEvent: {
+          receivedAt: new Date().toISOString(),
+          callHandlingMode: whatsappSettings.callHandlingMode,
+          rejectedCallReply: whatsappSettings.rejectedCallReply,
+          raw: data,
+        },
+      };
       await this.repo.save(entity);
       return { updated: true, instanceName };
     }
@@ -327,6 +368,153 @@ export class WhatsappInstancesService {
     if (s.includes('close') || s.includes('disconnect') || s.includes('offline')) return 'disconnected';
 
     return null;
+  }
+
+  private async tryConfigureWebhook(instanceName: string): Promise<void> {
+    const instanceWebhookUrl = await this.getConfiguredWebhookUrl();
+    if (!instanceWebhookUrl) {
+      return;
+    }
+
+    const whatsappSettings = await this.getWhatsappSettings();
+    if (!whatsappSettings.autoApplyWebhook) {
+      return;
+    }
+
+    const events = this.buildWebhookEvents(whatsappSettings);
+
+    try {
+      await this.evolutionService.setWebhook({
+        instanceName,
+        url: instanceWebhookUrl,
+        events,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown Evolution webhook error.';
+      this.logger.warn(`Failed to set Evolution instance webhook: ${message}`);
+    }
+  }
+
+  private async getConfiguredWebhookEvents(): Promise<string[]> {
+    const whatsappSettings = await this.getWhatsappSettings();
+    return this.buildWebhookEvents(whatsappSettings);
+  }
+
+  private buildWebhookEvents(settings: {
+    trackConnectionEvents: boolean;
+    trackQrEvents: boolean;
+    trackMessageEvents: boolean;
+    receiveTextMessages: boolean;
+    receiveAudioMessages: boolean;
+    receiveImageMessages: boolean;
+    receiveVideoMessages: boolean;
+    receiveDocumentMessages: boolean;
+  }): string[] {
+    const events = new Set<string>();
+
+    if (settings.trackConnectionEvents) {
+      events.add('connection.update');
+    }
+    if (settings.trackQrEvents) {
+      events.add('qr.updated');
+    }
+
+    const hasInboundMessagesEnabled =
+      settings.receiveTextMessages ||
+      settings.receiveAudioMessages ||
+      settings.receiveImageMessages ||
+      settings.receiveVideoMessages ||
+      settings.receiveDocumentMessages;
+
+    if (settings.trackMessageEvents && hasInboundMessagesEnabled) {
+      events.add('messages.upsert');
+    }
+
+    if (events.size === 0) {
+      events.add('connection.update');
+      events.add('qr.updated');
+    }
+
+    return [...events];
+  }
+
+  private async getConfiguredWebhookUrl(): Promise<string> {
+    const snapshot = await this.botConfigurationRepository.findOne({
+      where: { scope: WhatsappInstancesService.configurationScope },
+    });
+
+    const payload = snapshot?.payload as
+      | { integrations?: Record<string, unknown> }
+      | undefined;
+    const configuredWebhookUrl = this.readString(payload?.integrations?.webhookUrl);
+
+    return configuredWebhookUrl ||
+        (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_URL') ?? '').trim();
+  }
+
+  private async getWhatsappSettings(): Promise<{
+    autoApplyWebhook: boolean;
+    trackConnectionEvents: boolean;
+    trackQrEvents: boolean;
+    trackMessageEvents: boolean;
+    receiveTextMessages: boolean;
+    receiveAudioMessages: boolean;
+    receiveImageMessages: boolean;
+    receiveVideoMessages: boolean;
+    receiveDocumentMessages: boolean;
+    callHandlingMode: string;
+    rejectedCallReply: string;
+  }> {
+    const snapshot = await this.botConfigurationRepository.findOne({
+      where: { scope: WhatsappInstancesService.configurationScope },
+    });
+
+    const payload = snapshot?.payload as
+      | { whatsapp?: Record<string, unknown> }
+      | undefined;
+    const whatsapp = payload?.whatsapp ?? {};
+
+    return {
+      autoApplyWebhook: this.readBoolean(whatsapp['autoApplyWebhook'], true),
+      trackConnectionEvents: this.readBoolean(whatsapp['trackConnectionEvents'], true),
+      trackQrEvents: this.readBoolean(whatsapp['trackQrEvents'], true),
+      trackMessageEvents: this.readBoolean(whatsapp['trackMessageEvents'], true),
+      receiveTextMessages: this.readBoolean(whatsapp['receiveTextMessages'], true),
+      receiveAudioMessages: this.readBoolean(whatsapp['receiveAudioMessages'], true),
+      receiveImageMessages: this.readBoolean(whatsapp['receiveImageMessages'], true),
+      receiveVideoMessages: this.readBoolean(whatsapp['receiveVideoMessages'], true),
+      receiveDocumentMessages: this.readBoolean(whatsapp['receiveDocumentMessages'], true),
+      callHandlingMode: this.readString(whatsapp['callHandlingMode']) || 'notify',
+      rejectedCallReply: this.readString(whatsapp['rejectedCallReply']),
+    };
+  }
+
+  private async findChannelByInstanceName(instanceName: string) {
+    try {
+      return await this.channelsService.getByInstanceNameUnsafe(instanceName);
+    } catch {
+      return null;
+    }
+  }
+
+  private guessInboundMessageType(data: Record<string, unknown>): string {
+    const message = typeof data.message === 'object' && data.message !== null
+        ? (data.message as Record<string, unknown>)
+        : data;
+
+    if (message['audioMessage'] != null) return 'audio';
+    if (message['imageMessage'] != null) return 'image';
+    if (message['videoMessage'] != null) return 'video';
+    if (message['documentMessage'] != null) return 'document';
+    return 'text';
+  }
+
+  private readString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private readBoolean(value: unknown, fallback: boolean): boolean {
+    return typeof value === 'boolean' ? value : fallback;
   }
 
   private extractPhoneNumber(data: Record<string, unknown>): string | null {

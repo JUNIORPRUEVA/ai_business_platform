@@ -9,6 +9,10 @@ import {
 class EvolutionWebhookKeyDto {
   @IsString()
   remoteJid!: string;
+
+  @IsOptional()
+  @IsString()
+  id?: string;
 }
 
 class EvolutionWebhookDataDto {

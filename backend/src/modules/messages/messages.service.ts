@@ -62,4 +62,25 @@ export class MessagesService {
 
     return this.messagesRepository.save(entity);
   }
+
+  async findByMetadataValue(
+    companyId: string,
+    conversationId: string,
+    metadataKey: string,
+    metadataValue: string,
+  ): Promise<MessageEntity | null> {
+    const conversation = await this.conversationsRepository.findOne({ where: { id: conversationId } });
+    if (!conversation) throw new NotFoundException('Conversation not found.');
+    if (conversation.companyId !== companyId) throw new ForbiddenException();
+
+    return this.messagesRepository
+      .createQueryBuilder('message')
+      .where('message.conversation_id = :conversationId', { conversationId })
+      .andWhere(`message.metadata ->> :metadataKey = :metadataValue`, {
+        metadataKey,
+        metadataValue,
+      })
+      .orderBy('message.created_at', 'DESC')
+      .getOne();
+  }
 }

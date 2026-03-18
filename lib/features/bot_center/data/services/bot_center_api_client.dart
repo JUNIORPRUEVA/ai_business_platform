@@ -19,24 +19,28 @@ class BotCenterApiClient {
   BotCenterApiClient({
     http.Client? client,
     String? baseUrl,
+    Future<String?> Function()? tokenReader,
     Duration timeout = const Duration(seconds: 15),
   })  : _client = client ?? http.Client(),
         _baseUrl = resolveBackendUrl(
           preferred: baseUrl,
           fallback: const String.fromEnvironment('BOT_CENTER_API_BASE_URL'),
         ),
+        _tokenReader = tokenReader,
         _timeout = timeout;
 
   final http.Client _client;
   final String _baseUrl;
+  final Future<String?> Function()? _tokenReader;
   final Duration _timeout;
 
   Future<Map<String, dynamic>> getJson(
     String path, {
     Map<String, String>? queryParameters,
   }) async {
+    final headers = await _headers();
     final response = await _send(
-      () => _client.get(_buildUri(path, queryParameters), headers: _headers),
+      () => _client.get(_buildUri(path, queryParameters), headers: headers),
     );
     return _decodeObject(response.body);
   }
@@ -45,18 +49,20 @@ class BotCenterApiClient {
     String path, {
     Map<String, String>? queryParameters,
   }) async {
+    final headers = await _headers();
     final response = await _send(
-      () => _client.get(_buildUri(path, queryParameters), headers: _headers),
+      () => _client.get(_buildUri(path, queryParameters), headers: headers),
     );
     return _decodeList(response.body);
   }
 
   Future<Map<String, dynamic>> putJson(
       String path, Map<String, dynamic> body) async {
+    final headers = await _headers();
     final response = await _send(
       () => _client.put(
         _buildUri(path),
-        headers: _headers,
+        headers: headers,
         body: jsonEncode(body),
       ),
     );
@@ -65,10 +71,11 @@ class BotCenterApiClient {
 
   Future<Map<String, dynamic>> postJson(
       String path, Map<String, dynamic> body) async {
+    final headers = await _headers();
     final response = await _send(
       () => _client.post(
         _buildUri(path),
-        headers: _headers,
+        headers: headers,
         body: jsonEncode(body),
       ),
     );
@@ -77,10 +84,11 @@ class BotCenterApiClient {
 
   Future<Map<String, dynamic>> patchJson(
       String path, Map<String, dynamic> body) async {
+    final headers = await _headers();
     final response = await _send(
       () => _client.patch(
         _buildUri(path),
-        headers: _headers,
+        headers: headers,
         body: jsonEncode(body),
       ),
     );
@@ -88,19 +96,29 @@ class BotCenterApiClient {
   }
 
   Future<Map<String, dynamic>> deleteJson(String path) async {
+    final headers = await _headers();
     final response = await _send(
       () => _client.delete(
         _buildUri(path),
-        headers: _headers,
+        headers: headers,
       ),
     );
     return _decodeObject(response.body);
   }
 
-  Map<String, String> get _headers => const {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      };
+  Future<Map<String, String>> _headers() async {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+
+    final token = await _tokenReader?.call();
+    if (token != null && token.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    return headers;
+  }
 
   Uri _buildUri(String path, [Map<String, String>? queryParameters]) {
     final normalizedBase = _baseUrl.endsWith('/')
@@ -118,7 +136,8 @@ class BotCenterApiClient {
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw BotCenterApiException(
-          'Bot Center request failed with status ${response.statusCode}.',
+          _extractError(response.body) ??
+              'Bot Center request failed with status ${response.statusCode}.',
           statusCode: response.statusCode,
         );
       }
@@ -150,5 +169,28 @@ class BotCenterApiClient {
 
     throw const BotCenterApiException(
         'Expected a JSON list from the Bot Center backend.');
+  }
+
+  String? _extractError(String source) {
+    final trimmed = source.trimLeft();
+    if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html')) {
+      return 'El backend devolvio HTML en lugar de JSON. Verifica la URL configurada.';
+    }
+
+    try {
+      final decoded = jsonDecode(source);
+      if (decoded is Map<String, dynamic>) {
+        final message = decoded['message'] ?? decoded['error'];
+        if (message is String && message.trim().isNotEmpty) {
+          return message;
+        }
+      }
+    } catch (_) {
+      if (source.trim().isNotEmpty) {
+        return source.trim();
+      }
+    }
+
+    return null;
   }
 }

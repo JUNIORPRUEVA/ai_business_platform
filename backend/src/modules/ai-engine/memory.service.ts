@@ -1,186 +1,327 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import Redis from 'ioredis';
-import { Repository } from 'typeorm';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 
+import { ClientMemoryService } from './client-memory.service';
+import { ContactMemoryService } from './contact-memory.service';
+import { ConversationMemoryService } from './conversation-memory.service';
+import { ConversationSummaryService } from './conversation-summary.service';
+import { MemoryContextAssemblerService } from './memory-context-assembler.service';
+import { AppendConversationMemoryInput, MemoryManualItem } from './memory.types';
 import { ContactMemoryEntity } from './entities/contact-memory.entity';
-import { ConversationMemoryEntity, ConversationMemoryRole } from './entities/conversation-memory.entity';
+import { ConversationMemoryEntity } from './entities/conversation-memory.entity';
+import { ConversationSummaryEntity } from './entities/conversation-summary.entity';
 
 @Injectable()
 export class MemoryService {
   private readonly logger = new Logger(MemoryService.name);
 
-  // Intentionally created lazily (only when needed) to avoid extra connections in environments without Redis.
-  private redis: Redis | null = null;
-
   constructor(
-    @InjectRepository(ConversationMemoryEntity)
-    private readonly conversationMemoryRepository: Repository<ConversationMemoryEntity>,
-    @InjectRepository(ContactMemoryEntity)
-    private readonly contactMemoryRepository: Repository<ContactMemoryEntity>,
+    private readonly conversationMemoryService: ConversationMemoryService,
+    private readonly clientMemoryService: ClientMemoryService,
+    private readonly contactMemoryService: ContactMemoryService,
+    private readonly conversationSummaryService: ConversationSummaryService,
+    private readonly memoryContextAssemblerService: MemoryContextAssemblerService,
   ) {}
 
-  configureRedis(client: Redis | null): void {
-    this.redis = client;
+  configureRedis(): void {
+    // Redis is managed lazily by MemoryCacheService. Kept for compatibility.
   }
 
-  async appendConversationMemory(params: {
+  async appendConversationMemory(params: AppendConversationMemoryInput): Promise<ConversationMemoryEntity | null> {
+    return this.conversationMemoryService.append(params);
+  }
+
+  async ensureConversationSystemPrompt(params: {
+    companyId: string;
+    contactId: string;
     conversationId: string;
-    role: ConversationMemoryRole;
     content: string;
-    dedupeAgainstLast?: boolean;
-  }): Promise<ConversationMemoryEntity | null> {
-    const content = params.content?.trim();
-    if (!content) return null;
+  }): Promise<void> {
+    await this.conversationMemoryService.ensureSystemPrompt({
+      ...params,
+      contentType: 'text',
+      metadataJson: {},
+      source: 'system_prompt',
+      messageId: null,
+      eventId: null,
+    });
+  }
 
-    if (params.dedupeAgainstLast) {
-      const last = await this.conversationMemoryRepository.findOne({
-        where: { conversationId: params.conversationId },
-        order: { createdAt: 'DESC' },
-      });
-      if (last && last.role === params.role && last.content === content) {
-        return null;
+  async listConversationMemory(companyId: string, conversationId: string, limit = 10): Promise<ConversationMemoryEntity[]> {
+    return this.conversationMemoryService.listRecent(companyId, conversationId, limit);
+  }
+
+  async getContactMemoryMap(companyId: string, contactId: string): Promise<Record<string, string>> {
+    return this.contactMemoryService.getMap(companyId, contactId);
+  }
+
+  async listOperationalMemory(companyId: string, contactId: string): Promise<ContactMemoryEntity[]> {
+    return this.contactMemoryService.list(companyId, contactId);
+  }
+
+  async setContactMemory(params: {
+    companyId: string;
+    contactId: string;
+    conversationId?: string | null;
+    key: string;
+    value: string;
+    stateType?: string;
+    metadataJson?: Record<string, unknown>;
+  }): Promise<ContactMemoryEntity> {
+    return this.contactMemoryService.upsert(params);
+  }
+
+  async listClientMemories(companyId: string, contactId: string) {
+    return this.clientMemoryService.listByContact(companyId, contactId);
+  }
+
+  async upsertClientMemories(params: {
+    companyId: string;
+    contactId: string;
+    conversationId: string;
+    items: Array<{ key: string; value: string; category: string; confidence: number; metadata?: Record<string, unknown> }>;
+  }): Promise<void> {
+    await this.clientMemoryService.upsertFacts(params);
+  }
+
+  extractClientMemories(message: string) {
+    return this.clientMemoryService.extractFacts(message);
+  }
+
+  async refreshConversationSummary(params: {
+    companyId: string;
+    contactId: string;
+    conversationId: string;
+    recentWindowSize: number;
+    summaryRefreshThreshold: number;
+  }): Promise<ConversationSummaryEntity | null> {
+    return this.conversationSummaryService.refreshIfNeeded(params);
+  }
+
+  async getConversationSummary(companyId: string, conversationId: string): Promise<ConversationSummaryEntity | null> {
+    return this.conversationSummaryService.get(companyId, conversationId);
+  }
+
+  async assembleContext(params: {
+    companyId: string;
+    contactId: string;
+    conversationId: string;
+    recentWindowSize: number;
+    incomingMessage?: string;
+  }) {
+    const [summary, keyFacts, operationalState, recentWindow] = await Promise.all([
+      this.getConversationSummary(params.companyId, params.conversationId),
+      this.listClientMemories(params.companyId, params.contactId),
+      this.listOperationalMemory(params.companyId, params.contactId),
+      this.listConversationMemory(params.companyId, params.conversationId, params.recentWindowSize),
+    ]);
+
+    const contextText = this.memoryContextAssemblerService.assemble({
+      summaryText: summary?.summaryText,
+      keyFacts: keyFacts.map((item) => ({ key: item.key, value: item.value, category: item.category })),
+      operationalState: operationalState.map((item) => ({
+        key: item.key,
+        value: item.value,
+        metadataJson: item.metadataJson,
+      })),
+      recentWindow: recentWindow.map((item) => ({ role: item.role, content: item.content, source: item.source })),
+      incomingMessage: params.incomingMessage,
+    });
+
+    return {
+      summary,
+      keyFacts,
+      operationalState,
+      recentWindow,
+      contextText,
+    };
+  }
+
+  async createManualMemory(params: {
+    companyId: string;
+    contactId: string;
+    conversationId: string;
+    type: 'shortTerm' | 'longTerm' | 'operational';
+    title: string;
+    content: string;
+  }): Promise<MemoryManualItem> {
+    switch (params.type) {
+      case 'shortTerm': {
+        const created = await this.conversationMemoryService.append({
+          companyId: params.companyId,
+          contactId: params.contactId,
+          conversationId: params.conversationId,
+          role: 'system',
+          content: params.content,
+          contentType: 'text',
+          metadataJson: { title: params.title, isEditable: true },
+          source: 'manual_short_term',
+          dedupeAgainstLast: false,
+        });
+
+        if (!created) {
+          throw new NotFoundException('Manual short-term memory could not be created.');
+        }
+
+        return this.mapShortTermItem(created);
+      }
+      case 'longTerm': {
+        const created = await this.clientMemoryService.createManualFact({
+          companyId: params.companyId,
+          contactId: params.contactId,
+          conversationId: params.conversationId,
+          title: params.title,
+          content: params.content,
+        });
+
+        return {
+          id: created.id,
+          title: params.title,
+          content: created.value,
+          type: 'longTerm',
+          updatedAt: created.updatedAt.toISOString(),
+          isEditable: true,
+        };
+      }
+      case 'operational': {
+        const created = await this.contactMemoryService.upsert({
+          companyId: params.companyId,
+          contactId: params.contactId,
+          conversationId: params.conversationId,
+          key: `manual_${Date.now()}`,
+          value: params.content,
+          stateType: 'manual_note',
+          metadataJson: { title: params.title, isEditable: true },
+        });
+
+        return {
+          id: created.id,
+          title: params.title,
+          content: created.value,
+          type: 'operational',
+          updatedAt: created.updatedAt.toISOString(),
+          isEditable: true,
+        };
       }
     }
-
-    const entity = this.conversationMemoryRepository.create({
-      conversationId: params.conversationId,
-      role: params.role,
-      content,
-    });
-
-    const saved = await this.conversationMemoryRepository.save(entity);
-    await this.bumpConversationCache(params.conversationId).catch((error) => {
-      this.logger.debug(`Conversation cache update failed: ${(error as Error).message}`);
-    });
-    return saved;
   }
 
-  async ensureConversationSystemPrompt(conversationId: string, content: string): Promise<void> {
-    const normalized = content?.trim();
-    if (!normalized) return;
+  async updateManualMemory(params: {
+    companyId: string;
+    contactId: string;
+    conversationId: string;
+    memoryId: string;
+    type?: 'shortTerm' | 'longTerm' | 'operational';
+    title?: string;
+    content?: string;
+  }): Promise<MemoryManualItem> {
+    const type = params.type ?? (await this.detectManualMemoryType(params.companyId, params.contactId, params.conversationId, params.memoryId));
 
-    const existing = await this.conversationMemoryRepository.findOne({
-      where: { conversationId, role: 'system' },
-      order: { createdAt: 'ASC' },
-    });
+    switch (type) {
+      case 'shortTerm': {
+        const updated = await this.conversationMemoryService.updateManualShortTermNote(
+          params.companyId,
+          params.conversationId,
+          params.memoryId,
+          params.title,
+          params.content,
+        );
 
-    if (existing) return;
+        return this.mapShortTermItem(updated);
+      }
+      case 'longTerm': {
+        const updated = await this.clientMemoryService.updateManualFact(
+          params.companyId,
+          params.contactId,
+          params.memoryId,
+          params.title,
+          params.content,
+        );
 
-    await this.appendConversationMemory({
-      conversationId,
-      role: 'system',
-      content: normalized,
-      dedupeAgainstLast: false,
-    });
-  }
+        return {
+          id: updated.id,
+          title: (updated.metadata['title'] as string | undefined) || updated.key,
+          content: updated.value,
+          type: 'longTerm',
+          updatedAt: updated.updatedAt.toISOString(),
+          isEditable: true,
+        };
+      }
+      case 'operational': {
+        const updated = await this.contactMemoryService.updateManualOperationalNote(
+          params.companyId,
+          params.contactId,
+          params.memoryId,
+          params.title,
+          params.content,
+        );
 
-  async listConversationMemory(conversationId: string, limit = 10): Promise<ConversationMemoryEntity[]> {
-    const safeLimit = Math.min(Math.max(limit, 1), 50);
-
-    const cached = await this.getConversationCache(conversationId);
-    if (cached) {
-      return cached.slice(-safeLimit);
-    }
-
-    // Load most recent N, then flip back to chronological order.
-    const recordsDesc = await this.conversationMemoryRepository.find({
-      where: { conversationId },
-      order: { createdAt: 'DESC' },
-      take: safeLimit,
-    });
-
-    const records = recordsDesc.reverse();
-
-    await this.setConversationCache(conversationId, records).catch(() => undefined);
-    return records;
-  }
-
-  async getContactMemoryMap(contactId: string): Promise<Record<string, string>> {
-    const cached = await this.getContactCache(contactId);
-    if (cached) return cached;
-
-    const records = await this.contactMemoryRepository.find({
-      where: { contactId },
-      order: { createdAt: 'DESC' },
-      take: 200,
-    });
-
-    const map: Record<string, string> = {};
-    for (const record of records) {
-      if (map[record.key] === undefined) {
-        map[record.key] = record.value;
+        return {
+          id: updated.id,
+          title: (updated.metadataJson['title'] as string | undefined) || updated.key,
+          content: updated.value,
+          type: 'operational',
+          updatedAt: updated.updatedAt.toISOString(),
+          isEditable: true,
+        };
       }
     }
-
-    await this.setContactCache(contactId, map).catch(() => undefined);
-    return map;
   }
 
-  async setContactMemory(params: { contactId: string; key: string; value: string }): Promise<ContactMemoryEntity> {
-    const key = params.key.trim();
-    const value = params.value.trim();
+  async deleteManualMemory(params: {
+    companyId: string;
+    contactId: string;
+    conversationId: string;
+    memoryId: string;
+  }): Promise<void> {
+    const type = await this.detectManualMemoryType(params.companyId, params.contactId, params.conversationId, params.memoryId);
 
-    const entity = this.contactMemoryRepository.create({
-      contactId: params.contactId,
-      key,
-      value,
-    });
-
-    const saved = await this.contactMemoryRepository.save(entity);
-    await this.dropContactCache(params.contactId).catch(() => undefined);
-    return saved;
-  }
-
-  // Redis helpers (TTL is short-lived, since DB is source of truth)
-
-  private conversationCacheKey(conversationId: string): string {
-    return `ai:conversation_memory:${conversationId}`;
-  }
-
-  private contactCacheKey(contactId: string): string {
-    return `ai:contact_memory:${contactId}`;
-  }
-
-  private async getConversationCache(conversationId: string): Promise<ConversationMemoryEntity[] | null> {
-    if (!this.redis) return null;
-    const value = await this.redis.get(this.conversationCacheKey(conversationId));
-    if (!value) return null;
-    try {
-      return JSON.parse(value) as ConversationMemoryEntity[];
-    } catch {
-      return null;
+    switch (type) {
+      case 'shortTerm':
+        await this.conversationMemoryService.deleteManualShortTermNote(params.companyId, params.conversationId, params.memoryId);
+        break;
+      case 'longTerm':
+        await this.clientMemoryService.deleteManualFact(params.companyId, params.contactId, params.memoryId);
+        break;
+      case 'operational':
+        await this.contactMemoryService.deleteManualOperationalNote(params.companyId, params.contactId, params.memoryId);
+        break;
     }
   }
 
-  private async setConversationCache(conversationId: string, records: ConversationMemoryEntity[]): Promise<void> {
-    if (!this.redis) return;
-    await this.redis.set(this.conversationCacheKey(conversationId), JSON.stringify(records), 'EX', 600);
-  }
+  private async detectManualMemoryType(
+    companyId: string,
+    contactId: string,
+    conversationId: string,
+    memoryId: string,
+  ): Promise<'shortTerm' | 'longTerm' | 'operational'> {
+    const [shortTerm, longTerm, operational] = await Promise.all([
+      this.conversationMemoryService.getManualShortTermNotes(companyId, conversationId),
+      this.clientMemoryService.listByContact(companyId, contactId),
+      this.contactMemoryService.list(companyId, contactId),
+    ]);
 
-  private async bumpConversationCache(conversationId: string): Promise<void> {
-    if (!this.redis) return;
-    await this.redis.del(this.conversationCacheKey(conversationId));
-  }
-
-  private async getContactCache(contactId: string): Promise<Record<string, string> | null> {
-    if (!this.redis) return null;
-    const value = await this.redis.get(this.contactCacheKey(contactId));
-    if (!value) return null;
-    try {
-      return JSON.parse(value) as Record<string, string>;
-    } catch {
-      return null;
+    if (shortTerm.some((item) => item.id === memoryId)) {
+      return 'shortTerm';
     }
+    if (longTerm.some((item) => item.id === memoryId)) {
+      return 'longTerm';
+    }
+    if (operational.some((item) => item.id === memoryId)) {
+      return 'operational';
+    }
+
+    this.logger.warn(`Manual memory ${memoryId} was not found during type detection.`);
+    throw new NotFoundException(`Memory item ${memoryId} was not found.`);
   }
 
-  private async setContactCache(contactId: string, map: Record<string, string>): Promise<void> {
-    if (!this.redis) return;
-    await this.redis.set(this.contactCacheKey(contactId), JSON.stringify(map), 'EX', 600);
-  }
-
-  private async dropContactCache(contactId: string): Promise<void> {
-    if (!this.redis) return;
-    await this.redis.del(this.contactCacheKey(contactId));
+  private mapShortTermItem(item: ConversationMemoryEntity): MemoryManualItem {
+    return {
+      id: item.id,
+      title: (item.metadataJson['title'] as string | undefined) || 'Nota de memoria',
+      content: item.content,
+      type: 'shortTerm',
+      updatedAt: item.updatedAt.toISOString(),
+      isEditable: true,
+    };
   }
 }

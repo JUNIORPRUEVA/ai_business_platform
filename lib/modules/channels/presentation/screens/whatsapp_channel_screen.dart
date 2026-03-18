@@ -483,6 +483,65 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     }
   }
 
+  Future<void> _configureWebhook() async {
+    final currentName = _activeInstanceName?.trim();
+    if (currentName == null || currentName.isEmpty) {
+      return;
+    }
+
+    final token = await _readToken();
+    if (token == null || token.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = 'Tu sesión expiró. Inicia sesión otra vez.';
+      });
+      return;
+    }
+
+    setState(() {
+      _requestError = null;
+      _isMutatingInstance = true;
+    });
+
+    try {
+      final response = await _api.configureWebhook(
+        token: token,
+        instanceName: currentName,
+      );
+      final configuredUrl = (response['webhookUrl'] as String?)?.trim();
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            configuredUrl == null || configuredUrl.isEmpty
+                ? 'Webhook configurado correctamente.'
+                : 'Webhook configurado: $configuredUrl',
+          ),
+        ),
+      );
+    } on WhatsappInstancesApiException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _requestError = e.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isMutatingInstance = false;
+      });
+    }
+  }
+
   Uint8List? _decodeQrBytes(String? value) {
     final raw = value?.trim();
     if (raw == null || raw.isEmpty) return null;
@@ -728,6 +787,15 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       : _renameInstance,
                                   icon: const Icon(Icons.edit_outlined),
                                   label: const Text('Editar'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: (_activeInstanceName == null ||
+                                          _isMutatingInstance)
+                                      ? null
+                                      : _configureWebhook,
+                                  icon:
+                                      const Icon(Icons.wifi_tethering_rounded),
+                                  label: const Text('Configurar webhook'),
                                 ),
                                 OutlinedButton.icon(
                                   onPressed: (_activeInstanceName == null ||
@@ -1000,6 +1068,14 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       OutlinedButton.icon(
                                         onPressed: _isMutatingInstance
                                             ? null
+                                            : _configureWebhook,
+                                        icon: const Icon(
+                                            Icons.wifi_tethering_rounded),
+                                        label: const Text('Configurar webhook'),
+                                      ),
+                                      OutlinedButton.icon(
+                                        onPressed: _isMutatingInstance
+                                            ? null
                                             : _deleteInstance,
                                         icon: const Icon(
                                             Icons.delete_outline_rounded),
@@ -1016,7 +1092,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'Puedes actualizar el estado de conexión, desconectar la instancia para volver a vincularla o eliminarla. Para cambiar su nombre técnico, primero debes desconectarla.',
+                                    'Puedes actualizar el estado de conexión, aplicar el webhook guardado en Configuración > Claves API, desconectar la instancia para volver a vincularla o eliminarla. Para cambiar su nombre técnico, primero debes desconectarla.',
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: theme.colorScheme.onSurface
                                           .withValues(alpha: 0.68),

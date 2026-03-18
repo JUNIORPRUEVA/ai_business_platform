@@ -57,7 +57,10 @@ export class PromptBuilderService {
       if (item.role === 'system') {
         continue;
       }
-      messages.push({ role: item.role, content: item.content });
+      messages.push({
+        role: item.role === 'tool' ? 'assistant' : item.role,
+        content: item.role === 'tool' ? `[tool] ${item.content}` : item.content,
+      });
     }
 
     messages.push({ role: 'user', content: params.userMessage });

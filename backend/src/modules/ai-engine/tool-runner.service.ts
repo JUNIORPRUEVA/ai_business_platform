@@ -86,17 +86,32 @@ export class ToolRunnerService {
 
     if (name) {
       await this.contactsService.update(params.companyId, params.contactId, { name });
-      await this.memoryService.setContactMemory({ contactId: params.contactId, key: 'nombre_cliente', value: name });
+      await this.memoryService.setContactMemory({
+        companyId: params.companyId,
+        contactId: params.contactId,
+        key: 'nombre_cliente',
+        value: name,
+      });
     }
 
     if (phone) {
-      await this.memoryService.setContactMemory({ contactId: params.contactId, key: 'telefono', value: phone });
+      await this.memoryService.setContactMemory({
+        companyId: params.companyId,
+        contactId: params.contactId,
+        key: 'telefono',
+        value: phone,
+      });
     }
 
     // Basic interest capture
     const interest = typeof params.data['interest'] === 'string' ? (params.data['interest'] as string).trim() : '';
     if (interest) {
-      await this.memoryService.setContactMemory({ contactId: params.contactId, key: 'interes_producto', value: interest });
+      await this.memoryService.setContactMemory({
+        companyId: params.companyId,
+        contactId: params.contactId,
+        key: 'interes_producto',
+        value: interest,
+      });
     }
 
     return {

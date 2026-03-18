@@ -5,6 +5,7 @@
   "description": "Runnable NestJS backend foundation for FULLPOS enterprise bot orchestration.",
   "scripts": {
     "build": "nest build",
+    "test:memory": "npm run build && node --test dist/memory-architecture.test.js",
     "typeorm": "ts-node ./node_modules/typeorm/cli.js -d src/common/database/data-source.ts",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",

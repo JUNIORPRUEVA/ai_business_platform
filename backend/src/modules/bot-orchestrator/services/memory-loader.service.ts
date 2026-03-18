@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 
-import { BotMemoryService } from '../../bot-memory/services/bot-memory.service';
 import {
   BotDetectedIntent,
   BotDetectedRole,
@@ -11,8 +10,6 @@ import {
 
 @Injectable()
 export class MemoryLoaderService {
-  constructor(private readonly botMemoryService: BotMemoryService) {}
-
   loadAll(params: {
     conversationId: string;
     senderId: string;
@@ -20,21 +17,9 @@ export class MemoryLoaderService {
     detectedRole: BotDetectedRole;
     configuration: BotRuntimeConfiguration;
   }): LoadedMemoryBundle {
-    const memoryContext = this.botMemoryService.buildMemoryContext(
-      params.conversationId,
-    );
-    const shortTerm = this.withFallback(
-      this.mapMemoryItems(memoryContext.shortTerm),
-      this.loadShortTermMemory(params.senderId, params.detectedIntent),
-    );
-    const longTerm = this.withFallback(
-      this.mapMemoryItems(memoryContext.longTerm),
-      this.loadLongTermMemory(params.detectedIntent, params.detectedRole),
-    );
-    const operational = this.withFallback(
-      this.mapMemoryItems(memoryContext.operational),
-      this.loadOperationalMemory(params.detectedIntent, params.configuration),
-    );
+    const shortTerm = this.loadShortTermMemory(params.senderId, params.detectedIntent);
+    const longTerm = this.loadLongTermMemory(params.detectedIntent, params.detectedRole);
+    const operational = this.loadOperationalMemory(params.detectedIntent, params.configuration);
 
     return {
       shortTerm,
@@ -44,29 +29,6 @@ export class MemoryLoaderService {
         .sort((left, right) => right.relevanceScore - left.relevanceScore)
         .slice(0, 6),
     };
-  }
-
-  private mapMemoryItems(items: Array<{
-    id: string;
-    scope: LoadedMemoryItem['scope'];
-    title: string;
-    content: string;
-    relevanceScore: number;
-  }>): LoadedMemoryItem[] {
-    return items.map((item) => ({
-      id: item.id,
-      scope: item.scope,
-      title: item.title,
-      content: item.content,
-      relevanceScore: item.relevanceScore,
-    }));
-  }
-
-  private withFallback(
-    primary: LoadedMemoryItem[],
-    fallback: LoadedMemoryItem[],
-  ): LoadedMemoryItem[] {
-    return primary.length > 0 ? primary : fallback;
   }
 
   private loadShortTermMemory(

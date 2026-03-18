@@ -3,9 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { BotEntity } from '../../bots/entities/bot.entity';
 import { CompanyEntity } from '../../companies/entities/company.entity';
 import { ContactEntity } from '../../contacts/entities/contact.entity';
-import { MessageEntity } from '../../messages/entities/message.entity';
 import { ToolEntity } from '../../tools/entities/tool.entity';
-import { ClientMemoryEntity } from '../entities/client-memory.entity';
 import { KnowledgeDocumentEntity } from '../entities/knowledge-document.entity';
 import { AiBrainContext } from '../types/ai-brain.types';
 
@@ -15,11 +13,10 @@ export class AiBrainContextBuilderService {
     company: CompanyEntity;
     bot: BotEntity;
     contact: ContactEntity;
-    recentMessages: MessageEntity[];
-    memoryItems: ClientMemoryEntity[];
+    memoryItems: Array<{ key: string; value: string; category: string }>;
     documents: KnowledgeDocumentEntity[];
     activeTools: ToolEntity[];
-    bufferedMessages: string[];
+    assembledMemoryContext: string;
     detectedIntent: string;
   }): AiBrainContext {
     const memoryItems = params.memoryItems.map((item) => ({
@@ -38,12 +35,6 @@ export class AiBrainContextBuilderService {
       name: tool.name,
       type: tool.type,
     }));
-
-    const historyLines = params.recentMessages.slice(-12).map((message) => {
-      return `${message.sender}: ${message.content}`;
-    });
-
-    const bufferedLines = params.bufferedMessages.map((value) => `client_buffer: ${value}`);
 
     return {
       detectedIntent: params.detectedIntent,
@@ -71,16 +62,7 @@ export class AiBrainContextBuilderService {
       memoryContext: [
         `Intento detectado: ${params.detectedIntent}`,
         '',
-        'Memoria del cliente:',
-        memoryItems.length > 0
-          ? memoryItems.map((item) => `- [${item.category}] ${item.key}: ${item.value}`).join('\n')
-          : '- Sin memoria persistente.',
-        '',
-        'Historial reciente:',
-        historyLines.length > 0 ? historyLines.join('\n') : '- Sin historial reciente.',
-        '',
-        'Buffer reciente:',
-        bufferedLines.length > 0 ? bufferedLines.join('\n') : '- Sin buffer activo.',
+        params.assembledMemoryContext,
       ].join('\n'),
       memoryItems,
       documentSnippets,

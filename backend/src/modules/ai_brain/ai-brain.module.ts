@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AiEngineModule } from '../ai-engine/ai-engine.module';
 import { BillingModule } from '../billing/billing.module';
+import { BotConfigurationModule } from '../bot-configuration/bot-configuration.module';
 import { BotsModule } from '../bots/bots.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { CompaniesModule } from '../companies/companies.module';
@@ -37,6 +38,7 @@ import { AiBrainToolRouterService } from './services/ai-brain-tool-router.servic
     ]),
     BillingModule,
     AiEngineModule,
+    BotConfigurationModule,
     CompaniesModule,
     ChannelsModule,
     ContactsModule,

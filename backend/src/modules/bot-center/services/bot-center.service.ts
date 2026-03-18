@@ -1,20 +1,25 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 import { DatabaseService } from '../../../common/database/database.service';
 import { BotConfigurationService } from '../../bot-configuration/services/bot-configuration.service';
 import { BotMemoryService } from '../../bot-memory/services/bot-memory.service';
+import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsapp-channel-log.entity';
+import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-chat.entity';
+import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
+import { WhatsappMessagingService } from '../../whatsapp-channel/services/whatsapp-messaging.service';
 import { CreateMemoryItemDto } from '../dto/create-memory-item.dto';
 import { SendTestMessageDto } from '../dto/send-test-message.dto';
 import { UpdateMemoryItemDto } from '../dto/update-memory-item.dto';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
 import {
-  BotCenterConversationRecord,
   BotCenterOverviewResponse,
-  BotCenterSeedData,
   BotContactContextResponse,
   BotConversationDetailResponse,
   BotConversationSummary,
   BotLogResponse,
+  BotLogSeverity,
   BotMemoryItemResponse,
   BotMemoryResponse,
   BotMessageResponse,
@@ -28,72 +33,119 @@ import {
 
 @Injectable()
 export class BotCenterService {
+  private readonly runtimeLogs: Array<BotLogResponse & { companyId: string }> = [];
+
   constructor(
     private readonly botConfigurationService: BotConfigurationService,
     private readonly botMemoryService: BotMemoryService,
     private readonly databaseService: DatabaseService,
+    @InjectRepository(WhatsappChatEntity)
+    private readonly chatsRepository: Repository<WhatsappChatEntity>,
+    @InjectRepository(WhatsappMessageEntity)
+    private readonly messagesRepository: Repository<WhatsappMessageEntity>,
+    @InjectRepository(WhatsappChannelLogEntity)
+    private readonly channelLogsRepository: Repository<WhatsappChannelLogEntity>,
+    private readonly whatsappMessagingService: WhatsappMessagingService,
   ) {}
 
-  private readonly dataStore: BotCenterSeedData = this.createSeedData();
-
-  async getOverview(selectedConversationId?: string): Promise<BotCenterOverviewResponse> {
+  async getOverview(
+    companyId: string,
+    selectedConversationId?: string,
+  ): Promise<BotCenterOverviewResponse> {
+    const conversations = await this.listConversations(companyId);
     const selectedConversation = selectedConversationId
-      ? await this.getConversationDetail(selectedConversationId)
-      : await this.buildConversationDetail(this.dataStore.conversations[0]);
+      ? await this.getConversationDetail(companyId, selectedConversationId)
+      : conversations.length > 0
+          ? await this.getConversationDetail(companyId, conversations[0].id)
+          : undefined;
 
     return {
-      conversations: this.listConversations(),
+      conversations,
       tools: this.listTools(),
-      logs: this.listLogs(),
-      status: this.getStatus(),
+      logs: await this.listLogs(companyId),
+      status: await this.getStatus(companyId),
       prompt: this.getPromptConfig(),
       selectedConversation,
     };
   }
 
-  listConversations(): BotConversationSummary[] {
-    return this.dataStore.conversations
-      .map((record) => ({ ...record.summary }))
+  async listConversations(companyId: string): Promise<BotConversationSummary[]> {
+    const chats = await this.chatsRepository.find({
+      where: { companyId },
+      order: { lastMessageAt: 'DESC', createdAt: 'DESC' },
+      take: 200,
+    });
+
+    const latestMessages = await this.findLatestMessages(companyId, chats.map((chat) => chat.id));
+    const latestMessageByChatId = new Map(latestMessages.map((message) => [message.chatId, message]));
+
+    return chats
+      .map((chat) => this.toConversationSummary(chat, latestMessageByChatId.get(chat.id) ?? null))
       .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
   }
 
-  getConversationMessages(conversationId: string): BotMessageResponse[] {
-    return this.getConversationRecordOrThrow(conversationId).messages.map((message) => ({ ...message }));
+  async getConversationMessages(
+    companyId: string,
+    conversationId: string,
+  ): Promise<BotMessageResponse[]> {
+    await this.getConversationOrThrow(companyId, conversationId);
+
+    const messages = await this.messagesRepository.find({
+      where: { companyId, chatId: conversationId },
+      order: { createdAt: 'ASC' },
+      take: 500,
+    });
+
+    return messages.map((message) => this.toBotMessage(message));
   }
 
-  getConversationContext(conversationId: string): BotContactContextResponse {
-    return { ...this.getConversationRecordOrThrow(conversationId).context };
-  }
-
-  async getConversationMemory(conversationId: string): Promise<BotMemoryResponse> {
-    const memoryContext = this.botMemoryService.buildMemoryContext(conversationId);
-
-    if (
-      memoryContext.shortTerm.length > 0 ||
-      memoryContext.longTerm.length > 0 ||
-      memoryContext.operational.length > 0
-    ) {
-      return {
-        shortTerm: memoryContext.shortTerm.map((item) => this.mapMemoryItem(item)),
-        longTerm: memoryContext.longTerm.map((item) => this.mapMemoryItem(item)),
-        operational: memoryContext.operational.map((item) => this.mapMemoryItem(item)),
-      };
-    }
-
-    const memory = this.getConversationRecordOrThrow(conversationId).memory;
+  async getConversationContext(
+    companyId: string,
+    conversationId: string,
+  ): Promise<BotContactContextResponse> {
+    const chat = await this.getConversationOrThrow(companyId, conversationId);
+    const lastInboundMessage = await this.messagesRepository.findOne({
+      where: { companyId, chatId: conversationId, fromMe: false },
+      order: { createdAt: 'DESC' },
+    });
 
     return {
-      shortTerm: memory.shortTerm.map((item) => ({ ...item })),
-      longTerm: memory.longTerm.map((item) => ({ ...item })),
-      operational: memory.operational.map((item) => ({ ...item })),
+      customerName: this.resolveContactName(chat),
+      phone: this.toPhoneDisplay(chat.remoteJid),
+      role: 'Contacto de WhatsApp',
+      businessType: 'No identificado',
+      city: 'No disponible',
+      tags: [
+        'WhatsApp',
+        ...(chat.unreadCount > 0 ? ['Con mensajes sin leer'] : []),
+        ...(lastInboundMessage?.messageType && lastInboundMessage.messageType !== 'text'
+          ? [`Ultimo tipo: ${lastInboundMessage.messageType}`]
+          : []),
+      ],
+      productKnowledge: [],
+    };
+  }
+
+  async getConversationMemory(
+    companyId: string,
+    conversationId: string,
+  ): Promise<BotMemoryResponse> {
+    await this.getConversationOrThrow(companyId, conversationId);
+    const memoryContext = this.botMemoryService.buildMemoryContext(conversationId);
+
+    return {
+      shortTerm: memoryContext.shortTerm.map((item) => this.mapMemoryItem(item)),
+      longTerm: memoryContext.longTerm.map((item) => this.mapMemoryItem(item)),
+      operational: memoryContext.operational.map((item) => this.mapMemoryItem(item)),
     };
   }
 
   async createConversationMemory(
+    companyId: string,
     conversationId: string,
     payload: CreateMemoryItemDto,
   ): Promise<BotMemoryItemResponse> {
-    this.getConversationRecordOrThrow(conversationId);
+    await this.getConversationOrThrow(companyId, conversationId);
     const item = await this.botMemoryService.createManualMemory({
       conversationId,
       scope: payload.type,
@@ -101,11 +153,11 @@ export class BotCenterService {
       content: payload.content,
     });
 
-    this.prependLog({
+    this.prependLog(companyId, {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       eventType: 'Memory created',
-      summary: `A ${payload.type} memory note was added from Bot Center.`,
+      summary: `Se agrego una nota ${payload.type} desde Bot Center.`,
       severity: 'info',
       conversationId,
     });
@@ -121,11 +173,12 @@ export class BotCenterService {
   }
 
   async updateConversationMemory(
+    companyId: string,
     conversationId: string,
     memoryId: string,
     payload: UpdateMemoryItemDto,
   ): Promise<BotMemoryItemResponse> {
-    this.getConversationRecordOrThrow(conversationId);
+    await this.getConversationOrThrow(companyId, conversationId);
     const item = await this.botMemoryService.updateManualMemory(memoryId, {
       scope: payload.type,
       title: payload.title,
@@ -136,11 +189,11 @@ export class BotCenterService {
       throw new NotFoundException(`Memory item ${memoryId} was not found.`);
     }
 
-    this.prependLog({
+    this.prependLog(companyId, {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       eventType: 'Memory updated',
-      summary: 'A memory note was updated from Bot Center.',
+      summary: 'Se actualizo una nota manual desde Bot Center.',
       severity: 'info',
       conversationId,
     });
@@ -156,17 +209,18 @@ export class BotCenterService {
   }
 
   async deleteConversationMemory(
+    companyId: string,
     conversationId: string,
     memoryId: string,
   ): Promise<{ deleted: true }> {
-    this.getConversationRecordOrThrow(conversationId);
+    await this.getConversationOrThrow(companyId, conversationId);
     await this.botMemoryService.deleteManualMemory(memoryId);
 
-    this.prependLog({
+    this.prependLog(companyId, {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       eventType: 'Memory deleted',
-      summary: 'A memory note was removed from Bot Center.',
+      summary: 'Se elimino una nota manual desde Bot Center.',
       severity: 'warning',
       conversationId,
     });
@@ -175,58 +229,103 @@ export class BotCenterService {
   }
 
   listTools(): BotToolResponse[] {
-    return this.dataStore.tools.map((tool) => ({ ...tool }));
+    return [
+      {
+        id: 'tool-whatsapp-send',
+        name: 'WhatsApp sender',
+        description: 'Despacha mensajes salientes por Evolution API con control multiempresa.',
+        category: 'channel',
+        active: true,
+      },
+      {
+        id: 'tool-webhook-ingest',
+        name: 'Webhook ingest',
+        description: 'Procesa eventos entrantes de Evolution de forma asincrona.',
+        category: 'orchestration',
+        active: true,
+      },
+      {
+        id: 'tool-media-storage',
+        name: 'Media storage',
+        description: 'Persiste adjuntos en storage S3-compatible.',
+        category: 'storage',
+        active: true,
+      },
+      {
+        id: 'tool-bot-memory',
+        name: 'Bot memory',
+        description: 'Mantiene memoria operativa y notas manuales por conversacion.',
+        category: 'memory',
+        active: true,
+      },
+    ];
   }
 
-  listLogs(): BotLogResponse[] {
-    return this.dataStore.logs
-      .map((log) => ({ ...log }))
-      .sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  async listLogs(companyId: string): Promise<BotLogResponse[]> {
+    const [channelLogs, chats] = await Promise.all([
+      this.channelLogsRepository.find({
+        where: { companyId },
+        order: { createdAt: 'DESC' },
+        take: 100,
+      }),
+      this.chatsRepository.find({ where: { companyId } }),
+    ]);
+
+    const chatIdByJid = new Map(chats.map((chat) => [chat.remoteJid, chat.id]));
+    const runtimeLogs = this.runtimeLogs.filter((item) => item.companyId === companyId);
+
+    return [
+      ...runtimeLogs.map(({ companyId: _companyId, ...log }) => ({ ...log })),
+      ...channelLogs.map((log) => this.toBotLog(log, chatIdByJid)),
+    ].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
   }
 
-  getStatus(): BotStatusResponse {
+  async getStatus(companyId: string): Promise<BotStatusResponse> {
     const configuration = this.botConfigurationService.getConfiguration();
     const databaseHealth = this.databaseService.getHealth();
     const memoryStats = this.botMemoryService.getStats();
     const openAiConfigured =
       Boolean(configuration.openai.apiKey) && !configuration.openai.apiKey.includes('*');
+    const [conversationCount, messageCount, failedChannelCalls] = await Promise.all([
+      this.chatsRepository.count({ where: { companyId } }),
+      this.messagesRepository.count({ where: { companyId } }),
+      this.channelLogsRepository.count({ where: { companyId, success: false } }),
+    ]);
 
     return {
       connectedChannel: this.buildStatusCard(
         'Connected Channel',
-        configuration.evolution.isEnabled ? 'Evolution Ready' : 'Channel Disabled',
-        configuration.evolution.isEnabled
-          ? 'Evolution webhook entrypoint is enabled and ready to receive events.'
-          : 'Inbound channel integration is currently disabled in configuration.',
-        configuration.evolution.isEnabled ? 'healthy' : 'degraded',
+        conversationCount > 0 ? `${conversationCount} chats activos` : 'Sin chats sincronizados',
+        conversationCount > 0
+          ? 'El canal de WhatsApp ya tiene conversaciones persistidas listas para operacion.'
+          : 'Todavia no hay conversaciones persistidas desde Evolution API para esta empresa.',
+        conversationCount > 0 ? 'healthy' : 'degraded',
       ),
       aiStatus: this.buildStatusCard(
         'AI Status',
         openAiConfigured ? 'Credentials Loaded' : 'Mock Fallback',
         openAiConfigured
-          ? 'OpenAI service can generate real drafts when orchestration selects AI.'
-          : 'OpenAI credentials are missing or masked, so mock drafting is active.',
+          ? 'OpenAI puede generar respuestas reales cuando la orquestacion lo seleccione.'
+          : 'OpenAI no esta configurado o esta enmascarado, por lo que se usa fallback.',
         openAiConfigured ? 'healthy' : 'degraded',
       ),
       backendStatus: this.buildStatusCard(
         'Backend Status',
         'NestJS Runnable',
-        'Main application, validation, CORS, health, webhook, and orchestration routes are registered.',
+        'La API principal, colas, storage y canales estan registrados y compilando.',
         'healthy',
       ),
       databaseStatus: this.buildStatusCard(
         'Database Status',
-        databaseHealth.persistenceMode === 'postgres'
-          ? 'PostgreSQL Mode'
-          : 'File Persistence Mode',
-        `Persistence mode is ${databaseHealth.persistenceMode}; PostgreSQL contract remains prepared through environment-based configuration.`,
+        databaseHealth.persistenceMode === 'postgres' ? 'PostgreSQL Mode' : 'Fallback Mode',
+        `Persistence mode actual: ${databaseHealth.persistenceMode}.`,
         databaseHealth.configured ? 'healthy' : 'degraded',
       ),
       memoryStatus: this.buildStatusCard(
         'Memory Status',
-        `${memoryStats.messageRecords} records`,
-        `Memory store currently has ${memoryStats.messageRecords} message records and ${memoryStats.summaries} summaries persisted.`,
-        configuration.memory.enableShortTermMemory ? 'healthy' : 'degraded',
+        `${memoryStats.messageRecords} records / ${messageCount} mensajes`,
+        `Memoria auxiliar: ${memoryStats.messageRecords}. Mensajes WhatsApp persistidos: ${messageCount}. Fallos recientes del canal: ${failedChannelCalls}.`,
+        configuration.memory.enableShortTermMemory && failedChannelCalls === 0 ? 'healthy' : 'degraded',
       ),
     };
   }
@@ -250,11 +349,11 @@ export class BotCenterService {
       content: payload.content,
     });
 
-    this.prependLog({
+    this.prependLog('global', {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       eventType: 'Prompt updated',
-      summary: 'Bot prompt configuration was updated through the admin console.',
+      summary: 'La configuracion del prompt se actualizo desde Bot Center.',
       severity: 'info',
     });
 
@@ -267,73 +366,244 @@ export class BotCenterService {
     };
   }
 
-  async sendTestMessage(payload: SendTestMessageDto): Promise<SendTestMessageResponse> {
-    const conversation = this.getConversationRecordOrThrow(payload.conversationId);
+  async sendTestMessage(
+    companyId: string,
+    payload: SendTestMessageDto,
+  ): Promise<SendTestMessageResponse> {
+    const conversation = await this.getConversationOrThrow(companyId, payload.conversationId);
     const dispatchedAt = new Date().toISOString();
-    const preview = payload.message.slice(0, 90);
 
-    conversation.messages.push({
-      id: `msg-${Date.now()}`,
-      conversationId: payload.conversationId,
-      author: 'operator',
-      body: payload.message,
-      timestamp: dispatchedAt,
-      state: 'queued',
-    });
-
-    conversation.summary = {
-      ...conversation.summary,
-      lastMessagePreview: preview,
-      timestamp: dispatchedAt,
-    };
-
-    this.prependLog({
-      id: `log-${Date.now() + 1}`,
-      timestamp: dispatchedAt,
-      eventType: 'Test message accepted',
-      summary: `Placeholder dispatch accepted for conversation ${payload.conversationId}.`,
-      severity: 'warning',
-      conversationId: payload.conversationId,
+    await this.whatsappMessagingService.sendText(companyId, {
+      remoteJid: conversation.remoteJid,
+      text: payload.message,
     });
 
     await this.botMemoryService.saveOutgoingMessageMemory({
       conversationId: payload.conversationId,
-      senderId: payload.conversationId,
-      channel: 'internal-test',
+      senderId: conversation.remoteJid,
+      channel: 'whatsapp',
       content: payload.message,
-      metadata: { source: 'bot-center-test-message' },
+      metadata: { source: 'bot-center-send-message' },
+    });
+
+    this.prependLog(companyId, {
+      id: `log-${Date.now() + 1}`,
+      timestamp: dispatchedAt,
+      eventType: 'Message dispatched',
+      summary: `Se envio un mensaje desde Bot Center a ${this.toPhoneDisplay(conversation.remoteJid)}.`,
+      severity: 'info',
+      conversationId: payload.conversationId,
     });
 
     return {
       success: true,
       conversationId: payload.conversationId,
-      message: 'Test message accepted for placeholder dispatch. No external channel was invoked.',
+      message: 'Mensaje enviado correctamente por el canal de WhatsApp.',
       dispatchedAt,
       status: 'accepted',
     };
   }
 
-  async getConversationDetail(conversationId: string): Promise<BotConversationDetailResponse> {
-    return this.buildConversationDetail(this.getConversationRecordOrThrow(conversationId));
+  async getConversationDetail(
+    companyId: string,
+    conversationId: string,
+  ): Promise<BotConversationDetailResponse> {
+    const chat = await this.getConversationOrThrow(companyId, conversationId);
+    const latestMessage = await this.messagesRepository.findOne({
+      where: { companyId, chatId: conversationId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return {
+      conversation: this.toConversationSummary(chat, latestMessage),
+      messages: await this.getConversationMessages(companyId, conversationId),
+      context: await this.getConversationContext(companyId, conversationId),
+      memory: await this.getConversationMemory(companyId, conversationId),
+    };
   }
 
-  private getConversationRecordOrThrow(conversationId: string): BotCenterConversationRecord {
-    const record = this.dataStore.conversations.find((item) => item.summary.id === conversationId);
+  private async getConversationOrThrow(
+    companyId: string,
+    conversationId: string,
+  ): Promise<WhatsappChatEntity> {
+    const chat = await this.chatsRepository.findOne({
+      where: { id: conversationId, companyId },
+    });
 
-    if (!record) {
+    if (!chat) {
       throw new NotFoundException(`Conversation ${conversationId} was not found.`);
     }
 
-    return record;
+    return chat;
   }
 
-  private async buildConversationDetail(record: BotCenterConversationRecord): Promise<BotConversationDetailResponse> {
+  private async findLatestMessages(
+    companyId: string,
+    chatIds: string[],
+  ): Promise<WhatsappMessageEntity[]> {
+    if (chatIds.length === 0) {
+      return [];
+    }
+
+    return this.messagesRepository
+      .createQueryBuilder('message')
+      .distinctOn(['message.chatId'])
+      .where('message.companyId = :companyId', { companyId })
+      .andWhere('message.chatId IN (:...chatIds)', { chatIds })
+      .orderBy('message.chatId', 'ASC')
+      .addOrderBy('message.createdAt', 'DESC')
+      .getMany();
+  }
+
+  private toConversationSummary(
+    chat: WhatsappChatEntity,
+    latestMessage: WhatsappMessageEntity | null,
+  ): BotConversationSummary {
+    const preview = latestMessage ? this.describeMessage(latestMessage) : 'Sin mensajes todavia';
+    const timestamp = chat.lastMessageAt ?? latestMessage?.createdAt ?? chat.updatedAt ?? chat.createdAt;
+
     return {
-      conversation: { ...record.summary },
-      messages: record.messages.map((message) => ({ ...message })),
-      context: { ...record.context },
-      memory: await this.getConversationMemory(record.summary.id),
+      id: chat.id,
+      contactName: this.resolveContactName(chat),
+      phone: this.toPhoneDisplay(chat.remoteJid),
+      lastMessagePreview: preview,
+      unreadCount: chat.unreadCount,
+      stage: this.resolveConversationStage(chat, latestMessage),
+      timestamp: timestamp.toISOString(),
     };
+  }
+
+  private toBotMessage(message: WhatsappMessageEntity): BotMessageResponse {
+    return {
+      id: message.id,
+      conversationId: message.chatId,
+      author: message.fromMe ? 'operator' : 'contact',
+      body: this.describeMessage(message),
+      timestamp: message.createdAt.toISOString(),
+      state: this.resolveMessageState(message.status),
+    };
+  }
+
+  private toBotLog(
+    log: WhatsappChannelLogEntity,
+    chatIdByJid: Map<string, string>,
+  ): BotLogResponse {
+    const remoteJid = this.extractRemoteJidFromLog(log);
+    const statusPrefix = log.httpStatus ? `[${log.httpStatus}] ` : '';
+
+    return {
+      id: log.id,
+      timestamp: log.createdAt.toISOString(),
+      eventType: log.eventName,
+      summary: log.errorMessage?.trim().length
+        ? `${statusPrefix}${log.errorMessage}`
+        : `${statusPrefix}${log.eventName}${log.endpointCalled ? ` -> ${log.endpointCalled}` : ''}`,
+      severity: log.success ? 'info' : this.resolveLogSeverity(log),
+      conversationId: remoteJid ? chatIdByJid.get(remoteJid) : undefined,
+    };
+  }
+
+  private resolveConversationStage(
+    chat: WhatsappChatEntity,
+    latestMessage: WhatsappMessageEntity | null,
+  ): BotConversationSummary['stage'] {
+    if (latestMessage?.status === 'failed') {
+      return 'escalated';
+    }
+    if (chat.unreadCount > 0) {
+      return 'follow_up';
+    }
+    if (latestMessage?.fromMe) {
+      return 'negotiation';
+    }
+    return 'qualified';
+  }
+
+  private resolveMessageState(status: string): BotMessageResponse['state'] {
+    switch (status) {
+      case 'queued':
+        return 'queued';
+      case 'sent':
+        return 'sent';
+      case 'delivered':
+        return 'delivered';
+      case 'read':
+      case 'received':
+      default:
+        return 'read';
+    }
+  }
+
+  private resolveLogSeverity(log: WhatsappChannelLogEntity): BotLogSeverity {
+    if (log.httpStatus != null && log.httpStatus >= 500) {
+      return 'critical';
+    }
+    return 'warning';
+  }
+
+  private describeMessage(message: WhatsappMessageEntity): string {
+    const primaryText = message.textBody?.trim() || message.caption?.trim() || '';
+    if (primaryText.length > 0) {
+      return primaryText;
+    }
+
+    switch (message.messageType) {
+      case 'image':
+        return message.fromMe ? 'Imagen enviada' : 'Imagen recibida';
+      case 'video':
+        return message.fromMe ? 'Video enviado' : 'Video recibido';
+      case 'audio':
+        return message.fromMe ? 'Audio enviado' : 'Audio recibido';
+      case 'document':
+        return message.mediaOriginalName?.trim() || (message.fromMe ? 'Documento enviado' : 'Documento recibido');
+      case 'system':
+        return 'Actualizacion del sistema';
+      default:
+        return 'Mensaje sin texto';
+    }
+  }
+
+  private resolveContactName(chat: WhatsappChatEntity): string {
+    return chat.pushName?.trim() || chat.profileName?.trim() || this.toPhoneDisplay(chat.remoteJid);
+  }
+
+  private toPhoneDisplay(remoteJid: string): string {
+    const digits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+    if (!digits) {
+      return remoteJid;
+    }
+
+    if (digits.length === 13) {
+      return `+${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 9)}-${digits.slice(9)}`;
+    }
+
+    if (digits.length === 12) {
+      return `+${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 8)}-${digits.slice(8)}`;
+    }
+
+    return `+${digits}`;
+  }
+
+  private extractRemoteJidFromLog(log: WhatsappChannelLogEntity): string | null {
+    return this.extractRemoteJid(log.requestPayloadJson) ?? this.extractRemoteJid(log.responsePayloadJson);
+  }
+
+  private extractRemoteJid(payload: Record<string, unknown>): string | null {
+    const directNumber = this.readString(payload['number']);
+    if (directNumber.length > 0) {
+      return `${directNumber.replace(/\D/g, '')}@s.whatsapp.net`;
+    }
+
+    const requestData = this.readMap(payload['data']);
+    const requestKey = this.readMap(requestData['key']);
+    const requestRemoteJid = this.readString(requestKey['remoteJid']);
+    if (requestRemoteJid.length > 0) {
+      return requestRemoteJid;
+    }
+
+    const responseKey = this.readMap(payload['key']);
+    const responseRemoteJid = this.readString(responseKey['remoteJid']);
+    return responseRemoteJid.length > 0 ? responseRemoteJid : null;
   }
 
   private mapMemoryItem(item: {
@@ -354,373 +624,11 @@ export class BotCenterService {
     };
   }
 
-  private prependLog(log: BotLogResponse): void {
-    this.dataStore.logs.unshift(log);
-  }
-
-  private createSeedData(): BotCenterSeedData {
-    const now = new Date();
-
-    const conversations: BotCenterConversationRecord[] = [
-      this.buildConversationRecord({
-        id: 'conv-001',
-        contactName: 'Marina Costa',
-        phone: '+55 11 99871-2010',
-        lastMessagePreview: 'Can the bot send payment reminders after business hours?',
-        unreadCount: 3,
-        stage: 'negotiation',
-        timestamp: this.isoMinutesAgo(now, 6),
-        context: {
-          customerName: 'Marina Costa',
-          phone: '+55 11 99871-2010',
-          role: 'Finance Coordinator',
-          businessType: 'Retail Chain',
-          city: 'Sao Paulo',
-          tags: ['VIP account', 'Finance lead', 'Needs after-hours policy'],
-          productKnowledge: [
-            {
-              name: 'FULLPOS Collections Assistant',
-              summary: 'Automates payment reminder flows with tone controls, due-date awareness, and safe escalation thresholds.',
-              keyCapabilities: ['Schedule reminder sequences by due date', 'Adjust tone by account segment', 'Hand off disputes above approved thresholds'],
-              qualificationSignals: ['Needs billing reminders after hours', 'Wants less robotic collection tone', 'Requires finance-safe escalation rules'],
-              cautionPoints: ['Do not promise discounts without policy approval', 'Disputed balances must escalate to finance'],
-            },
-          ],
-        },
-        messages: [
-          this.buildMessage('m-001', 'conv-001', 'contact', 'We want FULLPOS Bot to handle late payment reminders without sounding robotic.', this.isoMinutesAgo(now, 29), 'read'),
-          this.buildMessage('m-002', 'conv-001', 'bot', 'Understood. I can use account status, payment due date, and approved tone guidelines before sending.', this.isoMinutesAgo(now, 24), 'read'),
-          this.buildMessage('m-003', 'conv-001', 'contact', 'Can the bot send payment reminders after business hours?', this.isoMinutesAgo(now, 6), 'read'),
-        ],
-        memory: {
-          shortTerm: [
-            this.buildMemoryItem('mem-001', 'Immediate objective', 'Validate compliant late payment reminder flows for WhatsApp.', 'shortTerm', this.isoMinutesAgo(now, 8)),
-          ],
-          longTerm: [
-            this.buildMemoryItem('mem-002', 'Client policy', 'Tone must stay consultative and avoid aggressive collections language.', 'longTerm', this.isoHoursAgo(now, 5)),
-          ],
-          operational: [
-            this.buildMemoryItem('mem-003', 'Operational rule', 'Escalate any billing dispute above R$10,000 to finance operations.', 'operational', this.isoHoursAgo(now, 1)),
-          ],
-        },
-      }),
-      this.buildConversationRecord({
-        id: 'conv-002',
-        contactName: 'Felipe Andrade',
-        phone: '+55 21 99415-8802',
-        lastMessagePreview: 'We need the memory rules aligned with franchise operations.',
-        unreadCount: 0,
-        stage: 'qualified',
-        timestamp: this.isoMinutesAgo(now, 18),
-        context: {
-          customerName: 'Felipe Andrade',
-          phone: '+55 21 99415-8802',
-          role: 'Operations Director',
-          businessType: 'Franchise Network',
-          city: 'Rio de Janeiro',
-          tags: ['Franchise', 'Memory review', 'Regional operations'],
-          productKnowledge: [
-            {
-              name: 'FULLPOS Franchise Memory Layer',
-              summary: 'Persists operational context by store group, owner profile, and regional workflow constraints.',
-              keyCapabilities: ['Store regional operating model per franchise', 'Keep owner profile in long-term memory', 'Support segmented qualification policies'],
-              qualificationSignals: ['Multi-store franchise operation', 'Needs memory behavior by region', 'Requires operations-led prompt review'],
-              cautionPoints: ['Do not collapse all stores into one generic profile', 'Prompt changes affecting qualification need approval'],
-            },
-          ],
-        },
-        messages: [
-          this.buildMessage('m-004', 'conv-002', 'operator', 'We can segment franchise operators by region and store operating model.', this.isoMinutesAgo(now, 42), 'delivered'),
-          this.buildMessage('m-005', 'conv-002', 'contact', 'We need the memory rules aligned with franchise operations.', this.isoMinutesAgo(now, 18), 'read'),
-        ],
-        memory: {
-          shortTerm: [
-            this.buildMemoryItem('mem-004', 'Regional segmentation', 'Franchise stores must be grouped by city cluster before outreach.', 'shortTerm', this.isoMinutesAgo(now, 22)),
-          ],
-          longTerm: [
-            this.buildMemoryItem('mem-005', 'Franchise context', 'Operations team wants memory to preserve store model and franchise owner profile.', 'longTerm', this.isoDaysAgo(now, 3)),
-          ],
-          operational: [
-            this.buildMemoryItem('mem-006', 'Review checkpoint', 'Any prompt change that affects qualification must be reviewed by operations leadership.', 'operational', this.isoHoursAgo(now, 9)),
-          ],
-        },
-      }),
-      this.buildConversationRecord({
-        id: 'conv-003',
-        contactName: 'Bianca Sales',
-        phone: '+55 31 98654-1107',
-        lastMessagePreview: 'Please escalate this lead to a human operator this afternoon.',
-        unreadCount: 1,
-        stage: 'escalated',
-        timestamp: this.isoHoursAgo(now, 2),
-        context: {
-          customerName: 'Bianca Sales',
-          phone: '+55 31 98654-1107',
-          role: 'Commercial Manager',
-          businessType: 'B2B Services',
-          city: 'Belo Horizonte',
-          tags: ['Escalation', 'High intent', 'Human handoff'],
-          productKnowledge: [
-            {
-              name: 'FULLPOS Enterprise Bot Orchestrator',
-              summary: 'Central decision layer that classifies intent, loads memory, decides tool usage, and escalates when confidence is low.',
-              keyCapabilities: ['Role and intent classification', 'Memory-aware response planning', 'Human handoff routing for sensitive cases'],
-              qualificationSignals: ['Needs same-day human escalation', 'Requires safe handling for strategic pricing', 'Wants context preserved during transfer'],
-              cautionPoints: ['Strategic pricing should not auto-close without human review'],
-            },
-          ],
-        },
-        messages: [
-          this.buildMessage('m-006', 'conv-003', 'contact', 'Please escalate this lead to a human operator this afternoon.', this.isoHoursAgo(now, 2, 5), 'read'),
-          this.buildMessage('m-007', 'conv-003', 'bot', 'Escalation rule acknowledged. I am routing the conversation and preserving the current context.', this.isoHoursAgo(now, 2), 'read'),
-        ],
-        memory: {
-          shortTerm: [
-            this.buildMemoryItem('mem-007', 'Escalation summary', 'Strategic pricing review should be handed to a commercial specialist today.', 'shortTerm', this.isoHoursAgo(now, 2)),
-          ],
-          longTerm: [],
-          operational: [
-            this.buildMemoryItem('mem-008', 'Escalation note', 'Bianca requested a same-day human follow-up for strategic pricing review.', 'operational', this.isoHoursAgo(now, 2)),
-          ],
-        },
-      }),
-      this.buildConversationRecord({
-        id: 'conv-004',
-        contactName: 'Rafael Moura',
-        phone: '+55 41 99740-1243',
-        lastMessagePreview: 'The customer onboarding flow is approved by the operations team.',
-        unreadCount: 0,
-        stage: 'onboarding',
-        timestamp: this.isoHoursAgo(now, 7),
-        context: {
-          customerName: 'Rafael Moura',
-          phone: '+55 41 99740-1243',
-          role: 'Implementation Lead',
-          businessType: 'Enterprise SaaS',
-          city: 'Curitiba',
-          tags: ['Onboarding', 'Ops approved'],
-          productKnowledge: [
-            {
-              name: 'FULLPOS Guided Onboarding Flows',
-              summary: 'Supports phased rollout, checklist-based activation, and operator training milestones for enterprise deployments.',
-              keyCapabilities: ['Phased onboarding by store group', 'Track pilot approval milestones', 'Attach rollout checklist per phase'],
-              qualificationSignals: ['Implementation team already approved pilot', 'Needs explicit deployment checklist'],
-              cautionPoints: ['Do not mark rollout complete before operator training is confirmed'],
-            },
-          ],
-        },
-        messages: [
-          this.buildMessage('m-008', 'conv-004', 'contact', 'The customer onboarding flow is approved by the operations team.', this.isoHoursAgo(now, 7, 12), 'read'),
-        ],
-        memory: {
-          shortTerm: [
-            this.buildMemoryItem('mem-009', 'Onboarding milestone', 'Customer approved pilot flow and requested deployment checklist.', 'shortTerm', this.isoHoursAgo(now, 7)),
-          ],
-          longTerm: [
-            this.buildMemoryItem('mem-010', 'Implementation profile', 'Requires phased rollout by store group with explicit operator training.', 'longTerm', this.isoDaysAgo(now, 5)),
-          ],
-          operational: [],
-        },
-      }),
-      this.buildConversationRecord({
-        id: 'conv-005',
-        contactName: 'Camila Nunes',
-        phone: '+55 62 99811-3321',
-        lastMessagePreview: 'Can we test a fallback prompt for invalid CPF formatting?',
-        unreadCount: 2,
-        stage: 'follow_up',
-        timestamp: this.isoDaysAgo(now, 1, 1),
-        context: {
-          customerName: 'Camila Nunes',
-          phone: '+55 62 99811-3321',
-          role: 'Support Supervisor',
-          businessType: 'Healthcare Network',
-          city: 'Goiania',
-          tags: ['Prompt tuning', 'Validation flow'],
-          productKnowledge: [
-            {
-              name: 'FULLPOS Validation Guardrails',
-              summary: 'Controls CPF and identity validation fallback flows with audit-safe retry behavior.',
-              keyCapabilities: ['Retry validation without restarting the entire flow', 'Keep auditability for sensitive branches', 'Use conservative fallback prompts in regulated segments'],
-              qualificationSignals: ['Needs CPF-specific fallback handling', 'Works in a regulated healthcare environment'],
-              cautionPoints: ['Do not request unnecessary sensitive data', 'Validation retries must remain explicit and traceable'],
-            },
-          ],
-        },
-        messages: [
-          this.buildMessage('m-009', 'conv-005', 'contact', 'Can we test a fallback prompt for invalid CPF formatting?', this.isoDaysAgo(now, 1, 1), 'read'),
-          this.buildMessage('m-010', 'conv-005', 'bot', 'Yes. We can isolate the validation branch and request only the missing digits.', this.isoDaysAgo(now, 1), 'delivered'),
-        ],
-        memory: {
-          shortTerm: [],
-          longTerm: [
-            this.buildMemoryItem('mem-011', 'Validation issue', 'CPF fallback prompt should request only the missing digits, not restart the full flow.', 'longTerm', this.isoDaysAgo(now, 1)),
-          ],
-          operational: [
-            this.buildMemoryItem('mem-012', 'Compliance note', 'Healthcare clients require conservative validation retries and explicit auditability.', 'operational', this.isoDaysAgo(now, 2)),
-          ],
-        },
-      }),
-    ];
-
-    return {
-      conversations,
-      tools: [
-        {
-          id: 'tool-001',
-          name: 'CRM Lookup',
-          description: 'Queries customer ownership, account tier, and account manager.',
-          category: 'Customer Data',
-          active: true,
-        },
-        {
-          id: 'tool-002',
-          name: 'Billing Status',
-          description: 'Checks invoice state, overdue ranges, and collection policy flags.',
-          category: 'Finance',
-          active: true,
-        },
-        {
-          id: 'tool-003',
-          name: 'Knowledge Base Search',
-          description: 'Retrieves procedural answers from approved enterprise documentation.',
-          category: 'Knowledge',
-          active: true,
-        },
-        {
-          id: 'tool-004',
-          name: 'Human Handoff',
-          description: 'Opens a support escalation route with preserved context and summary.',
-          category: 'Operations',
-          active: false,
-        },
-        {
-          id: 'tool-005',
-          name: 'Memory Sync',
-          description: 'Coordinates short-term and long-term memory refresh across the orchestration layer.',
-          category: 'Memory',
-          active: true,
-        },
-      ],
-      logs: [
-        {
-          id: 'log-001',
-          timestamp: this.isoMinutesAgo(now, 5),
-          eventType: 'Message classified',
-          summary: 'Intent classified as billing_reminder_policy with high confidence.',
-          severity: 'info',
-          conversationId: 'conv-001',
-        },
-        {
-          id: 'log-002',
-          timestamp: this.isoMinutesAgo(now, 10),
-          eventType: 'Memory updated',
-          summary: 'Short-term memory refreshed with after-hours reminder constraint.',
-          severity: 'info',
-          conversationId: 'conv-001',
-        },
-        {
-          id: 'log-003',
-          timestamp: this.isoMinutesAgo(now, 21),
-          eventType: 'Prompt review',
-          summary: 'Operator inspected prompt branch used for franchise qualification.',
-          severity: 'warning',
-          conversationId: 'conv-002',
-        },
-        {
-          id: 'log-004',
-          timestamp: this.isoHoursAgo(now, 2),
-          eventType: 'Escalation created',
-          summary: 'A human handoff was requested and routed to commercial operations.',
-          severity: 'critical',
-          conversationId: 'conv-003',
-        },
-        {
-          id: 'log-005',
-          timestamp: this.isoMinutesAgo(now, 2),
-          eventType: 'Health check',
-          summary: 'WhatsApp, AI runtime, and persistence services returned healthy responses.',
-          severity: 'info',
-        },
-      ],
-      status: {
-        connectedChannel: this.buildStatusCard('Connected Channel', 'WhatsApp Business', 'Primary inbound and outbound channel is live.', 'healthy'),
-        aiStatus: this.buildStatusCard('AI Status', 'Inference Ready', 'Primary LLM gateway is responsive within SLA.', 'healthy'),
-        backendStatus: this.buildStatusCard('Backend Status', 'Degraded Retry', 'Two retry spikes were detected in the workflow orchestrator.', 'degraded'),
-        databaseStatus: this.buildStatusCard('Database Status', 'PostgreSQL Ready', 'Persistence layer contract is stable and ready for repository wiring.', 'healthy'),
-        memoryStatus: this.buildStatusCard('Memory Status', 'Redis Pending', 'In-memory mock storage is active while Redis integration is staged.', 'degraded'),
-      },
-      prompt: {
-        id: 'prompt-001',
-        title: 'Sales Qualification Prompt',
-        description: 'Controls enterprise qualification, memory loading, escalation rules, and tool selection.',
-        content:
-          'You are FULLPOS Bot, an enterprise assistant for WhatsApp operations. Always inspect the current contact context, short-term memory, long-term memory, and operational rules before responding. Prioritize accuracy over speed, never invent billing or contract information, escalate when thresholds are exceeded, and keep the tone concise, professional, and aligned with the client-approved communication style.',
-        updatedAt: this.isoMinutesAgo(now, 12),
-      },
-    };
-  }
-
-  private buildConversationRecord(input: {
-    id: string;
-    contactName: string;
-    phone: string;
-    lastMessagePreview: string;
-    unreadCount: number;
-    stage: BotConversationSummary['stage'];
-    timestamp: string;
-    context: BotContactContextResponse;
-    messages: BotMessageResponse[];
-    memory: BotMemoryResponse;
-  }): BotCenterConversationRecord {
-    return {
-      summary: {
-        id: input.id,
-        contactName: input.contactName,
-        phone: input.phone,
-        lastMessagePreview: input.lastMessagePreview,
-        unreadCount: input.unreadCount,
-        stage: input.stage,
-        timestamp: input.timestamp,
-      },
-      context: input.context,
-      messages: input.messages,
-      memory: input.memory,
-    };
-  }
-
-  private buildMessage(
-    id: string,
-    conversationId: string,
-    author: BotMessageResponse['author'],
-    body: string,
-    timestamp: string,
-    state: BotMessageResponse['state'],
-  ): BotMessageResponse {
-    return {
-      id,
-      conversationId,
-      author,
-      body,
-      timestamp,
-      state,
-    };
-  }
-
-  private buildMemoryItem(
-    id: string,
-    title: string,
-    content: string,
-    type: BotMemoryItemResponse['type'],
-    updatedAt: string,
-  ): BotMemoryItemResponse {
-    return {
-      id,
-      title,
-      content,
-      type,
-      updatedAt,
-    };
+  private prependLog(companyId: string, log: BotLogResponse): void {
+    this.runtimeLogs.unshift({ companyId, ...log });
+    if (this.runtimeLogs.length > 200) {
+      this.runtimeLogs.length = 200;
+    }
   }
 
   private buildStatusCard(
@@ -729,23 +637,14 @@ export class BotCenterService {
     description: string,
     state: ServiceHealthState,
   ): BotStatusCardResponse {
-    return {
-      label,
-      value,
-      description,
-      state,
-    };
+    return { label, value, description, state };
   }
 
-  private isoMinutesAgo(reference: Date, minutes: number): string {
-    return new Date(reference.getTime() - minutes * 60_000).toISOString();
+  private readMap(value: unknown): Record<string, unknown> {
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   }
 
-  private isoHoursAgo(reference: Date, hours: number, extraMinutes = 0): string {
-    return new Date(reference.getTime() - hours * 3_600_000 - extraMinutes * 60_000).toISOString();
-  }
-
-  private isoDaysAgo(reference: Date, days: number, extraHours = 0): string {
-    return new Date(reference.getTime() - days * 86_400_000 - extraHours * 3_600_000).toISOString();
+  private readString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
   }
 }

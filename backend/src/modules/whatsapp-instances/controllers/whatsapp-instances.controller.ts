@@ -72,4 +72,10 @@ export class WhatsappInstancesController {
   delete(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
     return this.whatsappInstancesService.deleteInstance(user.companyId, params.instance);
   }
+
+  @Roles('admin', 'operator')
+  @Post('instances/:instance/webhook')
+  configureWebhook(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
+    return this.whatsappInstancesService.configureWebhook(user.companyId, params.instance);
+  }
 }

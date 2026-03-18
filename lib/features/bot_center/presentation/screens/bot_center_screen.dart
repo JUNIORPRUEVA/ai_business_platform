@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../modules/auth/application/auth_providers.dart';
 import '../controllers/bot_center_controller.dart';
 import '../widgets/bot_context_column.dart';
 import '../widgets/bot_sidebar.dart';
@@ -27,7 +29,7 @@ class _BotCenterScreenState extends State<BotCenterScreen> {
   }
 }
 
-class BotCenterModule extends StatefulWidget {
+class BotCenterModule extends ConsumerStatefulWidget {
   const BotCenterModule({
     super.key,
     required this.embedded,
@@ -38,16 +40,18 @@ class BotCenterModule extends StatefulWidget {
   final VoidCallback? onOpenSettings;
 
   @override
-  State<BotCenterModule> createState() => _BotCenterModuleState();
+  ConsumerState<BotCenterModule> createState() => _BotCenterModuleState();
 }
 
-class _BotCenterModuleState extends State<BotCenterModule> {
+class _BotCenterModuleState extends ConsumerState<BotCenterModule> {
   late final BotCenterController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = BotCenterController.createDefault();
+    _controller = BotCenterController.createDefault(
+      tokenReader: () => ref.read(authTokenStoreProvider).read(),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.loadInitialData();
     });

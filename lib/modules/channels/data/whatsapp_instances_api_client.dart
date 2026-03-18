@@ -47,7 +47,8 @@ class WhatsappInstancesApiClient {
           .toList(growable: false);
     }
 
-    throw const WhatsappInstancesApiException('Respuesta inválida del backend.');
+    throw const WhatsappInstancesApiException(
+        'Respuesta inválida del backend.');
   }
 
   Future<Map<String, dynamic>> createInstance({
@@ -138,6 +139,22 @@ class WhatsappInstancesApiClient {
     return _decodeObject(response.body);
   }
 
+  Future<Map<String, dynamic>> configureWebhook({
+    required String token,
+    required String instanceName,
+  }) async {
+    final response = await _send(
+      () => _client.post(
+        _buildUri(
+            '/whatsapp/instances/${Uri.encodeComponent(instanceName)}/webhook'),
+        headers: _authorizedHeaders(token),
+        body: jsonEncode(const <String, dynamic>{}),
+      ),
+    );
+
+    return _decodeObject(response.body);
+  }
+
   Map<String, String> get _jsonHeaders => const {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -165,11 +182,14 @@ class WhatsappInstancesApiClient {
 
       final message = _extractError(response.body) ??
           'Request failed with status ${response.statusCode}.';
-      throw WhatsappInstancesApiException(message, statusCode: response.statusCode);
+      throw WhatsappInstancesApiException(message,
+          statusCode: response.statusCode);
     } on TimeoutException {
-      throw const WhatsappInstancesApiException('La solicitud tardó demasiado.');
+      throw const WhatsappInstancesApiException(
+          'La solicitud tardó demasiado.');
     } on http.ClientException catch (error) {
-      throw WhatsappInstancesApiException('No se pudo conectar al backend: ${error.message}');
+      throw WhatsappInstancesApiException(
+          'No se pudo conectar al backend: ${error.message}');
     }
   }
 
@@ -178,7 +198,8 @@ class WhatsappInstancesApiClient {
     if (decoded is Map<String, dynamic>) {
       return decoded;
     }
-    throw const WhatsappInstancesApiException('Respuesta JSON inválida del backend.');
+    throw const WhatsappInstancesApiException(
+        'Respuesta JSON inválida del backend.');
   }
 
   String? _extractError(String source) {

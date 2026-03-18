@@ -79,4 +79,26 @@ export class StorageService {
     const url = await getSignedUrl(this.s3, command, { expiresIn: expiresInSeconds });
     return { key: params.key, url, expiresInSeconds };
   }
+
+  async uploadBuffer(params: {
+    companyId: string;
+    folder: StorageFolder;
+    filename: string;
+    contentType?: string;
+    buffer: Buffer;
+  }): Promise<{ key: string }> {
+    const key = this.buildObjectKey(params.companyId, params.folder, params.filename);
+    const bucket = this.getBucket();
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: params.buffer,
+        ContentType: params.contentType,
+      }),
+    );
+
+    return { key };
+  }
 }

@@ -23,6 +23,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { BotConfigurationModule } from './modules/bot-configuration/bot-configuration.module';
 import { BotCenterModule } from './modules/bot-center/bot-center.module';
 import { AiBrainModule } from './modules/ai_brain/ai-brain.module';
+import { WhatsappChannelModule } from './modules/whatsapp-channel/whatsapp-channel.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { AiBrainModule } from './modules/ai_brain/ai-brain.module';
     WorkersModule,
     EvolutionWebhookModule,
     WhatsappInstancesModule,
+    WhatsappChannelModule,
     BotCenterModule,
   ],
   controllers: [HealthController],

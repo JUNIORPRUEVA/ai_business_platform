@@ -16,18 +16,21 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
   BotCenterRepositoryImpl({
     required BotCenterRemoteDataSource remoteDataSource,
     BotCenterSeedDataSource? seedDataSource,
-    bool enableSeedFallback = true,
+    bool enableSeedFallback = false,
   })  : _remoteDataSource = remoteDataSource,
         _seedDataSource = seedDataSource,
         _enableSeedFallback = enableSeedFallback;
 
-  factory BotCenterRepositoryImpl.createDefault({String? baseUrl}) {
+  factory BotCenterRepositoryImpl.createDefault({
+    String? baseUrl,
+    Future<String?> Function()? tokenReader,
+  }) {
     return BotCenterRepositoryImpl(
       remoteDataSource: BotCenterRemoteDataSource(
-        BotCenterApiClient(baseUrl: baseUrl),
+        BotCenterApiClient(baseUrl: baseUrl, tokenReader: tokenReader),
       ),
       seedDataSource: BotCenterSeedDataSource(),
-      enableSeedFallback: true,
+      enableSeedFallback: false,
     );
   }
 

@@ -34,4 +34,26 @@ export class UpdateMemorySettingsDto {
   @IsOptional()
   @IsBoolean()
   usePostgreSql?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  summaryEnabled?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(2)
+  @Max(100)
+  summaryRefreshThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  deduplicationEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  pruningEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  memoryDebugEnabled?: boolean;
 }

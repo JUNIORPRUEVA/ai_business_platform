@@ -17,6 +17,7 @@ import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settin
 import { UpdatePromptTemplateDto } from '../dto/update-prompt-template.dto';
 import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
 import { UpdateToolDto } from '../dto/update-tool.dto';
+import { UpdateWhatsappSettingsDto } from '../dto/update-whatsapp-settings.dto';
 import { BotConfigurationService } from '../services/bot-configuration.service';
 import { BotConfigurationBundle, PromptTemplate, InternalToolSettings } from '../types/bot-configuration.types';
 
@@ -67,6 +68,12 @@ export class BotConfigurationController {
   @Put('integrations')
   updateIntegrations(@Body() payload: UpdateIntegrationsSettingsDto) {
     return this.botConfigurationService.updateIntegrationsSettings(payload);
+  }
+
+  @Roles('admin', 'operator')
+  @Put('whatsapp')
+  updateWhatsapp(@Body() payload: UpdateWhatsappSettingsDto) {
+    return this.botConfigurationService.updateWhatsappSettings(payload);
   }
 
   @Roles('admin', 'operator')

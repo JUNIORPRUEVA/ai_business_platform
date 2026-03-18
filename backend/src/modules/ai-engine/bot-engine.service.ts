@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Redis from 'ioredis';
 
 import { BotsService } from '../bots/bots.service';
 import { ChannelsService } from '../channels/channels.service';
@@ -17,7 +16,6 @@ import { PromptBuilderService } from './prompt-builder.service';
 @Injectable()
 export class BotEngineService {
   private readonly logger = new Logger(BotEngineService.name);
-  private redis: Redis | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -50,16 +48,16 @@ export class BotEngineService {
     // 2) Load bot configuration
     const bot = await this.botsService.getDefaultActiveBot(params.companyId);
 
-    // 3) Ensure Redis for cache (TTL 10 min)
-    this.ensureRedis();
-    this.memoryService.configureRedis(this.redis);
-
     // 4) Load conversation history (last 10) + contact memory
     // Backfill conversation_memory from messages if empty.
     await this.backfillConversationMemoryIfNeeded(params.companyId, params.conversationId);
 
-    const conversationHistory = await this.memoryService.listConversationMemory(params.conversationId, 10);
-    const contactMemory = await this.memoryService.getContactMemoryMap(contact.id);
+    const conversationHistory = await this.memoryService.listConversationMemory(
+      params.companyId,
+      params.conversationId,
+      10,
+    );
+    const contactMemory = await this.memoryService.getContactMemoryMap(params.companyId, contact.id);
 
     // 5) Determine base system prompt (bot.systemPrompt > active system prompt > default)
     const baseSystemPrompt =
@@ -67,7 +65,12 @@ export class BotEngineService {
       (await this.promptsService.getActiveSystemPrompt(params.companyId)) ||
       'Eres un asistente de ventas amable. Responde de forma profesional.';
 
-    await this.memoryService.ensureConversationSystemPrompt(params.conversationId, baseSystemPrompt);
+    await this.memoryService.ensureConversationSystemPrompt({
+      companyId: params.companyId,
+      contactId: contact.id,
+      conversationId: params.conversationId,
+      content: baseSystemPrompt,
+    });
 
     // 6) Get last user message (from messages table)
     const recentMessages = await this.messagesService.list(params.companyId, params.conversationId, 20);
@@ -76,9 +79,14 @@ export class BotEngineService {
 
     // 7) Persist inbound message into conversation_memory (role=user)
     await this.memoryService.appendConversationMemory({
+      companyId: params.companyId,
+      contactId: contact.id,
       conversationId: params.conversationId,
       role: 'user',
       content: userMessage,
+      contentType: 'text',
+      source: 'inbound_message',
+      messageId: params.messageId,
       dedupeAgainstLast: true,
     });
 
@@ -115,15 +123,19 @@ export class BotEngineService {
       });
 
       await this.memoryService.appendConversationMemory({
+        companyId: params.companyId,
+        contactId: contact.id,
         conversationId: params.conversationId,
-        role: 'system',
+        role: 'tool',
         content: `Tool executed: ${toolResult.tool}. Result: ${JSON.stringify(toolResult.result)}`,
+        contentType: 'json',
+        source: 'tool_execution',
         dedupeAgainstLast: false,
       });
 
       const followupMessages = this.promptBuilderService.buildMessages({
         systemPrompt: `${systemPrompt}\n\nTool result:\n${JSON.stringify(toolResult.result)}`,
-        history: await this.memoryService.listConversationMemory(params.conversationId, 10),
+        history: await this.memoryService.listConversationMemory(params.companyId, params.conversationId, 10),
         userMessage,
       });
 
@@ -144,9 +156,14 @@ export class BotEngineService {
     });
 
     await this.memoryService.appendConversationMemory({
+      companyId: params.companyId,
+      contactId: contact.id,
       conversationId: params.conversationId,
       role: 'assistant',
       content: botMessage.content,
+      contentType: 'text',
+      source: 'assistant_response',
+      messageId: botMessage.id,
       dedupeAgainstLast: true,
     });
 
@@ -163,77 +180,26 @@ export class BotEngineService {
       }
     }
 
-    await this.persistRuntimeState({
-      companyId: params.companyId,
-      conversationId: params.conversationId,
-      contactId: contact.id,
-      botId: bot.id,
-      lastInboundMessageId: params.messageId,
-      lastOutboundMessageId: botMessage.id,
-    }).catch(() => undefined);
-
     return { ok: true };
   }
 
-  private ensureRedis(): void {
-    if (this.redis) return;
-
-    const host = this.configService.get<string>('REDIS_HOST') ?? '';
-    const port = Number(this.configService.get<string>('REDIS_PORT') ?? 6379);
-
-    if (!host) {
-      this.redis = null;
-      return;
-    }
-
-    this.redis = new Redis({
-      host,
-      port,
-      password: this.configService.get<string>('REDIS_PASSWORD') || undefined,
-      tls: (this.configService.get<string>('REDIS_TLS') ?? 'false') === 'true' ? {} : undefined,
-      maxRetriesPerRequest: 1,
-      lazyConnect: true,
-    });
-
-    // Best effort connection
-    void this.redis.connect().catch(() => undefined);
-  }
-
-  private runtimeStateKey(conversationId: string): string {
-    return `ai:bot_state:${conversationId}`;
-  }
-
-  private async persistRuntimeState(params: {
-    companyId: string;
-    conversationId: string;
-    contactId: string;
-    botId: string;
-    lastInboundMessageId: string;
-    lastOutboundMessageId: string;
-  }): Promise<void> {
-    if (!this.redis) return;
-    await this.redis.set(
-      this.runtimeStateKey(params.conversationId),
-      JSON.stringify({
-        ...params,
-        updatedAt: new Date().toISOString(),
-      }),
-      'EX',
-      600,
-    );
-  }
-
   private async backfillConversationMemoryIfNeeded(companyId: string, conversationId: string): Promise<void> {
-    const existing = await this.memoryService.listConversationMemory(conversationId, 1);
+    const conversation = await this.conversationsService.get(companyId, conversationId);
+    const existing = await this.memoryService.listConversationMemory(companyId, conversationId, 1);
     if (existing.length > 0) return;
 
     const messages = await this.messagesService.list(companyId, conversationId, 20);
     for (const message of messages) {
       const role = message.sender === 'bot' ? 'assistant' : 'user';
       await this.memoryService.appendConversationMemory({
+        companyId,
+        contactId: conversation.contactId,
         conversationId,
         role,
         content: message.content,
+        contentType: 'text',
+        source: message.sender === 'bot' ? 'assistant_response' : 'inbound_message',
+        messageId: message.id,
         dedupeAgainstLast: false,
       });
     }

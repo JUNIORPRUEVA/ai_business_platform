@@ -29,9 +29,15 @@ class BotCenterController extends ChangeNotifier {
         promptEditorController = TextEditingController(),
         messageComposerController = TextEditingController();
 
-  factory BotCenterController.createDefault({String? baseUrl}) {
+  factory BotCenterController.createDefault({
+    String? baseUrl,
+    Future<String?> Function()? tokenReader,
+  }) {
     return BotCenterController(
-      repository: BotCenterRepositoryImpl.createDefault(baseUrl: baseUrl),
+      repository: BotCenterRepositoryImpl.createDefault(
+        baseUrl: baseUrl,
+        tokenReader: tokenReader,
+      ),
     );
   }
 

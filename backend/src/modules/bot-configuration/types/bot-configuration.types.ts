@@ -34,6 +34,26 @@ export interface IntegrationsSettings {
   webhookUrl: string;
 }
 
+export type WhatsappCallHandlingMode =
+  | 'ignore'
+  | 'notify'
+  | 'reject_if_supported';
+
+export interface WhatsappSettings {
+  autoApplyWebhook: boolean;
+  trackConnectionEvents: boolean;
+  trackQrEvents: boolean;
+  trackMessageEvents: boolean;
+  receiveTextMessages: boolean;
+  receiveAudioMessages: boolean;
+  receiveImageMessages: boolean;
+  receiveVideoMessages: boolean;
+  receiveDocumentMessages: boolean;
+  persistMediaMetadata: boolean;
+  callHandlingMode: WhatsappCallHandlingMode;
+  rejectedCallReply: string;
+}
+
 export interface MemorySettings {
   enableShortTermMemory: boolean;
   enableLongTermMemory: boolean;
@@ -43,6 +63,11 @@ export interface MemorySettings {
   memoryTtl: string;
   useRedis: boolean;
   usePostgreSql: boolean;
+  summaryEnabled: boolean;
+  summaryRefreshThreshold: number;
+  deduplicationEnabled: boolean;
+  pruningEnabled: boolean;
+  memoryDebugEnabled: boolean;
 }
 
 export interface OrchestratorSettings {
@@ -86,6 +111,7 @@ export interface BotConfigurationBundle {
   evolution: EvolutionSettings;
   openai: OpenAiSettings;
   integrations: IntegrationsSettings;
+  whatsapp: WhatsappSettings;
   memory: MemorySettings;
   orchestrator: OrchestratorSettings;
   prompts: PromptTemplate[];
@@ -128,6 +154,21 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
       instagramToken: '',
       webhookUrl: '',
     },
+    whatsapp: {
+      autoApplyWebhook: true,
+      trackConnectionEvents: true,
+      trackQrEvents: true,
+      trackMessageEvents: true,
+      receiveTextMessages: true,
+      receiveAudioMessages: true,
+      receiveImageMessages: true,
+      receiveVideoMessages: true,
+      receiveDocumentMessages: true,
+      persistMediaMetadata: true,
+      callHandlingMode: 'notify',
+      rejectedCallReply:
+        'En este canal no atendemos llamadas. Escríbenos por mensaje y te ayudamos enseguida.',
+    },
     memory: {
       enableShortTermMemory: true,
       enableLongTermMemory: true,
@@ -135,8 +176,13 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
       recentMessageWindowSize: 20,
       automaticSummarization: true,
       memoryTtl: '30d',
-      useRedis: false,
-      usePostgreSql: false,
+      useRedis: true,
+      usePostgreSql: true,
+      summaryEnabled: true,
+      summaryRefreshThreshold: 6,
+      deduplicationEnabled: true,
+      pruningEnabled: true,
+      memoryDebugEnabled: false,
     },
     orchestrator: {
       automaticMode: true,
@@ -220,6 +266,10 @@ export function normalizeBotConfiguration(
     integrations: {
       ...defaults.integrations,
       ...(snapshot?.integrations ?? {}),
+    },
+    whatsapp: {
+      ...defaults.whatsapp,
+      ...(snapshot?.whatsapp ?? {}),
     },
     memory: {
       ...defaults.memory,

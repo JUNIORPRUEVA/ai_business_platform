@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
 import { BotConfigurationService } from '../../bot-configuration/services/bot-configuration.service';
-import { BotMemoryService } from '../../bot-memory/services/bot-memory.service';
 import { OpenAiService } from '../../openai/services/openai.service';
 import { BotConfigurationBundle } from '../../bot-configuration/types/bot-configuration.types';
 import { ProcessIncomingMessageDto } from '../dto/process-incoming-message.dto';
@@ -20,7 +19,6 @@ import { ToolDecisionService } from './tool-decision.service';
 export class BotOrchestratorService {
   constructor(
     private readonly botConfigurationService: BotConfigurationService,
-    private readonly botMemoryService: BotMemoryService,
     private readonly openAiService: OpenAiService,
     private readonly roleResolverService: RoleResolverService,
     private readonly memoryLoaderService: MemoryLoaderService,
@@ -115,25 +113,6 @@ export class BotOrchestratorService {
       `strategy=${decision.promptStrategy}`,
       timestamp,
     );
-
-    await this.botMemoryService.saveOperationalState({
-      conversationId,
-      stage: decision.selectedAction,
-      lastIntent: intent.intent,
-      assignedTool: decision.selectedTool,
-      needsHumanEscalation: decision.needsHumanEscalation,
-    });
-
-    if (memory.shortTerm.length >= 2 && configurationBundle.memory.automaticSummarization) {
-      await this.botMemoryService.saveConversationSummary({
-        conversationId,
-        generatedFromMessages: memory.shortTerm.length,
-        summary: `Latest intent=${intent.intent}; recent context=${memory.shortTerm
-          .slice(0, 3)
-          .map((item) => item.content)
-          .join(' | ')}`,
-      });
-    }
 
     return {
       detectedRole: role.detectedRole,

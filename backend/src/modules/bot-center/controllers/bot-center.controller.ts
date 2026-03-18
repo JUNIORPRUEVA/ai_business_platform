@@ -1,9 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 
+import { AuthUser } from '../../../common/auth/auth.types';
+import { CurrentUser } from '../../../common/auth/current-user.decorator';
+import { Roles } from '../../../common/auth/roles.decorator';
+import { RolesGuard } from '../../../common/auth/roles.guard';
 import { CreateMemoryItemDto } from '../dto/create-memory-item.dto';
 import { SendTestMessageDto } from '../dto/send-test-message.dto';
 import { UpdateMemoryItemDto } from '../dto/update-memory-item.dto';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
+import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { LicenseGuard } from '../../billing/license.guard';
 import {
   BotCenterOverviewResponse,
   BotContactContextResponse,
@@ -19,52 +25,67 @@ import {
 } from '../types/bot-center.types';
 import { BotCenterService } from '../services/bot-center.service';
 
+@UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
+@Roles('admin', 'operator', 'viewer')
 @Controller('bot-center')
 export class BotCenterController {
   constructor(private readonly botCenterService: BotCenterService) {}
 
   @Get('overview')
   async getOverview(
+    @CurrentUser() user: AuthUser,
     @Query('conversationId') conversationId?: string,
   ): Promise<BotCenterOverviewResponse> {
-    return this.botCenterService.getOverview(conversationId);
+    return this.botCenterService.getOverview(user.companyId, conversationId);
   }
 
   @Get('conversations')
-  getConversations(): BotConversationSummary[] {
-    return this.botCenterService.listConversations();
+  getConversations(@CurrentUser() user: AuthUser): Promise<BotConversationSummary[]> {
+    return this.botCenterService.listConversations(user.companyId);
   }
 
   @Get('conversations/:id/messages')
-  getConversationMessages(@Param('id') conversationId: string): BotMessageResponse[] {
-    return this.botCenterService.getConversationMessages(conversationId);
+  getConversationMessages(
+    @CurrentUser() user: AuthUser,
+    @Param('id') conversationId: string,
+  ): Promise<BotMessageResponse[]> {
+    return this.botCenterService.getConversationMessages(user.companyId, conversationId);
   }
 
   @Get('conversations/:id/context')
-  getConversationContext(@Param('id') conversationId: string): BotContactContextResponse {
-    return this.botCenterService.getConversationContext(conversationId);
+  getConversationContext(
+    @CurrentUser() user: AuthUser,
+    @Param('id') conversationId: string,
+  ): Promise<BotContactContextResponse> {
+    return this.botCenterService.getConversationContext(user.companyId, conversationId);
   }
 
   @Get('conversations/:id/memory')
-  async getConversationMemory(@Param('id') conversationId: string): Promise<BotMemoryResponse> {
-    return this.botCenterService.getConversationMemory(conversationId);
+  async getConversationMemory(
+    @CurrentUser() user: AuthUser,
+    @Param('id') conversationId: string,
+  ): Promise<BotMemoryResponse> {
+    return this.botCenterService.getConversationMemory(user.companyId, conversationId);
   }
 
   @Post('conversations/:id/memory')
   async createConversationMemory(
+    @CurrentUser() user: AuthUser,
     @Param('id') conversationId: string,
     @Body() payload: CreateMemoryItemDto,
   ): Promise<BotMemoryItemResponse> {
-    return this.botCenterService.createConversationMemory(conversationId, payload);
+    return this.botCenterService.createConversationMemory(user.companyId, conversationId, payload);
   }
 
   @Patch('conversations/:conversationId/memory/:memoryId')
   async updateConversationMemory(
+    @CurrentUser() user: AuthUser,
     @Param('conversationId') conversationId: string,
     @Param('memoryId') memoryId: string,
     @Body() payload: UpdateMemoryItemDto,
   ): Promise<BotMemoryItemResponse> {
     return this.botCenterService.updateConversationMemory(
+      user.companyId,
       conversationId,
       memoryId,
       payload,
@@ -73,10 +94,11 @@ export class BotCenterController {
 
   @Delete('conversations/:conversationId/memory/:memoryId')
   async deleteConversationMemory(
+    @CurrentUser() user: AuthUser,
     @Param('conversationId') conversationId: string,
     @Param('memoryId') memoryId: string,
   ): Promise<{ deleted: true }> {
-    return this.botCenterService.deleteConversationMemory(conversationId, memoryId);
+    return this.botCenterService.deleteConversationMemory(user.companyId, conversationId, memoryId);
   }
 
   @Get('tools')
@@ -85,13 +107,13 @@ export class BotCenterController {
   }
 
   @Get('logs')
-  getLogs(): BotLogResponse[] {
-    return this.botCenterService.listLogs();
+  getLogs(@CurrentUser() user: AuthUser): Promise<BotLogResponse[]> {
+    return this.botCenterService.listLogs(user.companyId);
   }
 
   @Get('status')
-  getStatus(): BotStatusResponse {
-    return this.botCenterService.getStatus();
+  getStatus(@CurrentUser() user: AuthUser): Promise<BotStatusResponse> {
+    return this.botCenterService.getStatus(user.companyId);
   }
 
   @Get('prompt')
@@ -105,7 +127,10 @@ export class BotCenterController {
   }
 
   @Post('test-message')
-  async sendTestMessage(@Body() payload: SendTestMessageDto): Promise<SendTestMessageResponse> {
-    return this.botCenterService.sendTestMessage(payload);
+  async sendTestMessage(
+    @CurrentUser() user: AuthUser,
+    @Body() payload: SendTestMessageDto,
+  ): Promise<SendTestMessageResponse> {
+    return this.botCenterService.sendTestMessage(user.companyId, payload);
   }
 }

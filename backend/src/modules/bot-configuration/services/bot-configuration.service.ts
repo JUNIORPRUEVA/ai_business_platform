@@ -16,6 +16,7 @@ import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settin
 import { UpdatePromptTemplateDto } from '../dto/update-prompt-template.dto';
 import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
 import { UpdateToolDto } from '../dto/update-tool.dto';
+import { UpdateWhatsappSettingsDto } from '../dto/update-whatsapp-settings.dto';
 import { BotConfigurationEntity } from '../entities/bot-configuration.entity';
 import {
   BotConfigurationBundle,
@@ -216,6 +217,17 @@ export class BotConfigurationService implements OnModuleInit {
     };
     await this.persist();
     return structuredClone(this.state.integrations);
+  }
+
+  async updateWhatsappSettings(
+    payload: UpdateWhatsappSettingsDto,
+  ): Promise<BotConfigurationBundle['whatsapp']> {
+    this.state.whatsapp = {
+      ...this.state.whatsapp,
+      ...payload,
+    };
+    await this.persist();
+    return structuredClone(this.state.whatsapp);
   }
 
   async updateMemorySettings(
