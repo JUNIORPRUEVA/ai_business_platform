@@ -198,14 +198,8 @@ export class WhatsappInstancesService {
 
   async configureWebhook(tenantId: string, instanceName: string): Promise<{ ok: true; webhookUrl: string; events: string[] }> {
     const entity = await this.getByInstanceName(tenantId, instanceName);
-    const webhookUrl = await this.getConfiguredWebhookUrl();
+    const webhookUrl = this.evolutionService.buildInstanceWebhookUrl();
     const webhookEvents = await this.getConfiguredWebhookEvents();
-
-    if (!webhookUrl) {
-      throw new BadRequestException(
-        'No hay URL de webhook configurada. Guárdala primero en Configuración > Claves API.',
-      );
-    }
 
     await this.evolutionService.setWebhook({
       instanceName: entity.instanceName,
@@ -371,17 +365,13 @@ export class WhatsappInstancesService {
   }
 
   private async tryConfigureWebhook(instanceName: string): Promise<void> {
-    const instanceWebhookUrl = await this.getConfiguredWebhookUrl();
-    if (!instanceWebhookUrl) {
-      return;
-    }
-
     const whatsappSettings = await this.getWhatsappSettings();
     if (!whatsappSettings.autoApplyWebhook) {
       return;
     }
 
-    const events = this.buildWebhookEvents(whatsappSettings);
+    const instanceWebhookUrl = this.evolutionService.buildInstanceWebhookUrl();
+    const events = this.buildWebhookEvents();
 
     try {
       await this.evolutionService.setWebhook({
@@ -396,72 +386,16 @@ export class WhatsappInstancesService {
   }
 
   private async getConfiguredWebhookEvents(): Promise<string[]> {
-    const whatsappSettings = await this.getWhatsappSettings();
-    return this.buildWebhookEvents(whatsappSettings);
+    await this.getWhatsappSettings();
+    return this.buildWebhookEvents();
   }
 
-  private buildWebhookEvents(settings: {
-    trackConnectionEvents: boolean;
-    trackQrEvents: boolean;
-    trackMessageEvents: boolean;
-    receiveTextMessages: boolean;
-    receiveAudioMessages: boolean;
-    receiveImageMessages: boolean;
-    receiveVideoMessages: boolean;
-    receiveDocumentMessages: boolean;
-  }): string[] {
-    const events = new Set<string>();
-
-    if (settings.trackConnectionEvents) {
-      events.add('connection.update');
-    }
-    if (settings.trackQrEvents) {
-      events.add('qr.updated');
-    }
-
-    const hasInboundMessagesEnabled =
-      settings.receiveTextMessages ||
-      settings.receiveAudioMessages ||
-      settings.receiveImageMessages ||
-      settings.receiveVideoMessages ||
-      settings.receiveDocumentMessages;
-
-    if (settings.trackMessageEvents && hasInboundMessagesEnabled) {
-      events.add('messages.upsert');
-    }
-
-    if (events.size === 0) {
-      events.add('connection.update');
-      events.add('qr.updated');
-    }
-
-    return [...events];
-  }
-
-  private async getConfiguredWebhookUrl(): Promise<string> {
-    const snapshot = await this.botConfigurationRepository.findOne({
-      where: { scope: WhatsappInstancesService.configurationScope },
-    });
-
-    const payload = snapshot?.payload as
-      | { integrations?: Record<string, unknown> }
-      | undefined;
-    const configuredWebhookUrl = this.readString(payload?.integrations?.webhookUrl);
-
-    return configuredWebhookUrl ||
-        (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_URL') ?? '').trim();
+  private buildWebhookEvents(): string[] {
+    return ['connection.update', 'qr.updated', 'messages.upsert'];
   }
 
   private async getWhatsappSettings(): Promise<{
     autoApplyWebhook: boolean;
-    trackConnectionEvents: boolean;
-    trackQrEvents: boolean;
-    trackMessageEvents: boolean;
-    receiveTextMessages: boolean;
-    receiveAudioMessages: boolean;
-    receiveImageMessages: boolean;
-    receiveVideoMessages: boolean;
-    receiveDocumentMessages: boolean;
     callHandlingMode: string;
     rejectedCallReply: string;
   }> {
@@ -476,14 +410,6 @@ export class WhatsappInstancesService {
 
     return {
       autoApplyWebhook: this.readBoolean(whatsapp['autoApplyWebhook'], true),
-      trackConnectionEvents: this.readBoolean(whatsapp['trackConnectionEvents'], true),
-      trackQrEvents: this.readBoolean(whatsapp['trackQrEvents'], true),
-      trackMessageEvents: this.readBoolean(whatsapp['trackMessageEvents'], true),
-      receiveTextMessages: this.readBoolean(whatsapp['receiveTextMessages'], true),
-      receiveAudioMessages: this.readBoolean(whatsapp['receiveAudioMessages'], true),
-      receiveImageMessages: this.readBoolean(whatsapp['receiveImageMessages'], true),
-      receiveVideoMessages: this.readBoolean(whatsapp['receiveVideoMessages'], true),
-      receiveDocumentMessages: this.readBoolean(whatsapp['receiveDocumentMessages'], true),
       callHandlingMode: this.readString(whatsapp['callHandlingMode']) || 'notify',
       rejectedCallReply: this.readString(whatsapp['rejectedCallReply']),
     };

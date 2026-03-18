@@ -84,6 +84,37 @@ export class EvolutionService {
     return `${base}/${channelId}/messages`;
   }
 
+  buildInstanceWebhookUrl(): string {
+    const explicit =
+      (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_URL') ?? '').trim();
+    if (explicit) {
+      return explicit;
+    }
+
+    const publicBase =
+      (this.configService.get<string>('BACKEND_PUBLIC_URL') ??
+        this.configService.get<string>('APP_BACKEND_URL') ??
+        '')
+        .trim()
+        .replace(/\/$/, '');
+    if (publicBase) {
+      return `${publicBase}/webhook/evolution`;
+    }
+
+    const webhookBase =
+      (this.configService.get<string>('EVOLUTION_WEBHOOK_BASE') ?? '')
+        .trim()
+        .replace(/\/$/, '');
+    if (webhookBase) {
+      const derived = webhookBase.replace(/\/webhooks\/evolution$/i, '');
+      return `${derived}/webhook/evolution`;
+    }
+
+    throw new ServiceUnavailableException(
+      'Define EVOLUTION_INSTANCE_WEBHOOK_URL, BACKEND_PUBLIC_URL o EVOLUTION_WEBHOOK_BASE para generar el webhook de Evolution.',
+    );
+  }
+
   async createInstance(params: {
     instanceName: string;
     qrcode: boolean;

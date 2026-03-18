@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,8 +35,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   final _configurationApi = BotConfigurationCenterApiClient();
   final _evolutionUrlController = TextEditingController();
   final _evolutionKeyController = TextEditingController();
-  final _webhookUrlController = TextEditingController();
-  final _rejectedCallReplyController = TextEditingController();
 
   WhatsappChannelUiStatus _status = WhatsappChannelUiStatus.notConfigured;
   String? _activeInstanceName;
@@ -50,26 +49,22 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   bool _isSavingProviderSettings = false;
   bool _isTestingProviderConnection = false;
   bool _providerMessageIsError = false;
-  bool _autoApplyWebhook = true;
-  bool _trackConnectionEvents = true;
-  bool _trackQrEvents = true;
-  bool _trackMessageEvents = true;
-  bool _receiveTextMessages = true;
-  bool _receiveAudioMessages = true;
-  bool _receiveImageMessages = true;
-  bool _receiveVideoMessages = true;
-  bool _receiveDocumentMessages = true;
-  bool _persistMediaMetadata = true;
-  String _callHandlingMode = 'notify';
+
+  bool get _showAdvancedProviderPanel => kDebugMode;
 
   @override
   void initState() {
     super.initState();
     Future<void>.microtask(() async {
-      await Future.wait([
-        _loadExisting(),
-        _loadProviderSettings(),
-      ]);
+      if (_showAdvancedProviderPanel) {
+        await Future.wait([
+          _loadExisting(),
+          _loadProviderSettings(),
+        ]);
+        return;
+      }
+
+      await _loadExisting();
     });
   }
 
@@ -79,8 +74,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     _instanceController.dispose();
     _evolutionUrlController.dispose();
     _evolutionKeyController.dispose();
-    _webhookUrlController.dispose();
-    _rejectedCallReplyController.dispose();
     super.dispose();
   }
 
@@ -108,29 +101,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
           await _configurationApi.getJson('/bot-configuration', token: token);
 
       final evolution = _asMap(configuration['evolution']);
-      final integrations = _asMap(configuration['integrations']);
-      final whatsapp = _asMap(configuration['whatsapp']);
 
       _evolutionUrlController.text = _readString(evolution, 'baseUrl');
       _evolutionKeyController.text = _readString(evolution, 'apiKey');
-      _webhookUrlController.text = _readString(integrations, 'webhookUrl');
-      _rejectedCallReplyController.text =
-          _readString(whatsapp, 'rejectedCallReply');
-      _autoApplyWebhook = _readBool(whatsapp, 'autoApplyWebhook', true);
-      _trackConnectionEvents =
-          _readBool(whatsapp, 'trackConnectionEvents', true);
-      _trackQrEvents = _readBool(whatsapp, 'trackQrEvents', true);
-      _trackMessageEvents = _readBool(whatsapp, 'trackMessageEvents', true);
-      _receiveTextMessages = _readBool(whatsapp, 'receiveTextMessages', true);
-      _receiveAudioMessages = _readBool(whatsapp, 'receiveAudioMessages', true);
-      _receiveImageMessages = _readBool(whatsapp, 'receiveImageMessages', true);
-      _receiveVideoMessages = _readBool(whatsapp, 'receiveVideoMessages', true);
-      _receiveDocumentMessages =
-          _readBool(whatsapp, 'receiveDocumentMessages', true);
-      _persistMediaMetadata = _readBool(whatsapp, 'persistMediaMetadata', true);
-      _callHandlingMode = _readString(whatsapp, 'callHandlingMode').isEmpty
-          ? 'notify'
-          : _readString(whatsapp, 'callHandlingMode');
     } on BotConfigurationCenterApiException catch (error) {
       _providerMessageIsError = true;
       _providerMessage = error.message;
@@ -165,41 +138,13 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         token: token,
       );
 
-      await _configurationApi.putJson(
-        '/bot-configuration/integrations',
-        {
-          'webhookUrl': _webhookUrlController.text.trim(),
-        },
-        token: token,
-      );
-
-      await _configurationApi.putJson(
-        '/bot-configuration/whatsapp',
-        {
-          'autoApplyWebhook': _autoApplyWebhook,
-          'trackConnectionEvents': _trackConnectionEvents,
-          'trackQrEvents': _trackQrEvents,
-          'trackMessageEvents': _trackMessageEvents,
-          'receiveTextMessages': _receiveTextMessages,
-          'receiveAudioMessages': _receiveAudioMessages,
-          'receiveImageMessages': _receiveImageMessages,
-          'receiveVideoMessages': _receiveVideoMessages,
-          'receiveDocumentMessages': _receiveDocumentMessages,
-          'persistMediaMetadata': _persistMediaMetadata,
-          'callHandlingMode': _callHandlingMode,
-          'rejectedCallReply': _rejectedCallReplyController.text.trim(),
-        },
-        token: token,
-      );
-
       if (!mounted) {
         return;
       }
 
       setState(() {
         _providerMessageIsError = false;
-        _providerMessage =
-            'Configuración de Evolution y WhatsApp guardada correctamente.';
+        _providerMessage = 'Configuración global de Evolution guardada correctamente.';
       });
     } on BotConfigurationCenterApiException catch (error) {
       if (!mounted) {
@@ -714,65 +659,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     }
   }
 
-  Future<void> _configureWebhook() async {
-    final currentName = _activeInstanceName?.trim();
-    if (currentName == null || currentName.isEmpty) {
-      return;
-    }
-
-    final token = await _readToken();
-    if (token == null || token.trim().isEmpty) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _requestError = 'Tu sesión expiró. Inicia sesión otra vez.';
-      });
-      return;
-    }
-
-    setState(() {
-      _requestError = null;
-      _isMutatingInstance = true;
-    });
-
-    try {
-      final response = await _api.configureWebhook(
-        token: token,
-        instanceName: currentName,
-      );
-      final configuredUrl = (response['webhookUrl'] as String?)?.trim();
-
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
-          content: Text(
-            configuredUrl == null || configuredUrl.isEmpty
-                ? 'Webhook configurado correctamente.'
-                : 'Webhook configurado: $configuredUrl',
-          ),
-        ),
-      );
-    } on WhatsappInstancesApiException catch (e) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _requestError = e.message;
-      });
-    } finally {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _isMutatingInstance = false;
-      });
-    }
-  }
-
   Future<void> _showLargeQr(Uint8List qrBytes) async {
     await showDialog<void>(
       context: context,
@@ -885,542 +771,475 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     final nextAction = _nextActionCopy();
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ModuleHeader(
-              title: 'WhatsApp Evolution API',
-              subtitle:
-                'Administra el proveedor Evolution y la vinculación de WhatsApp desde una sola pantalla simple.',
-              trailing: canGoBack
-                  ? OutlinedButton.icon(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      label: const Text('Volver'),
-                    )
-                  : null,
-            ),
-            const SizedBox(height: 14),
-            ExecutiveGlassCard(
-              padding: const EdgeInsets.all(22),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 860;
+      body: Stack(
+        children: [
+          _buildAmbientBackground(theme),
+          SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ModuleHeader(
+                  title: 'WhatsApp Evolution API',
+                  subtitle:
+                    'Cada empresa solo necesita crear su instancia, escanear el QR y comenzar a operar.',
+                  trailing: canGoBack
+                      ? OutlinedButton.icon(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          label: const Text('Volver'),
+                        )
+                      : null,
+                ),
+                const SizedBox(height: 14),
+                ExecutiveGlassCard(
+                  padding: const EdgeInsets.all(22),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 860;
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 14,
-                        runSpacing: 14,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: compact ? double.infinity : 340,
-                            padding: const EdgeInsets.all(20),
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(24),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(22),
+                              borderRadius: BorderRadius.circular(28),
                               gradient: LinearGradient(
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 colors: [
-                                  statusColor.withValues(alpha: 0.20),
-                                  theme.colorScheme.surface
-                                      .withValues(alpha: 0.05),
+                                  const Color(0xFF0F172A).withValues(alpha: 0.82),
+                                  statusColor.withValues(alpha: 0.18),
+                                  theme.colorScheme.surface.withValues(alpha: 0.06),
                                 ],
                               ),
                               border: Border.all(
-                                color: statusColor.withValues(alpha: 0.24),
+                                color: statusColor.withValues(alpha: 0.28),
                               ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                badge,
-                                const SizedBox(height: 14),
-                                Text(
-                                  statusTitle,
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  statusDescription,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.72),
-                                  ),
-                                ),
-                                const SizedBox(height: 18),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(18),
-                                    color: theme.colorScheme.surface
-                                        .withValues(alpha: 0.14),
-                                    border: Border.all(
-                                      color: theme.colorScheme.outlineVariant
-                                          .withValues(alpha: 0.42),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Siguiente paso',
-                                        style:
-                                            theme.textTheme.bodySmall?.copyWith(
-                                          fontWeight: FontWeight.w900,
-                                          color: theme.colorScheme.onSurface
-                                              .withValues(alpha: 0.72),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        nextAction.title,
-                                        style:
-                                            theme.textTheme.bodyLarge?.copyWith(
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        nextAction.description,
-                                        style:
-                                            theme.textTheme.bodySmall?.copyWith(
-                                          color: theme.colorScheme.onSurface
-                                              .withValues(alpha: 0.68),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: statusColor.withValues(alpha: 0.12),
+                                  blurRadius: 28,
+                                  offset: const Offset(0, 18),
                                 ),
                               ],
                             ),
-                          ),
-                          SizedBox(
-                            width: compact
-                                ? double.infinity
-                                : constraints.maxWidth - 348,
-                            child: Column(
+                            child: Stack(
                               children: [
-                                Wrap(
-                                  spacing: 12,
-                                  runSpacing: 12,
+                                Positioned(
+                                  right: -20,
+                                  top: -18,
+                                  child: Container(
+                                    width: 140,
+                                    height: 140,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: statusColor.withValues(alpha: 0.08),
+                                    ),
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _buildTopMetricCard(
-                                      theme: theme,
-                                      title: 'Instancia activa',
-                                      value:
-                                          _activeInstanceName ?? 'Sin definir',
-                                      icon: Icons.dns_rounded,
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: [
+                                        badge,
+                                        _buildSignalChip(
+                                          theme: theme,
+                                          icon: Icons.qr_code_scanner_rounded,
+                                          label: 'Escaneo guiado',
+                                        ),
+                                        _buildSignalChip(
+                                          theme: theme,
+                                          icon: Icons.apartment_rounded,
+                                          label: 'Instancia por empresa',
+                                        ),
+                                      ],
                                     ),
-                                    _buildTopMetricCard(
-                                      theme: theme,
-                                      title: 'Estado QR',
-                                      value: qrBytes == null
-                                          ? 'Pendiente'
-                                          : 'Disponible',
-                                      icon: Icons.qr_code_2_rounded,
+                                    const SizedBox(height: 18),
+                                    Wrap(
+                                      spacing: 16,
+                                      runSpacing: 16,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: compact ? double.infinity : 360,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                statusTitle,
+                                                style: theme.textTheme.headlineSmall?.copyWith(
+                                                  fontWeight: FontWeight.w900,
+                                                  height: 1.05,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                statusDescription,
+                                                style: theme.textTheme.bodyMedium?.copyWith(
+                                                  color: theme.colorScheme.onSurface
+                                                      .withValues(alpha: 0.76),
+                                                  height: 1.5,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: compact
+                                              ? double.infinity
+                                              : constraints.maxWidth - 430,
+                                          child: Wrap(
+                                            spacing: 12,
+                                            runSpacing: 12,
+                                            children: [
+                                              _buildTopMetricCard(
+                                                theme: theme,
+                                                title: 'Instancia activa',
+                                                value: _activeInstanceName ??
+                                                    'Sin definir',
+                                                icon: Icons.dns_rounded,
+                                              ),
+                                              _buildTopMetricCard(
+                                                theme: theme,
+                                                title: 'Estado QR',
+                                                value: qrBytes == null
+                                                    ? 'Pendiente'
+                                                    : 'Disponible',
+                                                icon:
+                                                    Icons.qr_code_2_rounded,
+                                              ),
+                                              if (_showAdvancedProviderPanel)
+                                                _buildTopMetricCard(
+                                                  theme: theme,
+                                                  title: 'Sincronización',
+                                                  value: _loadingExisting
+                                                      ? 'Cargando'
+                                                      : 'Lista',
+                                                  icon: Icons.sync_rounded,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    _buildTopMetricCard(
-                                      theme: theme,
-                                      title: 'Sincronización',
-                                      value: _loadingExisting
-                                          ? 'Cargando'
-                                          : 'Lista',
-                                      icon: Icons.sync_rounded,
+                                    const SizedBox(height: 18),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        color: Colors.white.withValues(alpha: 0.04),
+                                        border: Border.all(
+                                          color: Colors.white.withValues(alpha: 0.08),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            width: 42,
+                                            height: 42,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              color: statusColor.withValues(
+                                                  alpha: 0.14),
+                                            ),
+                                            child: Icon(
+                                              Icons.arrow_outward_rounded,
+                                              color: statusColor,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Siguiente paso',
+                                                  style: theme.textTheme.bodySmall?.copyWith(
+                                                    fontWeight: FontWeight.w900,
+                                                    color: theme.colorScheme.onSurface
+                                                        .withValues(alpha: 0.68),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  nextAction.title,
+                                                  style: theme.textTheme.titleMedium?.copyWith(
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  nextAction.description,
+                                                  style: theme.textTheme.bodySmall?.copyWith(
+                                                    color: theme.colorScheme.onSurface
+                                                        .withValues(alpha: 0.68),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  'El webhook y la recepción de texto, audio, imagen, video y archivos se preparan automáticamente.',
+                                                  style: theme.textTheme.bodySmall?.copyWith(
+                                                    color: theme.colorScheme.primary
+                                                        .withValues(alpha: 0.92),
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 14),
-                                _buildJourneyStrip(theme),
                               ],
                             ),
                           ),
-                        ],
-                      ),
-                      if (_requestError != null) ...[
-                        const SizedBox(height: 16),
-                        _buildErrorBanner(theme),
-                      ],
-                      if (_loadingExisting) ...[
-                        const SizedBox(height: 16),
-                        const LinearProgressIndicator(),
-                      ],
-                    ],
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 14),
-            ExecutiveGlassCard(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Proveedor Evolution',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Aquí configuras el servidor Evolution, la clave del proveedor, el webhook y el comportamiento del canal.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.68),
-                              ),
-                            ),
+                          const SizedBox(height: 14),
+                          _buildJourneyStrip(theme),
+                          if (_requestError != null) ...[
+                            const SizedBox(height: 16),
+                            _buildErrorBanner(theme),
                           ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(999),
-                          color:
-                              theme.colorScheme.primary.withValues(alpha: 0.12),
-                        ),
-                        child: Text(
-                          'Dentro de Canales',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_providerMessage != null) ...[
-                    const SizedBox(height: 14),
-                    _buildProviderBanner(theme),
-                  ],
-                  if (_loadingProviderSettings) ...[
-                    const SizedBox(height: 14),
-                    const LinearProgressIndicator(),
-                  ],
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 980;
-
-                      return Wrap(
-                        spacing: 14,
-                        runSpacing: 14,
-                        children: [
-                          SizedBox(
-                            width: compact
-                                ? constraints.maxWidth
-                                : (constraints.maxWidth - 14) * 0.48,
-                            child: Container(
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                color: theme.colorScheme.surface
-                                    .withValues(alpha: 0.10),
-                                border: Border.all(
-                                  color: theme.colorScheme.outlineVariant
-                                      .withValues(alpha: 0.48),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Conexión del proveedor',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Estos datos controlan la conexión con Evolution y el webhook principal del canal.',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurface
-                                          .withValues(alpha: 0.66),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  _buildConfigField(
-                                    controller: _evolutionUrlController,
-                                    label: 'URL de Evolution API',
-                                    hint: 'https://evolution.example.com',
-                                    enabled: !_isSavingProviderSettings &&
-                                        !_loadingProviderSettings,
-                                  ),
-                                  _buildConfigField(
-                                    controller: _evolutionKeyController,
-                                    label: 'Clave de Evolution API',
-                                    hint: 'evo_…',
-                                    obscure: true,
-                                    enabled: !_isSavingProviderSettings &&
-                                        !_loadingProviderSettings,
-                                  ),
-                                  _buildConfigField(
-                                    controller: _webhookUrlController,
-                                    label: 'URL del webhook',
-                                    hint: 'https://midominio.com/webhook',
-                                    enabled: !_isSavingProviderSettings &&
-                                        !_loadingProviderSettings,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 10,
-                                    children: [
-                                      FilledButton.icon(
-                                        onPressed: _isSavingProviderSettings ||
-                                                _loadingProviderSettings
-                                            ? null
-                                            : _saveProviderSettings,
-                                        icon: _isSavingProviderSettings
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                ),
-                                              )
-                                            : const Icon(Icons.save_rounded),
-                                        label: Text(_isSavingProviderSettings
-                                            ? 'Guardando...'
-                                            : 'Guardar configuración'),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed:
-                                            _isTestingProviderConnection ||
-                                                    _loadingProviderSettings
-                                                ? null
-                                                : _testEvolutionConnection,
-                                        icon: const Icon(Icons.bolt_rounded),
-                                        label: Text(_isTestingProviderConnection
-                                            ? 'Probando...'
-                                            : 'Probar conexión'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: compact
-                                ? constraints.maxWidth
-                                : (constraints.maxWidth - 14) * 0.52,
-                            child: Container(
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                color: theme.colorScheme.surface
-                                    .withValues(alpha: 0.10),
-                                border: Border.all(
-                                  color: theme.colorScheme.outlineVariant
-                                      .withValues(alpha: 0.48),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Comportamiento de WhatsApp',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Mantén solo lo necesario para el cliente. Todo lo específico del canal se administra desde aquí.',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurface
-                                          .withValues(alpha: 0.66),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  _TwoColumnSwitchGrid(
-                                    left: [
-                                      _ConfigSwitchTile(
-                                        title:
-                                            'Aplicar webhook automáticamente',
-                                        subtitle:
-                                            'Vuelve a configurar el webhook al crear o recrear la instancia.',
-                                        value: _autoApplyWebhook,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(
-                                          () => _autoApplyWebhook = value,
-                                        ),
-                                      ),
-                                      _ConfigSwitchTile(
-                                        title: 'Seguir eventos de conexión',
-                                        subtitle:
-                                            'Actualiza el estado del canal cuando se conecta o desconecta.',
-                                        value: _trackConnectionEvents,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(
-                                          () => _trackConnectionEvents = value,
-                                        ),
-                                      ),
-                                      _ConfigSwitchTile(
-                                        title: 'Seguir eventos de QR',
-                                        subtitle:
-                                            'Permite refrescar el QR desde Evolution cuando cambia.',
-                                        value: _trackQrEvents,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(
-                                          () => _trackQrEvents = value,
-                                        ),
-                                      ),
-                                      _ConfigSwitchTile(
-                                        title: 'Seguir eventos de mensajes',
-                                        subtitle:
-                                            'Habilita el procesamiento de messages.upsert.',
-                                        value: _trackMessageEvents,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(
-                                          () => _trackMessageEvents = value,
-                                        ),
-                                      ),
-                                    ],
-                                    right: [
-                                      _ConfigSwitchTile(
-                                        title: 'Recibir texto',
-                                        subtitle:
-                                            'Mensajes normales y textos extendidos.',
-                                        value: _receiveTextMessages,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(
-                                          () => _receiveTextMessages = value,
-                                        ),
-                                      ),
-                                      _ConfigSwitchTile(
-                                        title: 'Recibir audio',
-                                        subtitle:
-                                            'Audios y notas de voz reportadas por Evolution.',
-                                        value: _receiveAudioMessages,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(
-                                          () => _receiveAudioMessages = value,
-                                        ),
-                                      ),
-                                      _ConfigSwitchTile(
-                                        title: 'Recibir imágenes y videos',
-                                        subtitle:
-                                            'Adjuntos visuales con caption cuando exista.',
-                                        value: _receiveImageMessages &&
-                                            _receiveVideoMessages,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(() {
-                                          _receiveImageMessages = value;
-                                          _receiveVideoMessages = value;
-                                        }),
-                                      ),
-                                      _ConfigSwitchTile(
-                                        title: 'Recibir documentos',
-                                        subtitle:
-                                            'Documentos y otros adjuntos de archivo.',
-                                        value: _receiveDocumentMessages,
-                                        enabled: !_isSavingProviderSettings &&
-                                            !_loadingProviderSettings,
-                                        onChanged: (value) => setState(
-                                          () =>
-                                              _receiveDocumentMessages = value,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  _ConfigSwitchTile(
-                                    title: 'Guardar metadatos multimedia',
-                                    subtitle:
-                                        'Conserva mimetype, caption, duración y datos relevantes del mensaje.',
-                                    value: _persistMediaMetadata,
-                                    enabled: !_isSavingProviderSettings &&
-                                        !_loadingProviderSettings,
-                                    onChanged: (value) => setState(
-                                      () => _persistMediaMetadata = value,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  DropdownButtonFormField<String>(
-                                    value: _callHandlingMode,
-                                    decoration: const InputDecoration(
-                                      labelText:
-                                          'Política de llamadas entrantes',
-                                      helperText:
-                                          'Define si las llamadas se ignoran, solo se registran o se marcan para rechazo.',
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(
-                                        value: 'ignore',
-                                        child: Text('Ignorar llamadas'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'notify',
-                                        child: Text('Registrar llamada'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'reject_if_supported',
-                                        child: Text(
-                                            'Rechazar si el proveedor lo permite'),
-                                      ),
-                                    ],
-                                    onChanged: (_isSavingProviderSettings ||
-                                            _loadingProviderSettings)
-                                        ? null
-                                        : (value) {
-                                            if (value == null) {
-                                              return;
-                                            }
-                                            setState(() {
-                                              _callHandlingMode = value;
-                                            });
-                                          },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  _buildConfigField(
-                                    controller: _rejectedCallReplyController,
-                                    label:
-                                        'Mensaje sugerido al rechazar llamada',
-                                    hint:
-                                        'Ahora mismo no atendemos llamadas. Escríbenos por mensaje.',
-                                    enabled: !_isSavingProviderSettings &&
-                                        !_loadingProviderSettings,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                          if (_loadingExisting) ...[
+                            const SizedBox(height: 16),
+                            const LinearProgressIndicator(),
+                          ],
                         ],
                       );
                     },
                   ),
+                ),
+                if (_showAdvancedProviderPanel) ...[
+                  const SizedBox(height: 14),
+                  ExecutiveGlassCard(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Proveedor Evolution',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Bloque visible solo en debug para validar la conexión global con Evolution. El webhook operativo se genera automáticamente.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.68),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                color: const Color(0xFFF59E0B)
+                                    .withValues(alpha: 0.12),
+                              ),
+                              child: Text(
+                                'Modo debug',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: const Color(0xFFF59E0B),
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_providerMessage != null) ...[
+                          const SizedBox(height: 14),
+                          _buildProviderBanner(theme),
+                        ],
+                        if (_loadingProviderSettings) ...[
+                          const SizedBox(height: 14),
+                          const LinearProgressIndicator(),
+                        ],
+                        const SizedBox(height: 16),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final compact = constraints.maxWidth < 980;
+
+                            return Wrap(
+                              spacing: 14,
+                              runSpacing: 14,
+                              children: [
+                                SizedBox(
+                                  width: compact
+                                      ? constraints.maxWidth
+                                      : constraints.maxWidth,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(18),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(24),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          theme.colorScheme.surface
+                                              .withValues(alpha: 0.16),
+                                          const Color(0xFF06B6D4)
+                                              .withValues(alpha: 0.08),
+                                        ],
+                                      ),
+                                      border: Border.all(
+                                        color: const Color(0xFF06B6D4)
+                                            .withValues(alpha: 0.20),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF06B6D4)
+                                              .withValues(alpha: 0.08),
+                                          blurRadius: 24,
+                                          offset: const Offset(0, 16),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        _buildSectionEyebrow(
+                                          theme: theme,
+                                          label: 'PROVIDER NODE',
+                                          accent: const Color(0xFF06B6D4),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'Conexión del proveedor',
+                                          style: theme.textTheme.bodyMedium?.copyWith(
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'La URL pública del webhook se construye automáticamente desde el backend y los eventos inbound quedan siempre activos.',
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: theme.colorScheme.onSurface
+                                                .withValues(alpha: 0.66),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 14),
+                                        _buildConfigField(
+                                          controller: _evolutionUrlController,
+                                          label: 'URL de Evolution API',
+                                          hint: 'https://evolution.example.com',
+                                          enabled: !_isSavingProviderSettings &&
+                                              !_loadingProviderSettings,
+                                        ),
+                                        _buildConfigField(
+                                          controller: _evolutionKeyController,
+                                          label: 'Clave de Evolution API',
+                                          hint: 'evo_…',
+                                          obscure: true,
+                                          enabled: !_isSavingProviderSettings &&
+                                              !_loadingProviderSettings,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(14),
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(18),
+                                            color: Colors.white.withValues(alpha: 0.04),
+                                            border: Border.all(
+                                              color: Colors.white.withValues(alpha: 0.08),
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Automatización activa',
+                                                style: theme.textTheme.bodyMedium?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                'El sistema aplica el webhook automáticamente y deja habilitada la recepción de texto, audio, imágenes, videos y documentos.',
+                                                style: theme.textTheme.bodySmall?.copyWith(
+                                                  color: theme.colorScheme.onSurface
+                                                      .withValues(alpha: 0.68),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Wrap(
+                                          spacing: 10,
+                                          runSpacing: 10,
+                                          children: [
+                                            FilledButton.icon(
+                                              onPressed: _isSavingProviderSettings ||
+                                                      _loadingProviderSettings
+                                                  ? null
+                                                  : _saveProviderSettings,
+                                              icon: _isSavingProviderSettings
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                    )
+                                                  : const Icon(Icons.save_rounded),
+                                              label: Text(_isSavingProviderSettings
+                                                  ? 'Guardando...'
+                                                  : 'Guardar configuración'),
+                                            ),
+                                            OutlinedButton.icon(
+                                              onPressed: _isTestingProviderConnection ||
+                                                      _loadingProviderSettings
+                                                  ? null
+                                                  : _testEvolutionConnection,
+                                              icon: const Icon(Icons.bolt_rounded),
+                                              label: Text(_isTestingProviderConnection
+                                                  ? 'Probando...'
+                                                  : 'Probar conexión'),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
-              ),
-            ),
             const SizedBox(height: 14),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -1439,6 +1258,12 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            _buildSectionEyebrow(
+                              theme: theme,
+                              label: 'PAIRING FLOW',
+                              accent: statusColor,
+                            ),
+                            const SizedBox(height: 10),
                             Text(
                               'Vinculación WhatsApp',
                               style: theme.textTheme.titleMedium?.copyWith(
@@ -1529,15 +1354,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   onPressed: (_activeInstanceName == null ||
                                           _isMutatingInstance)
                                       ? null
-                                      : _configureWebhook,
-                                  icon:
-                                      const Icon(Icons.wifi_tethering_rounded),
-                                  label: const Text('Configurar webhook'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: (_activeInstanceName == null ||
-                                          _isMutatingInstance)
-                                      ? null
                                       : _deleteInstance,
                                   icon:
                                       const Icon(Icons.delete_outline_rounded),
@@ -1561,6 +1377,12 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  _buildSectionEyebrow(
+                                    theme: theme,
+                                    label: 'SCAN MATRIX',
+                                    accent: const Color(0xFFF59E0B),
+                                  ),
+                                  const SizedBox(height: 10),
                                   Row(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -1621,93 +1443,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   _buildSupportHint(theme),
                                   const SizedBox(height: 18),
                                   Center(
-                                    child: AnimatedContainer(
-                                      duration:
-                                          const Duration(milliseconds: 220),
-                                      width: compact ? 330 : 430,
-                                      height: compact ? 330 : 430,
-                                      padding: const EdgeInsets.all(20),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(30),
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            theme.colorScheme.surface
-                                                .withValues(alpha: 0.26),
-                                            theme.colorScheme.surface
-                                                .withValues(alpha: 0.12),
-                                          ],
-                                        ),
-                                        border: Border.all(
-                                          color: qrBytes == null
-                                              ? theme.colorScheme.outlineVariant
-                                                  .withValues(alpha: 0.60)
-                                              : theme.colorScheme.primary
-                                                  .withValues(alpha: 0.24),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: theme.colorScheme.primary
-                                                .withValues(alpha: 0.10),
-                                            blurRadius: 32,
-                                            offset: const Offset(0, 20),
-                                          ),
-                                        ],
-                                      ),
-                                      child: (qrBytes == null)
-                                          ? Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Icon(
-                                                  Icons.qr_code_2_rounded,
-                                                  size: 46,
-                                                  color: theme
-                                                      .colorScheme.onSurface
-                                                      .withValues(alpha: 0.44),
-                                                ),
-                                                const SizedBox(height: 14),
-                                                Text(
-                                                  'QR no disponible todavía.',
-                                                  style: theme
-                                                      .textTheme.bodyMedium
-                                                      ?.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                    color: theme
-                                                        .colorScheme.onSurface
-                                                        .withValues(
-                                                            alpha: 0.70),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'Cuando la instancia responda, el código aparecerá aquí.',
-                                                  textAlign: TextAlign.center,
-                                                  style: theme
-                                                      .textTheme.bodySmall
-                                                      ?.copyWith(
-                                                    color: theme
-                                                        .colorScheme.onSurface
-                                                        .withValues(
-                                                            alpha: 0.58),
-                                                  ),
-                                                ),
-                                              ],
-                                            )
-                                          : DecoratedBox(
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(22),
-                                              ),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(16),
-                                                child: Image.memory(qrBytes,
-                                                    fit: BoxFit.contain),
-                                              ),
-                                            ),
+                                    child: _buildQrShell(
+                                      theme: theme,
+                                      qrBytes: qrBytes,
+                                      compact: compact,
                                     ),
                                   ),
                                   if (qrBytes != null) ...[
@@ -1753,7 +1492,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
                                           color: const Color(0xFF22C55E)
-                                              .withValues(alpha: 0.16),
+                                              .withValues(alpha: 0.18),
                                           border: Border.all(
                                             color: const Color(0xFF22C55E)
                                                 .withValues(alpha: 0.30),
@@ -1797,9 +1536,17 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                     width: double.infinity,
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(18),
-                                      color: const Color(0xFF22C55E)
-                                          .withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(22),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          const Color(0xFF22C55E)
+                                              .withValues(alpha: 0.12),
+                                          theme.colorScheme.surface
+                                              .withValues(alpha: 0.08),
+                                        ],
+                                      ),
                                       border: Border.all(
                                         color: const Color(0xFF22C55E)
                                             .withValues(alpha: 0.18),
@@ -1836,14 +1583,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       OutlinedButton.icon(
                                         onPressed: _isMutatingInstance
                                             ? null
-                                            : _configureWebhook,
-                                        icon: const Icon(
-                                            Icons.wifi_tethering_rounded),
-                                        label: const Text('Configurar webhook'),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: _isMutatingInstance
-                                            ? null
                                             : _deleteInstance,
                                         icon: const Icon(
                                             Icons.delete_outline_rounded),
@@ -1860,7 +1599,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'Puedes actualizar el estado, volver a aplicar el webhook guardado en Configuración > Claves API o desconectar la cuenta si necesitas escanear un nuevo QR.',
+                                    'Puedes actualizar el estado o desconectar la cuenta si necesitas escanear un nuevo QR. La sincronización técnica del canal se resuelve automáticamente en segundo plano.',
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: theme.colorScheme.onSurface
                                           .withValues(alpha: 0.68),
@@ -1876,6 +1615,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
             ),
           ],
         ),
+        ),
+        ],
       ),
     );
   }
@@ -1891,18 +1632,45 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          color: theme.colorScheme.surface.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              theme.colorScheme.surface.withValues(alpha: 0.20),
+              const Color(0xFF0F172A).withValues(alpha: 0.18),
+            ],
+          ),
           border: Border.all(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.52),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.06),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon,
-                size: 18,
-                color: theme.colorScheme.primary.withValues(alpha: 0.92)),
+            Row(
+              children: [
+                Icon(icon,
+                    size: 18,
+                    color: theme.colorScheme.primary.withValues(alpha: 0.92)),
+                const SizedBox(width: 8),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: theme.colorScheme.primary.withValues(alpha: 0.82),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 10),
             Text(
               title,
@@ -1922,6 +1690,257 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAmbientBackground(ThemeData theme) {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFF06111F).withValues(alpha: 0.18),
+                    theme.scaffoldBackgroundColor,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: -80,
+            right: -40,
+            child: _buildAmbientOrb(const Color(0xFF06B6D4), 220),
+          ),
+          Positioned(
+            top: 220,
+            left: -70,
+            child: _buildAmbientOrb(const Color(0xFF14B8A6), 180),
+          ),
+          Positioned(
+            bottom: 120,
+            right: 40,
+            child: _buildAmbientOrb(const Color(0xFFF59E0B), 140),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmbientOrb(Color color, double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withValues(alpha: 0.08),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.10),
+            blurRadius: 80,
+            spreadRadius: 8,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSignalChip({
+    required ThemeData theme,
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.white.withValues(alpha: 0.06),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.10),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.82),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionEyebrow({
+    required ThemeData theme,
+    required String label,
+    required Color accent,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: accent.withValues(alpha: 0.12),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.24),
+        ),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: accent,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQrShell({
+    required ThemeData theme,
+    required Uint8List? qrBytes,
+    required bool compact,
+  }) {
+    final shellSize = compact ? 330.0 : 430.0;
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: shellSize + 26,
+          height: shellSize + 26,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(34),
+            border: Border.all(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.10),
+            ),
+          ),
+        ),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          width: shellSize,
+          height: shellSize,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(30),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                theme.colorScheme.surface.withValues(alpha: 0.30),
+                const Color(0xFF0F172A).withValues(alpha: 0.20),
+              ],
+            ),
+            border: Border.all(
+              color: qrBytes == null
+                  ? theme.colorScheme.outlineVariant.withValues(alpha: 0.60)
+                  : const Color(0xFFF59E0B).withValues(alpha: 0.26),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                blurRadius: 34,
+                offset: const Offset(0, 20),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                child: _buildScannerCorner(const Color(0xFFF59E0B)),
+              ),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Transform.rotate(
+                  angle: 1.5708,
+                  child: _buildScannerCorner(const Color(0xFFF59E0B)),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                child: Transform.rotate(
+                  angle: -1.5708,
+                  child: _buildScannerCorner(const Color(0xFFF59E0B)),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Transform.rotate(
+                  angle: 3.14159,
+                  child: _buildScannerCorner(const Color(0xFFF59E0B)),
+                ),
+              ),
+              Positioned.fill(
+                child: qrBytes == null
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.qr_code_2_rounded,
+                            size: 52,
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.44),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'QR no disponible todavía.',
+                            style:
+                                theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.70),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Cuando la instancia responda, el código aparecerá aquí.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.58),
+                            ),
+                          ),
+                        ],
+                      )
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Image.memory(qrBytes, fit: BoxFit.contain),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScannerCorner(Color color) {
+    return SizedBox(
+      width: 34,
+      height: 34,
+      child: CustomPaint(
+        painter: _ScannerCornerPainter(color),
       ),
     );
   }
@@ -2336,99 +2355,29 @@ String _readString(Map<String, dynamic> json, String key) {
   return value is String ? value : '';
 }
 
-bool _readBool(Map<String, dynamic> json, String key, bool fallback) {
-  final value = json[key];
-  return value is bool ? value : fallback;
-}
+class _ScannerCornerPainter extends CustomPainter {
+  const _ScannerCornerPainter(this.color);
 
-class _TwoColumnSwitchGrid extends StatelessWidget {
-  const _TwoColumnSwitchGrid({
-    required this.left,
-    required this.right,
-  });
-
-  final List<Widget> left;
-  final List<Widget> right;
+  final Color color;
 
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final singleColumn = constraints.maxWidth < 860;
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
 
-        if (singleColumn) {
-          return Column(
-            children: [
-              ...left,
-              const SizedBox(height: 6),
-              ...right,
-            ],
-          );
-        }
+    final path = Path()
+      ..moveTo(size.width, 8)
+      ..lineTo(8, 8)
+      ..lineTo(8, size.height);
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: Column(children: left)),
-            const SizedBox(width: 12),
-            Expanded(child: Column(children: right)),
-          ],
-        );
-      },
-    );
+    canvas.drawPath(path, paint);
   }
-}
-
-class _ConfigSwitchTile extends StatelessWidget {
-  const _ConfigSwitchTile({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-    required this.enabled,
-  });
-
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  final bool enabled;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-          ),
-          color: theme.colorScheme.surface.withValues(alpha: 0.22),
-        ),
-        child: SwitchListTile.adaptive(
-          value: value,
-          onChanged: enabled ? onChanged : null,
-          title: Text(
-            title,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
-            ),
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 4,
-          ),
-        ),
-      ),
-    );
+  bool shouldRepaint(covariant _ScannerCornerPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }

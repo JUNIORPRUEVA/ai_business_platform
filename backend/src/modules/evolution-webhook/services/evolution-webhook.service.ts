@@ -333,20 +333,11 @@ export class EvolutionWebhookService {
       receiveDocumentMessages: boolean;
     },
   ): boolean {
-    switch (type) {
-      case 'text':
-        return settings.receiveTextMessages;
-      case 'audio':
-        return settings.receiveAudioMessages;
-      case 'image':
-        return settings.receiveImageMessages;
-      case 'video':
-        return settings.receiveVideoMessages;
-      case 'document':
-        return settings.receiveDocumentMessages;
-      default:
-        return true;
-    }
+    return settings.receiveTextMessages &&
+        settings.receiveAudioMessages &&
+        settings.receiveImageMessages &&
+        settings.receiveVideoMessages &&
+        settings.receiveDocumentMessages;
   }
 
   private async getWhatsappSettings(): Promise<{
@@ -368,11 +359,11 @@ export class EvolutionWebhookService {
     const whatsapp = payload?.whatsapp ?? {};
 
     return {
-      receiveTextMessages: this.readBoolean(whatsapp['receiveTextMessages'], true),
-      receiveAudioMessages: this.readBoolean(whatsapp['receiveAudioMessages'], true),
-      receiveImageMessages: this.readBoolean(whatsapp['receiveImageMessages'], true),
-      receiveVideoMessages: this.readBoolean(whatsapp['receiveVideoMessages'], true),
-      receiveDocumentMessages: this.readBoolean(whatsapp['receiveDocumentMessages'], true),
+      receiveTextMessages: true,
+      receiveAudioMessages: true,
+      receiveImageMessages: true,
+      receiveVideoMessages: true,
+      receiveDocumentMessages: true,
       persistMediaMetadata: this.readBoolean(whatsapp['persistMediaMetadata'], true),
       deduplicationEnabled: this.readBoolean(whatsapp['deduplicationEnabled'], true),
     };
