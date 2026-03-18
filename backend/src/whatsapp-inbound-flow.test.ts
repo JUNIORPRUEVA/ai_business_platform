@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { WhatsappMessagingService } from './modules/whatsapp-channel/services/whatsapp-messaging.service';
 import { WhatsappWebhookService } from './modules/whatsapp-channel/services/whatsapp-webhook.service';
 import { WhatsappInstancesService } from './modules/whatsapp-instances/services/whatsapp-instances.service';
 
@@ -287,4 +288,118 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
   assert.equal(savedMessages.length, 1);
   assert.equal(savedMessages[0]['remoteJid'], '203040820879420@lid');
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
+});
+
+test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numerico cuando remoteJid es @lid', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+
+  const service = new WhatsappWebhookService(
+    { add: async () => undefined } as never,
+    configsRepository as never,
+    { getEntity: async () => config } as never,
+    { create: async () => ({}) } as never,
+    {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-1',
+          chatId: 'chat-1',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async () => undefined,
+    } as never,
+    { downloadRemoteToStorage: async () => null } as never,
+  );
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      sender: '+1 (829) 534-4286',
+      messages: [
+        {
+          key: {
+            remoteJid: '234840490270800@lid',
+            id: 'wamid-4',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          message: { conversation: 'hola' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(savedMessages.length, 1);
+  assert.equal(savedMessages[0]['remoteJid'], '234840490270800@lid');
+  assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
+});
+
+test('WhatsappMessagingService resuelve destinatario canonico desde last inbound payload usando data.sender numerico', async () => {
+  const remoteJid = '234840490270800@lid';
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      remoteJid,
+      canonicalRemoteJid: null,
+      canonicalNumber: null,
+      sendTarget: null,
+      replyTargetUnresolved: true,
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([
+    {
+      id: 'message-1',
+      companyId: 'company-1',
+      remoteJid,
+      direction: 'inbound',
+      rawPayloadJson: {
+        data: {
+          key: { remoteJid, id: 'wamid-5', fromMe: false },
+          sender: '+1 (829) 534-4286',
+          message: { conversation: 'hola' },
+        },
+      },
+      createdAt: new Date('2026-03-18T18:05:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:05:00.000Z'),
+    },
+  ]);
+
+  const service = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const result = await service.diagnoseRecipientResolution('company-1', remoteJid);
+  const updatedChat = await chatsRepository.findOne({ where: { id: 'chat-1', companyId: 'company-1' } });
+
+  assert.equal(result.safeToSend, true);
+  assert.equal(result.canonicalJid, '18295344286@s.whatsapp.net');
+  assert.equal(result.canonicalNumber, '18295344286');
+  assert.equal(result.source, 'last_inbound_payload');
+  assert.equal(updatedChat?.canonicalRemoteJid, '18295344286@s.whatsapp.net');
+  assert.equal(updatedChat?.canonicalNumber, '18295344286');
+  assert.equal(updatedChat?.sendTarget, '18295344286');
+  assert.equal(updatedChat?.replyTargetUnresolved, false);
 });

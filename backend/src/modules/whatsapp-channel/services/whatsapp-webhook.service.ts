@@ -336,14 +336,24 @@ export class WhatsappWebhookService {
   ): string | null {
     const candidates = [
       this.readString(key['participant']),
+      this.readString(key['participantPn']),
+      this.readString(key['senderPn']),
       this.readString(data['participant']),
+      this.readString(data['participantJid']),
       this.readString(data['sender']),
+      this.readString(data['senderJid']),
+      this.readString(data['participantPn']),
+      this.readString(data['senderPn']),
       this.readString(this.readMap(data['messageContextInfo'])['participant']),
-    ].filter((v) => v);
+      this.readString(this.readMap(data['messageContextInfo'])['participantPn']),
+      this.readString(this.readMap(data['messageContextInfo'])['senderPn']),
+      this.readString(this.readMap(data['messageContextInfo'])['sender']),
+    ];
 
     for (const candidate of candidates) {
-      if (candidate.endsWith('@s.whatsapp.net')) {
-        return candidate;
+      const canonical = this.resolveCanonicalCandidate(candidate);
+      if (canonical) {
+        return canonical;
       }
     }
 
@@ -352,41 +362,40 @@ export class WhatsappWebhookService {
       for (const item of contacts) {
         if (typeof item !== 'object' || item == null) continue;
         const contact = item as Record<string, unknown>;
-        const id = this.readString(contact['id']);
-        if (id.endsWith('@s.whatsapp.net')) {
-          return id;
+        const contactCandidates = [
+          this.readString(contact['id']),
+          this.readString(contact['jid']),
+          this.readString(contact['wa_id']),
+          this.readString(contact['phoneNumber']),
+        ];
+
+        for (const candidate of contactCandidates) {
+          const canonical = this.resolveCanonicalCandidate(candidate);
+          if (canonical) {
+            return canonical;
+          }
         }
-
-        const waId = this.readString(contact['wa_id']);
-        const waDigits = waId.replace(/\D/g, '');
-        if (waDigits.length >= 10) {
-          const normalized = waDigits.length === 10 ? `1${waDigits}` : waDigits;
-          return `${normalized}@s.whatsapp.net`;
-        }
-      }
-    }
-
-    const participantPn = this.readString(data['participantPn']);
-    if (participantPn) {
-      const digits = participantPn.replace(/\D/g, '');
-      if (digits.length >= 10) {
-        const normalized = digits.length === 10 ? `1${digits}` : digits;
-        return `${normalized}@s.whatsapp.net`;
-      }
-    }
-
-    const senderPn = this.readString(data['senderPn']);
-    if (senderPn) {
-      const digits = senderPn.replace(/\D/g, '');
-      if (digits.length >= 10) {
-        const normalized = digits.length === 10 ? `1${digits}` : digits;
-        return `${normalized}@s.whatsapp.net`;
       }
     }
 
     const participantFromContext = (context: Record<string, unknown>): string | null => {
-      const participant = this.readString(context['participant']);
-      return participant.endsWith('@s.whatsapp.net') ? participant : null;
+      const contextCandidates = [
+        this.readString(context['participant']),
+        this.readString(context['participantPn']),
+        this.readString(context['participantJid']),
+        this.readString(context['sender']),
+        this.readString(context['senderPn']),
+        this.readString(context['senderJid']),
+      ];
+
+      for (const candidate of contextCandidates) {
+        const canonical = this.resolveCanonicalCandidate(candidate);
+        if (canonical) {
+          return canonical;
+        }
+      }
+
+      return null;
     };
 
     const extended = this.readMap(message['extendedTextMessage']);
@@ -412,8 +421,8 @@ export class WhatsappWebhookService {
 
     const reaction = this.readMap(message['reactionMessage']);
     const reactionKey = this.readMap(reaction['key']);
-    const reactionParticipant = this.readString(reactionKey['participant']);
-    if (reactionParticipant.endsWith('@s.whatsapp.net')) {
+    const reactionParticipant = this.resolveCanonicalCandidate(this.readString(reactionKey['participant']));
+    if (reactionParticipant) {
       return reactionParticipant;
     }
 
@@ -426,6 +435,38 @@ export class WhatsappWebhookService {
 
   private readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private resolveCanonicalCandidate(value: string): string | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (trimmed.endsWith('@lid') || trimmed.endsWith('@g.us')) {
+      return null;
+    }
+
+    if (trimmed.endsWith('@s.whatsapp.net')) {
+      const digits = trimmed.replace(/@.+$/, '').replace(/\D/g, '');
+      if (!digits) {
+        return null;
+      }
+      const normalized = digits.length === 10 ? `1${digits}` : digits;
+      return `${normalized}@s.whatsapp.net`;
+    }
+
+    if (trimmed.includes('@')) {
+      return null;
+    }
+
+    const digits = trimmed.replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 15) {
+      return null;
+    }
+
+    const normalized = digits.length === 10 ? `1${digits}` : digits;
+    return `${normalized}@s.whatsapp.net`;
   }
 
   private readBoolean(value: unknown): boolean {
