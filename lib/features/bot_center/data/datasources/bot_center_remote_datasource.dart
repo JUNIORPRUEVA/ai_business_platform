@@ -157,7 +157,7 @@ class BotCenterRemoteDataSource {
     required String conversationId,
     required String message,
   }) async {
-    final json = await _apiClient.postJson('/ai-brain/process-message', {
+    final json = await _apiClient.postJson('/bot-center/process-message', {
       'conversationId': conversationId,
       'message': message,
     });

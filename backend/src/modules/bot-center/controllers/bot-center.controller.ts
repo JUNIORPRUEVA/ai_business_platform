@@ -142,4 +142,12 @@ export class BotCenterController {
   ): Promise<SendTestMessageResponse> {
     return this.botCenterService.sendTestMessage(user.companyId, payload);
   }
+
+  @Post('process-message')
+  async processMessage(
+    @CurrentUser() user: AuthUser,
+    @Body() payload: SendTestMessageDto,
+  ): Promise<{ ok: true; queued: false; messageId: string }> {
+    return this.botCenterService.processDraftWithAi(user.companyId, payload);
+  }
 }

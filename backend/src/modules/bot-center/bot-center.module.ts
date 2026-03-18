@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { DatabaseModule } from '../../common/database/database.module';
+import { AiBrainModule } from '../ai_brain/ai-brain.module';
 import { ClientMemoryEntity } from '../ai_brain/entities/client-memory.entity';
 import { AiEngineModule } from '../ai-engine/ai-engine.module';
 import { ContactMemoryEntity } from '../ai-engine/entities/contact-memory.entity';
@@ -12,6 +13,7 @@ import { BillingModule } from '../billing/billing.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { ContactsModule } from '../contacts/contacts.module';
 import { ConversationsModule } from '../conversations/conversations.module';
+import { MessagesModule } from '../messages/messages.module';
 import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { WhatsappChannelConfigEntity } from '../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../whatsapp-channel/entities/whatsapp-channel-log.entity';
@@ -22,6 +24,7 @@ import { BotCenterService } from './services/bot-center.service';
 
 @Module({
   imports: [
+    AiBrainModule,
     AiEngineModule,
     BotConfigurationModule,
     BillingModule,
@@ -29,6 +32,7 @@ import { BotCenterService } from './services/bot-center.service';
     ContactsModule,
     ConversationsModule,
     DatabaseModule,
+    MessagesModule,
     WhatsappChannelModule,
     TypeOrmModule.forFeature([
       ClientMemoryEntity,

@@ -686,25 +686,57 @@ export class WhatsappMessagingService {
     const data = this.readMap(payload['data']);
     const key = this.readMap(data['key']);
     const message = this.readMap(data['message']);
+    const remoteJid = this.readString(key['remoteJid']);
+    const disallowedDigits = this.buildDisallowedDigits(remoteJid);
 
     const candidates = [
+      this.readString(key['participantJid']),
       this.readString(key['participant']),
       this.readString(key['participantPn']),
       this.readString(key['senderPn']),
+      this.readString(key['sender']),
+      this.readString(key['senderJid']),
+      this.readString(key['from']),
       this.readString(data['participant']),
       this.readString(data['participantJid']),
       this.readString(data['sender']),
       this.readString(data['senderJid']),
       this.readString(data['participantPn']),
       this.readString(data['senderPn']),
+      this.readString(data['senderId']),
+      this.readString(data['sender_id']),
+      this.readString(data['participantId']),
+      this.readString(data['participant_id']),
+      this.readString(data['author']),
+      this.readString(data['authorJid']),
+      this.readString(data['from']),
+      this.readString(data['fromJid']),
+      this.readString(data['fromPn']),
+      this.readString(data['owner']),
+      this.readString(data['ownerJid']),
+      this.readString(data['ownerPn']),
+      this.readString(data['phone']),
+      this.readString(data['phoneNumber']),
+      this.readString(data['wa_id']),
+      this.readString(data['waId']),
       this.readString(this.readMap(data['messageContextInfo'])['participant']),
       this.readString(this.readMap(data['messageContextInfo'])['participantPn']),
       this.readString(this.readMap(data['messageContextInfo'])['senderPn']),
       this.readString(this.readMap(data['messageContextInfo'])['sender']),
+      this.readString(this.readMap(data['messageContextInfo'])['senderJid']),
+      this.readString(this.readMap(data['source'])['participant']),
+      this.readString(this.readMap(data['source'])['participantPn']),
+      this.readString(this.readMap(data['source'])['sender']),
+      this.readString(this.readMap(data['source'])['senderPn']),
+      this.readString(this.readMap(data['source'])['senderJid']),
+      this.readString(this.readMap(data['source'])['phone']),
+      this.readString(this.readMap(data['source'])['phoneNumber']),
+      this.readString(this.readMap(data['source'])['wa_id']),
+      this.readString(this.readMap(data['source'])['waId']),
     ];
 
     for (const candidate of candidates) {
-      const canonical = this.resolveCanonicalCandidate(candidate);
+      const canonical = this.resolveCanonicalCandidate(candidate, disallowedDigits);
       if (canonical) {
         return canonical;
       }
@@ -719,11 +751,15 @@ export class WhatsappMessagingService {
           this.readString(contact['id']),
           this.readString(contact['jid']),
           this.readString(contact['wa_id']),
+          this.readString(contact['waId']),
           this.readString(contact['phoneNumber']),
+          this.readString(contact['phone']),
+          this.readString(contact['number']),
+          this.readString(contact['user']),
         ];
 
         for (const candidate of contactCandidates) {
-          const canonical = this.resolveCanonicalCandidate(candidate);
+          const canonical = this.resolveCanonicalCandidate(candidate, disallowedDigits);
           if (canonical) {
             return canonical;
           }
@@ -739,10 +775,16 @@ export class WhatsappMessagingService {
         this.readString(context['sender']),
         this.readString(context['senderPn']),
         this.readString(context['senderJid']),
+        this.readString(context['author']),
+        this.readString(context['authorJid']),
+        this.readString(context['phone']),
+        this.readString(context['phoneNumber']),
+        this.readString(context['wa_id']),
+        this.readString(context['waId']),
       ];
 
       for (const candidate of contextCandidates) {
-        const canonical = this.resolveCanonicalCandidate(candidate);
+        const canonical = this.resolveCanonicalCandidate(candidate, disallowedDigits);
         if (canonical) {
           return canonical;
         }
@@ -774,17 +816,85 @@ export class WhatsappMessagingService {
 
     const reaction = this.readMap(message['reactionMessage']);
     const reactionKey = this.readMap(reaction['key']);
-    const reactionParticipant = this.resolveCanonicalCandidate(this.readString(reactionKey['participant']));
+    const reactionParticipant = this.resolveCanonicalCandidate(
+      this.readString(reactionKey['participant']),
+      disallowedDigits,
+    );
     if (reactionParticipant) {
       return reactionParticipant;
+    }
+
+    return this.extractCanonicalByHeuristicScan(
+      {
+        data,
+        key,
+        message,
+        source: this.readMap(data['source']),
+      },
+      disallowedDigits,
+    );
+  }
+
+  private extractCanonicalByHeuristicScan(
+    value: unknown,
+    disallowedDigits: Set<string>,
+    path = '',
+    depth = 0,
+  ): string | null {
+    if (depth > 5 || value == null) {
+      return null;
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      const lastSegment = path.split('.').slice(-1)[0]?.toLowerCase() ?? '';
+      if (!this.shouldInspectCanonicalPath(lastSegment)) {
+        return null;
+      }
+      return this.resolveCanonicalCandidate(String(value), disallowedDigits);
+    }
+
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) {
+        const nested = this.extractCanonicalByHeuristicScan(
+          value[index],
+          disallowedDigits,
+          `${path}[${index}]`,
+          depth + 1,
+        );
+        if (nested) {
+          return nested;
+        }
+      }
+      return null;
+    }
+
+    if (typeof value !== 'object') {
+      return null;
+    }
+
+    for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+      const nextPath = path ? `${path}.${key}` : key;
+      const nested = this.extractCanonicalByHeuristicScan(
+        nestedValue,
+        disallowedDigits,
+        nextPath,
+        depth + 1,
+      );
+      if (nested) {
+        return nested;
+      }
     }
 
     return null;
   }
 
-  private resolveCanonicalCandidate(value: string): string | null {
+  private resolveCanonicalCandidate(value: string, disallowedDigits: Set<string> = new Set()): string | null {
     const canonicalJid = this.normalizeCanonicalRemoteJid(value);
     if (canonicalJid) {
+      const canonicalDigits = this.normalizeOutboundNumber(this.jidToNumber(canonicalJid));
+      if (canonicalDigits && disallowedDigits.has(canonicalDigits)) {
+        return null;
+      }
       return canonicalJid;
     }
 
@@ -797,8 +907,47 @@ export class WhatsappMessagingService {
     if (digits.length < 10 || digits.length > 15) {
       return null;
     }
+    if (disallowedDigits.has(digits)) {
+      return null;
+    }
 
     return `${digits}@s.whatsapp.net`;
+  }
+
+  private buildDisallowedDigits(remoteJid: string): Set<string> {
+    const digits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+    return digits ? new Set([digits]) : new Set();
+  }
+
+  private shouldInspectCanonicalPath(segment: string): boolean {
+    if (!segment) {
+      return false;
+    }
+
+    const normalized = segment.replace(/\[\d+\]/g, '').toLowerCase();
+    if (
+      normalized.includes('remotejid') ||
+      normalized.includes('messageid') ||
+      normalized.includes('timestamp') ||
+      normalized.includes('instanceid') ||
+      normalized === 'status' ||
+      normalized === 'type'
+    ) {
+      return false;
+    }
+
+    return normalized.includes('sender') ||
+      normalized.includes('participant') ||
+      normalized.includes('author') ||
+      normalized.includes('owner') ||
+      normalized.includes('contact') ||
+      normalized.includes('phone') ||
+      normalized.includes('number') ||
+      normalized.includes('jid') ||
+      normalized.includes('wa_id') ||
+      normalized.includes('waid') ||
+      normalized.includes('from') ||
+      normalized.endsWith('pn');
   }
 
   private toMessageView(message: WhatsappMessageEntity): Record<string, unknown> {

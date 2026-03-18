@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { DatabaseService } from '../../../common/database/database.service';
+import { AiBrainService } from '../../ai_brain/services/ai-brain.service';
 import { ClientMemoryEntity } from '../../ai_brain/entities/client-memory.entity';
 import { MemoryService } from '../../ai-engine/memory.service';
 import { ContactMemoryEntity } from '../../ai-engine/entities/contact-memory.entity';
@@ -12,6 +13,7 @@ import { BotConfigurationService } from '../../bot-configuration/services/bot-co
 import { ChannelsService } from '../../channels/channels.service';
 import { ContactsService } from '../../contacts/contacts.service';
 import { ConversationsService } from '../../conversations/conversations.service';
+import { MessagesService } from '../../messages/messages.service';
 import { WhatsappChannelConfigEntity } from '../../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsapp-channel-log.entity';
 import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-chat.entity';
@@ -49,9 +51,11 @@ export class BotCenterService {
     private readonly botConfigurationService: BotConfigurationService,
     private readonly memoryService: MemoryService,
     private readonly databaseService: DatabaseService,
+    private readonly aiBrainService: AiBrainService,
     private readonly channelsService: ChannelsService,
     private readonly contactsService: ContactsService,
     private readonly conversationsService: ConversationsService,
+    private readonly messagesService: MessagesService,
     @InjectRepository(WhatsappChannelConfigEntity)
     private readonly channelConfigsRepository: Repository<WhatsappChannelConfigEntity>,
     @InjectRepository(WhatsappChatEntity)
@@ -564,6 +568,56 @@ export class BotCenterService {
     };
   }
 
+  async processDraftWithAi(
+    companyId: string,
+    payload: SendTestMessageDto,
+  ): Promise<{ ok: true; queued: false; messageId: string }> {
+    this.logger.log(
+      `[BOT CENTER] processDraftWithAi companyId=${companyId} conversationId=${payload.conversationId} messageLength=${payload.message?.length ?? 0}`,
+    );
+
+    const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, payload.conversationId);
+    if (!memoryTarget) {
+      throw new BadRequestException(
+        'No existe un canal conversacional enlazado para esta conversacion de WhatsApp.',
+      );
+    }
+
+    const createdMessage = await this.messagesService.create(
+      companyId,
+      memoryTarget.conversation.id,
+      {
+        sender: 'client',
+        content: payload.message,
+        type: 'text',
+        metadata: {
+          source: 'manual-ai-brain-process',
+          botCenterConversationId: payload.conversationId,
+          remoteJid: memoryTarget.chat.remoteJid,
+        },
+      },
+    );
+
+    await this.aiBrainService.processInboundMessage({
+      companyId,
+      channelId: memoryTarget.conversation.channelId,
+      conversationId: memoryTarget.conversation.id,
+      contactPhone: this.resolveConversationContactPhone(memoryTarget.chat),
+      messageId: createdMessage.id,
+    });
+
+    this.prependLog(companyId, {
+      id: `log-${Date.now() + 2}`,
+      timestamp: new Date().toISOString(),
+      eventType: 'AI draft processed',
+      summary: 'Se ejecuto el cerebro IA desde Bot Center.',
+      severity: 'info',
+      conversationId: payload.conversationId,
+    });
+
+    return { ok: true, queued: false, messageId: createdMessage.id };
+  }
+
   async getConversationDetail(
     companyId: string,
     conversationId: string,
@@ -602,8 +656,8 @@ export class BotCenterService {
     botCenterConversationId: string,
   ): Promise<{
     chat: WhatsappChatEntity;
-    contact: { id: string };
-    conversation: { id: string };
+    contact: { id: string; phone: string | null };
+    conversation: { id: string; channelId: string };
   } | null> {
     const chat = await this.getConversationOrThrow(companyId, botCenterConversationId);
     const channel = await this.resolveCanonicalChannel(companyId, chat);
@@ -613,7 +667,7 @@ export class BotCenterService {
 
     const contact = await this.contactsService.findOrCreateByPhone(
       companyId,
-      chat.remoteJid,
+      this.resolveConversationContactPhone(chat),
       this.resolveContactName(chat),
     );
     const conversation = await this.conversationsService.findOrCreateOpen(
@@ -623,6 +677,25 @@ export class BotCenterService {
     );
 
     return { chat, contact, conversation };
+  }
+
+  private resolveConversationContactPhone(chat: WhatsappChatEntity): string {
+    const canonicalRemoteJid = chat.canonicalRemoteJid?.trim();
+    if (canonicalRemoteJid) {
+      return canonicalRemoteJid;
+    }
+
+    const sendTarget = chat.sendTarget?.trim();
+    if (sendTarget) {
+      return sendTarget;
+    }
+
+    const canonicalNumber = chat.canonicalNumber?.trim();
+    if (canonicalNumber) {
+      return canonicalNumber;
+    }
+
+    return chat.remoteJid;
   }
 
   private async resolveCanonicalChannel(
