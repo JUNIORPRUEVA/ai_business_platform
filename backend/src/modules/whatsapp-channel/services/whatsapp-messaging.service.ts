@@ -33,8 +33,7 @@ export class WhatsappMessagingService {
       normalizedJid,
       payload.channelConfigId,
     );
-    const response = await this.evolutionApiClient.sendText(config, {
-      number: this.toEvolutionNumber(normalizedJid),
+    const response = await this.sendTextWithEvolutionFallback(config, normalizedJid, {
       text: payload.text.trim(),
       ...(payload.quotedMessageId ? { quoted: { key: { id: payload.quotedMessageId } } } : {}),
     });
@@ -58,6 +57,31 @@ export class WhatsappMessagingService {
     });
 
     return { message: this.toMessageView(message), evolution: response };
+  }
+
+  private async sendTextWithEvolutionFallback(
+    config: WhatsappChannelConfigEntity,
+    remoteJid: string,
+    params: { text: string; quoted?: { key: { id: string } } },
+  ): Promise<Record<string, unknown>> {
+    const candidates = this.buildEvolutionNumberCandidates(remoteJid);
+    let lastError: unknown;
+
+    for (const candidate of candidates) {
+      try {
+        return await this.evolutionApiClient.sendText(config, {
+          number: candidate,
+          text: params.text,
+          ...(params.quoted ? { quoted: params.quoted } : {}),
+        });
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new BadRequestException('No se pudo enviar el mensaje por Evolution API.');
   }
 
   async sendMedia(companyId: string, payload: SendWhatsappMediaDto): Promise<Record<string, unknown>> {
@@ -397,7 +421,30 @@ export class WhatsappMessagingService {
   }
 
   private toEvolutionNumber(remoteJid: string): string {
-    return remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+    return remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+  }
+
+  private buildEvolutionNumberCandidates(remoteJid: string): string[] {
+    const digits = this.toEvolutionNumber(remoteJid);
+    if (!digits) {
+      throw new BadRequestException('remoteJid no contiene digitos.' );
+    }
+
+    if (!remoteJid.endsWith('@lid')) {
+      return [digits];
+    }
+
+    const candidates: string[] = [];
+
+    const lengthsToTry = digits.startsWith('1') ? [11] : [13, 12, 11];
+    for (const length of lengthsToTry) {
+      if (digits.length > length && length >= 10) {
+        candidates.push(digits.substring(0, length));
+      }
+    }
+
+    candidates.push(digits);
+    return [...new Set(candidates)];
   }
 
   private toMessageView(message: WhatsappMessageEntity): Record<string, unknown> {

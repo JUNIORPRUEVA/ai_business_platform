@@ -489,7 +489,7 @@ class BotCenterController extends ChangeNotifier {
       await _reloadGlobalLists();
       _actionMessage = responseMessage;
     } catch (error) {
-      _removeMessage(conversationId, optimisticMessage.id);
+      // Keep the optimistic message visible so it does not “disappear”.
       messageComposerController
         ..text = text
         ..selection = TextSelection.collapsed(offset: text.length);
