@@ -45,6 +45,7 @@ class BotCenterModule extends ConsumerStatefulWidget {
 
 class _BotCenterModuleState extends ConsumerState<BotCenterModule> {
   late final BotCenterController _controller;
+  final ScrollController _horizontalScrollController = ScrollController();
 
   @override
   void initState() {
@@ -59,6 +60,7 @@ class _BotCenterModuleState extends ConsumerState<BotCenterModule> {
 
   @override
   void dispose() {
+    _horizontalScrollController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -203,7 +205,9 @@ class _BotCenterContentState extends State<BotCenterContent> {
                       Expanded(
                         child: needsHorizontalScroll
                             ? Scrollbar(
+                                controller: _horizontalScrollController,
                                 child: SingleChildScrollView(
+                                  controller: _horizontalScrollController,
                                   scrollDirection: Axis.horizontal,
                                   child: SizedBox(
                                     width: fixed + minConversationWidth,

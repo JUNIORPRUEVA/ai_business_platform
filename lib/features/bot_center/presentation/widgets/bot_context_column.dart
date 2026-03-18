@@ -6,7 +6,7 @@ import '../../domain/entities/bot_memory_item.dart';
 import '../controllers/bot_center_controller.dart';
 import '../utils/bot_center_formatters.dart';
 
-class BotContextColumn extends StatelessWidget {
+class BotContextColumn extends StatefulWidget {
   const BotContextColumn({
     required this.controller,
     required this.onCollapse,
@@ -15,6 +15,19 @@ class BotContextColumn extends StatelessWidget {
 
   final BotCenterController controller;
   final VoidCallback onCollapse;
+
+  @override
+  State<BotContextColumn> createState() => _BotContextColumnState();
+}
+
+class _BotContextColumnState extends State<BotContextColumn> {
+  late final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +73,7 @@ class BotContextColumn extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: 'Ocultar contexto',
-                    onPressed: onCollapse,
+                    onPressed: widget.onCollapse,
                     icon: const Icon(Icons.chevron_right_rounded),
                   ),
                 ],
@@ -71,30 +84,32 @@ class BotContextColumn extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: Scrollbar(
+                controller: _scrollController,
                 child: SingleChildScrollView(
+                  controller: _scrollController,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _ContextBlock(
                         title: 'Contacto',
                         child:
-                            _ContactBlock(contact: controller.selectedContact),
+                            _ContactBlock(contact: widget.controller.selectedContact),
                       ),
                       const SizedBox(height: 10),
                       _ContextBlock(
                         title: 'Memoria',
-                        child: _MemoryBlock(controller: controller),
+                        child: _MemoryBlock(controller: widget.controller),
                       ),
                       const SizedBox(height: 10),
                       _ContextBlock(
                         title: 'Historial',
-                        child: _HistoryBlock(logs: controller.visibleLogs),
+                        child: _HistoryBlock(logs: widget.controller.visibleLogs),
                       ),
                       const SizedBox(height: 10),
                       _ContextBlock(
                         title: 'Etiquetas',
                         child:
-                            _TagsBlock(tags: controller.selectedContact.tags),
+                            _TagsBlock(tags: widget.controller.selectedContact.tags),
                       ),
                     ],
                   ),

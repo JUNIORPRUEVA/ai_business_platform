@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../domain/entities/bot_conversation.dart';
 import '../utils/bot_center_formatters.dart';
 
-class ConversationListPanel extends StatelessWidget {
+class ConversationListPanel extends StatefulWidget {
   const ConversationListPanel({
     required this.conversations,
     required this.selectedConversationId,
@@ -18,8 +18,21 @@ class ConversationListPanel extends StatelessWidget {
   final bool isLoading;
 
   @override
+  State<ConversationListPanel> createState() => _ConversationListPanelState();
+}
+
+class _ConversationListPanelState extends State<ConversationListPanel> {
+  late final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (conversations.isEmpty) {
+    if (widget.conversations.isEmpty) {
       return Center(
         child: Text(
           'No hay conversaciones que coincidan con los filtros actuales.',
@@ -30,19 +43,23 @@ class ConversationListPanel extends StatelessWidget {
     }
 
     return Scrollbar(
+      controller: _scrollController,
       child: ListView.builder(
-        itemCount: conversations.length,
+        controller: _scrollController,
+        itemCount: widget.conversations.length,
         padding: EdgeInsets.zero,
         itemBuilder: (context, index) {
-          final conversation = conversations[index];
-          final isSelected = conversation.id == selectedConversationId;
+          final conversation = widget.conversations[index];
+          final isSelected = conversation.id == widget.selectedConversationId;
           return Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: _ChatCard(
               conversation: conversation,
               isSelected: isSelected,
-              isLoading: isLoading,
-              onTap: isLoading ? null : () => onSelectConversation(conversation.id),
+              isLoading: widget.isLoading,
+              onTap: widget.isLoading
+                  ? null
+                  : () => widget.onSelectConversation(conversation.id),
             ),
           );
         },

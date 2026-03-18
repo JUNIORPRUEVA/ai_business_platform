@@ -184,13 +184,27 @@ class _ConversationHeader extends StatelessWidget {
   }
 }
 
-class _MessageViewport extends StatelessWidget {
+class _MessageViewport extends StatefulWidget {
   const _MessageViewport({required this.controller});
 
   final BotCenterController controller;
 
   @override
+  State<_MessageViewport> createState() => _MessageViewportState();
+}
+
+class _MessageViewportState extends State<_MessageViewport> {
+  late final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
     if (controller.isConversationLoading) {
       return const Center(
         child: SizedBox(
@@ -214,7 +228,9 @@ class _MessageViewport extends StatelessWidget {
     }
 
     return Scrollbar(
+      controller: _scrollController,
       child: ListView.separated(
+        controller: _scrollController,
         itemCount: controller.selectedMessages.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, index) {

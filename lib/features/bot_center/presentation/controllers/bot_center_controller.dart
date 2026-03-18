@@ -507,11 +507,10 @@ class BotCenterController extends ChangeNotifier {
   }
 
   void _appendOptimisticMessage(BotMessage message) {
-    final messages = _messagesByConversation.putIfAbsent(
-      message.conversationId,
-      () => <BotMessage>[],
-    );
-    messages.add(message);
+    final existing =
+        _messagesByConversation[message.conversationId] ?? const <BotMessage>[];
+    final updated = List<BotMessage>.of(existing, growable: true)..add(message);
+    _messagesByConversation[message.conversationId] = updated;
 
     for (var index = 0; index < _conversations.length; index++) {
       final conversation = _conversations[index];
@@ -526,12 +525,14 @@ class BotCenterController extends ChangeNotifier {
   }
 
   void _removeMessage(String conversationId, String messageId) {
-    final messages = _messagesByConversation[conversationId];
-    if (messages == null) {
+    final existing = _messagesByConversation[conversationId];
+    if (existing == null) {
       return;
     }
 
-    messages.removeWhere((message) => message.id == messageId);
+    final updated = List<BotMessage>.of(existing, growable: true)
+      ..removeWhere((message) => message.id == messageId);
+    _messagesByConversation[conversationId] = updated;
   }
 
   void _updateMessageState({
@@ -539,15 +540,16 @@ class BotCenterController extends ChangeNotifier {
     required String messageId,
     required BotMessageState state,
   }) {
-    final messages = _messagesByConversation[conversationId];
-    if (messages == null) {
+    final existing = _messagesByConversation[conversationId];
+    if (existing == null) {
       return;
     }
 
-    for (var index = 0; index < messages.length; index++) {
-      final message = messages[index];
+    final updated = List<BotMessage>.of(existing, growable: true);
+    for (var index = 0; index < updated.length; index++) {
+      final message = updated[index];
       if (message.id == messageId) {
-        messages[index] = BotMessage(
+        updated[index] = BotMessage(
           id: message.id,
           conversationId: message.conversationId,
           author: message.author,
@@ -555,6 +557,7 @@ class BotCenterController extends ChangeNotifier {
           timestamp: message.timestamp,
           state: state,
         );
+        _messagesByConversation[conversationId] = updated;
         return;
       }
     }
@@ -760,6 +763,7 @@ class BotCenterController extends ChangeNotifier {
     List<BotMessage> fetched,
   ) {
     final existing = _messagesByConversation[conversationId] ?? const <BotMessage>[];
+    final fetchedGrowable = List<BotMessage>.of(fetched, growable: true);
     final optimistic = existing
         .where(
           (message) =>
@@ -770,10 +774,10 @@ class BotCenterController extends ChangeNotifier {
         .toList(growable: false);
 
     if (optimistic.isEmpty) {
-      return fetched;
+      return fetchedGrowable;
     }
 
-    final merged = <BotMessage>[...fetched];
+    final merged = <BotMessage>[...fetchedGrowable];
 
     for (final optimisticMessage in optimistic) {
       final alreadyPresent = fetched.any((remoteMessage) {
