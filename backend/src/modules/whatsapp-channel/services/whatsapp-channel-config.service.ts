@@ -240,6 +240,59 @@ export class WhatsappChannelConfigService {
     return entity;
   }
 
+  async upsertAutomationConfig(params: {
+    companyId: string;
+    evolutionServerUrl: string;
+    evolutionApiKey: string;
+    instanceName: string;
+    webhookUrl?: string | null;
+    instanceStatus?: string | null;
+  }): Promise<WhatsappChannelConfigEntity> {
+    const normalizedInstanceName = this.normalizeInstanceName(params.instanceName);
+    const serverUrl = params.evolutionServerUrl.trim().replace(/\/$/, '');
+    const webhookUrl = params.webhookUrl?.trim() || null;
+
+    let entity = await this.configsRepository.findOne({
+      where: { companyId: params.companyId, provider: 'evolution' },
+    });
+
+    if (!entity) {
+      entity = this.configsRepository.create({
+        companyId: params.companyId,
+        provider: 'evolution',
+        evolutionServerUrl: serverUrl,
+        evolutionApiKeyEncrypted: this.secretService.encrypt(params.evolutionApiKey),
+        instanceName: normalizedInstanceName,
+        webhookEnabled: true,
+        webhookUrl,
+        webhookByEvents: false,
+        webhookBase64: false,
+        webhookEventsJson: [...DEFAULT_WEBHOOK_EVENTS],
+        isActive: true,
+        instancePhone: null,
+        instanceStatus: params.instanceStatus?.trim() || 'disconnected',
+        lastSyncAt: null,
+      });
+
+      return this.configsRepository.save(entity);
+    }
+
+    entity.evolutionServerUrl = serverUrl;
+    entity.evolutionApiKeyEncrypted = this.secretService.encrypt(params.evolutionApiKey);
+    entity.instanceName = normalizedInstanceName;
+    entity.webhookEnabled = true;
+    entity.webhookUrl = webhookUrl;
+    entity.isActive = true;
+    if (!entity.webhookEventsJson || entity.webhookEventsJson.length === 0) {
+      entity.webhookEventsJson = [...DEFAULT_WEBHOOK_EVENTS];
+    }
+    if (params.instanceStatus?.trim()) {
+      entity.instanceStatus = params.instanceStatus.trim();
+    }
+
+    return this.configsRepository.save(entity);
+  }
+
   private toView(entity: WhatsappChannelConfigEntity): Record<string, unknown> {
     return {
       id: entity.id,

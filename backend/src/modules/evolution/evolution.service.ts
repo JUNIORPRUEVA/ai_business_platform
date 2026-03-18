@@ -197,6 +197,12 @@ export class EvolutionService {
     return [...EVOLUTION_INSTANCE_WEBHOOK_EVENTS];
   }
 
+  async getRuntimeSettingsSnapshot(): Promise<{ baseUrl: string; apiKey: string }> {
+    const settings = await this.getRuntimeSettings();
+    this.assertConfigured(settings);
+    return settings;
+  }
+
   async createInstance(params: {
     instanceName: string;
     qrcode: boolean;

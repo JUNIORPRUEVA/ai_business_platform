@@ -13,6 +13,8 @@ import { BotConfigurationEntity } from '../../bot-configuration/entities/bot-con
 import { ChannelsService } from '../../channels/channels.service';
 import { EVOLUTION_INSTANCE_WEBHOOK_EVENTS, EvolutionService } from '../../evolution/evolution.service';
 import { EvolutionWebhookService } from '../../evolution-webhook/services/evolution-webhook.service';
+import { WhatsappChannelConfigService } from '../../whatsapp-channel/services/whatsapp-channel-config.service';
+import { WhatsappWebhookService } from '../../whatsapp-channel/services/whatsapp-webhook.service';
 import { WhatsappInstanceEntity, WhatsappInstanceStatus } from '../entities/whatsapp-instance.entity';
 
 @Injectable()
@@ -29,6 +31,8 @@ export class WhatsappInstancesService {
     private readonly configService: ConfigService,
     private readonly channelsService: ChannelsService,
     private readonly evolutionWebhookService: EvolutionWebhookService,
+    private readonly whatsappChannelConfigService: WhatsappChannelConfigService,
+    private readonly whatsappWebhookService: WhatsappWebhookService,
   ) {}
 
   async list(tenantId: string) {
@@ -62,6 +66,7 @@ export class WhatsappInstancesService {
 
     await this.evolutionService.createInstance({ instanceName: normalized, qrcode: true });
     await this.tryConfigureWebhook(normalized);
+    await this.ensureWhatsappChannelBridge(tenantId, normalized, 'created');
 
     const entity = this.repo.create({
       tenantId,
@@ -153,6 +158,7 @@ export class WhatsappInstancesService {
       qrcode: true,
     });
     await this.tryConfigureWebhook(normalizedNewName);
+    await this.ensureWhatsappChannelBridge(tenantId, normalizedNewName, 'created');
 
     try {
       await this.evolutionService.deleteInstance(currentName);
@@ -313,6 +319,17 @@ export class WhatsappInstancesService {
     if (!entity) {
       this.logger.warn(`Webhook received for unknown instance: ${instanceName}`);
       return { updated: false, instanceName };
+    }
+
+    await this.ensureWhatsappChannelBridge(entity.tenantId, entity.instanceName, entity.status);
+
+    try {
+      await this.whatsappWebhookService.processNow(entity.tenantId, payload as Record<string, unknown>);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown WhatsApp channel webhook error.';
+      this.logger.warn(
+        `[EVOLUTION INSTANCE WEBHOOK] failed to mirror payload into whatsapp channel storage instanceName=${instanceName} error=${message}`,
+      );
     }
 
     if (event === 'QRCODE_UPDATED') {
@@ -775,5 +792,29 @@ export class WhatsappInstancesService {
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
+  }
+
+  private async ensureWhatsappChannelBridge(
+    companyId: string,
+    instanceName: string,
+    instanceStatus: string,
+  ): Promise<void> {
+    try {
+      const settings = await this.evolutionService.getRuntimeSettingsSnapshot();
+      const webhookUrl = this.evolutionService.buildInstanceWebhookUrl();
+      await this.whatsappChannelConfigService.upsertAutomationConfig({
+        companyId,
+        evolutionServerUrl: settings.baseUrl,
+        evolutionApiKey: settings.apiKey,
+        instanceName,
+        webhookUrl,
+        instanceStatus,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown bridge sync error.';
+      this.logger.warn(
+        `[EVOLUTION INSTANCE WEBHOOK] failed to sync whatsapp channel config instanceName=${instanceName} error=${message}`,
+      );
+    }
   }
 }

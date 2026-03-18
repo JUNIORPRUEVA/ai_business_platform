@@ -31,17 +31,7 @@ export class WhatsappWebhookService {
 
   async enqueue(companyId: string, payload: Record<string, unknown>): Promise<{ queued: true }> {
     const config = await this.configService.getEntity(companyId);
-    await this.logsService.create({
-      companyId,
-      instanceName: config.instanceName,
-      direction: 'incoming_webhook',
-      eventName: this.normalizeEventName(payload['event']),
-      requestPayloadJson: payload,
-      responsePayloadJson: {},
-      httpStatus: 200,
-      success: true,
-      errorMessage: null,
-    });
+    await this.recordIncomingWebhook(companyId, config.instanceName, payload);
 
     await this.webhookQueue.add(
       'process-evolution-webhook',
@@ -49,6 +39,13 @@ export class WhatsappWebhookService {
       { removeOnComplete: 1000, removeOnFail: 1000 },
     );
     return { queued: true };
+  }
+
+  async processNow(companyId: string, payload: Record<string, unknown>): Promise<{ processed: true }> {
+    const config = await this.configService.getEntity(companyId);
+    await this.recordIncomingWebhook(companyId, config.instanceName, payload);
+    await this.processJob({ companyId, payload });
+    return { processed: true };
   }
 
   async processJob(job: WhatsappWebhookJob): Promise<void> {
@@ -263,5 +260,23 @@ export class WhatsappWebhookService {
 
   private readBoolean(value: unknown): boolean {
     return value === true;
+  }
+
+  private async recordIncomingWebhook(
+    companyId: string,
+    instanceName: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.logsService.create({
+      companyId,
+      instanceName,
+      direction: 'incoming_webhook',
+      eventName: this.normalizeEventName(payload['event']),
+      requestPayloadJson: payload,
+      responsePayloadJson: {},
+      httpStatus: 200,
+      success: true,
+      errorMessage: null,
+    });
   }
 }
