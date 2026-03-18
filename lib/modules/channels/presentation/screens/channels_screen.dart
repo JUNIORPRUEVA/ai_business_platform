@@ -18,7 +18,109 @@ class ChannelsScreen extends StatelessWidget {
           const ModuleHeader(
             title: 'Canales',
             subtitle:
-                'Conecta plataformas de mensajería: WhatsApp Evolution API, WhatsApp Meta Cloud API, Instagram, Messenger y chat web.',
+                'Activa los canales de atención de forma clara y ordenada. WhatsApp Evolution es el acceso principal para comenzar.',
+          ),
+          const SizedBox(height: 14),
+          ExecutiveGlassCard(
+            padding: const EdgeInsets.all(20),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 920;
+
+                return Wrap(
+                  spacing: 14,
+                  runSpacing: 14,
+                  children: [
+                    Container(
+                      width: compact ? double.infinity : 340,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0x1A2DD4BF),
+                            Color(0x1228C76F),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: const Color(0x332DD4BF),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              color: const Color(0xFF2DD4BF)
+                                  .withValues(alpha: 0.14),
+                            ),
+                            child: Text(
+                              'Recomendado para empezar',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF2DD4BF),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'WhatsApp como canal principal',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Preparamos una experiencia simple para tu cliente: crear la instancia, escanear el QR y comenzar a operar sin pasos innecesarios.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.72),
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: compact
+                          ? double.infinity
+                          : constraints.maxWidth - 388,
+                      child: Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: const [
+                          _ChannelHighlight(
+                            icon: Icons.rocket_launch_outlined,
+                            title: 'Implementación guiada',
+                            subtitle:
+                                'La conexión de WhatsApp quedó enfocada en un flujo comprensible para cualquier cliente.',
+                          ),
+                          _ChannelHighlight(
+                            icon: Icons.qr_code_2_rounded,
+                            title: 'QR más visible',
+                            subtitle:
+                                'La pantalla prioriza el código QR con mayor tamaño y vista ampliada.',
+                          ),
+                          _ChannelHighlight(
+                            icon: Icons.workspace_premium_outlined,
+                            title: 'Imagen profesional',
+                            subtitle:
+                                'La interfaz usa mensajes claros y acciones simples, sin exponer complejidad técnica.',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
           const SizedBox(height: 14),
           ExecutiveGlassCard(
@@ -36,9 +138,10 @@ class ChannelsScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 _ChannelCard(
                   title: 'WhatsApp Evolution API',
-                  subtitle: 'Gateway principal vía servidor Evolution',
+                  subtitle: 'Canal principal con conexión guiada por QR',
                   connected: true,
                   icon: Icons.chat_rounded,
+                  isPrimary: true,
                   onConfigure: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -90,6 +193,7 @@ class _ChannelCard extends StatelessWidget {
     required this.subtitle,
     required this.connected,
     required this.icon,
+    this.isPrimary = false,
     this.onConfigure,
   });
 
@@ -97,6 +201,7 @@ class _ChannelCard extends StatelessWidget {
   final String subtitle;
   final bool connected;
   final IconData icon;
+  final bool isPrimary;
   final VoidCallback? onConfigure;
 
   @override
@@ -110,18 +215,29 @@ class _ChannelCard extends StatelessWidget {
     return ExecutiveGlassCard(
       padding: const EdgeInsets.all(16),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 46,
             height: 46,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              color: theme.colorScheme.surface.withValues(alpha: 0.16),
+              color: isPrimary
+                  ? const Color(0xFF25D366).withValues(alpha: 0.14)
+                  : theme.colorScheme.surface.withValues(alpha: 0.16),
               border: Border.all(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.65),
+                color: isPrimary
+                    ? const Color(0xFF25D366).withValues(alpha: 0.26)
+                    : theme.colorScheme.outlineVariant.withValues(alpha: 0.65),
               ),
             ),
-            child: Icon(icon, color: Colors.white.withValues(alpha: 0.86), size: 22),
+            child: Icon(
+              icon,
+              color: isPrimary
+                  ? const Color(0xFF25D366)
+                  : Colors.white.withValues(alpha: 0.86),
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -139,6 +255,27 @@ class _ChannelCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (isPrimary) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          color: const Color(0xFF25D366)
+                              .withValues(alpha: 0.12),
+                        ),
+                        child: Text(
+                          'Principal',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF25D366),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -174,6 +311,62 @@ class _ChannelCard extends StatelessWidget {
             label: const Text('Configurar'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ChannelHighlight extends StatelessWidget {
+  const _ChannelHighlight({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 180, maxWidth: 230),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: theme.colorScheme.surface.withValues(alpha: 0.10),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.50),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              color: theme.colorScheme.primary,
+              size: 18,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

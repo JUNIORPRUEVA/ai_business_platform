@@ -73,6 +73,55 @@ export class MemoryCacheService {
     return `memory:v1:${companyId}:idempotency:${scope}:${value}`;
   }
 
+  async getHealthReport(): Promise<{
+    configured: boolean;
+    connected: boolean;
+    state: 'healthy' | 'degraded' | 'offline';
+    detail: string;
+  }> {
+    const host = (this.configService.get<string>('REDIS_HOST') ?? '').trim();
+    const port = Number(this.configService.get<string>('REDIS_PORT') ?? 6379);
+
+    if (!host) {
+      return {
+        configured: false,
+        connected: false,
+        state: 'offline',
+        detail: 'Redis no esta configurado en REDIS_HOST.',
+      };
+    }
+
+    const client = this.getClient();
+    if (!client) {
+      return {
+        configured: true,
+        connected: false,
+        state: 'offline',
+        detail: `Redis configurado en ${host}:${port}, pero no se pudo inicializar el cliente.`,
+      };
+    }
+
+    try {
+      const pong = await client.ping();
+      return {
+        configured: true,
+        connected: pong === 'PONG',
+        state: pong === 'PONG' ? 'healthy' : 'degraded',
+        detail:
+          pong === 'PONG'
+            ? `Redis responde correctamente en ${host}:${port}.`
+            : `Redis esta configurado en ${host}:${port}, pero la respuesta fue inesperada.`,
+      };
+    } catch (error) {
+      return {
+        configured: true,
+        connected: false,
+        state: 'offline',
+        detail: `Redis configurado en ${host}:${port}, pero fallo la conexion: ${(error as Error).message}`,
+      };
+    }
+  }
+
   private getClient(): Redis | null {
     if (this.initialized) {
       return this.redis;

@@ -19,13 +19,16 @@ import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
 import { UpdateToolDto } from '../dto/update-tool.dto';
 import { UpdateWhatsappSettingsDto } from '../dto/update-whatsapp-settings.dto';
 import { BotConfigurationService } from '../services/bot-configuration.service';
+import { MemoryDiagnosticsService } from '../services/memory-diagnostics.service';
 import { BotConfigurationBundle, PromptTemplate, InternalToolSettings } from '../types/bot-configuration.types';
+import { MemoryDiagnosticsResponse } from '../types/memory-diagnostics.types';
 
 @UseGuards(JwtAuthGuard, RolesGuard, LicenseGuard)
 @Controller('bot-configuration')
 export class BotConfigurationController {
   constructor(
     private readonly botConfigurationService: BotConfigurationService,
+    private readonly memoryDiagnosticsService: MemoryDiagnosticsService,
   ) {}
 
   @Roles('admin', 'operator', 'viewer')
@@ -80,6 +83,14 @@ export class BotConfigurationController {
   @Put('memory')
   updateMemory(@Body() payload: UpdateMemorySettingsDto) {
     return this.botConfigurationService.updateMemorySettings(payload);
+  }
+
+  @Roles('admin', 'operator', 'viewer')
+  @Get('memory/diagnostics')
+  getMemoryDiagnostics(
+    @CurrentUser() user: AuthUser,
+  ): Promise<MemoryDiagnosticsResponse> {
+    return this.memoryDiagnosticsService.getDiagnostics(user.companyId);
   }
 
   @Roles('admin', 'operator')

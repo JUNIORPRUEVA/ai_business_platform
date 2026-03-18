@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../auth/application/auth_providers.dart';
+import '../../../auth/data/auth_api_client.dart';
 import '../../data/whatsapp_instances_api_client.dart';
 import '../../../shared/presentation/widgets/module_header.dart';
+import '../../../../features/bot_configuration_center/data/services/bot_configuration_center_api_client.dart';
 import '../../../../features/executive_layout/presentation/widgets/executive_content_container.dart';
 
 enum WhatsappChannelUiStatus {
@@ -29,31 +31,260 @@ class WhatsappChannelScreen extends ConsumerStatefulWidget {
 class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   final _instanceController = TextEditingController();
   final _api = WhatsappInstancesApiClient();
+  final _configurationApi = BotConfigurationCenterApiClient();
+  final _evolutionUrlController = TextEditingController();
+  final _evolutionKeyController = TextEditingController();
+  final _webhookUrlController = TextEditingController();
+  final _rejectedCallReplyController = TextEditingController();
 
   WhatsappChannelUiStatus _status = WhatsappChannelUiStatus.notConfigured;
   String? _activeInstanceName;
   String? _qrBase64;
   String? _fieldError;
   String? _requestError;
+  String? _providerMessage;
   Timer? _pollTimer;
   bool _loadingExisting = true;
+  bool _loadingProviderSettings = true;
   bool _isMutatingInstance = false;
+  bool _isSavingProviderSettings = false;
+  bool _isTestingProviderConnection = false;
+  bool _providerMessageIsError = false;
+  bool _autoApplyWebhook = true;
+  bool _trackConnectionEvents = true;
+  bool _trackQrEvents = true;
+  bool _trackMessageEvents = true;
+  bool _receiveTextMessages = true;
+  bool _receiveAudioMessages = true;
+  bool _receiveImageMessages = true;
+  bool _receiveVideoMessages = true;
+  bool _receiveDocumentMessages = true;
+  bool _persistMediaMetadata = true;
+  String _callHandlingMode = 'notify';
 
   @override
   void initState() {
     super.initState();
-    Future<void>.microtask(_loadExisting);
+    Future<void>.microtask(() async {
+      await Future.wait([
+        _loadExisting(),
+        _loadProviderSettings(),
+      ]);
+    });
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
     _instanceController.dispose();
+    _evolutionUrlController.dispose();
+    _evolutionKeyController.dispose();
+    _webhookUrlController.dispose();
+    _rejectedCallReplyController.dispose();
     super.dispose();
   }
 
   Future<String?> _readToken() {
     return ref.read(authTokenStoreProvider).read();
+  }
+
+  Future<String> _requireToken() async {
+    final token = await _readToken();
+    if (token == null || token.trim().isEmpty) {
+      throw const AuthApiException('Tu sesión expiró. Inicia sesión otra vez.');
+    }
+    return token;
+  }
+
+  Future<void> _loadProviderSettings() async {
+    setState(() {
+      _loadingProviderSettings = true;
+      _providerMessage = null;
+    });
+
+    try {
+      final token = await _requireToken();
+      final configuration =
+          await _configurationApi.getJson('/bot-configuration', token: token);
+
+      final evolution = _asMap(configuration['evolution']);
+      final integrations = _asMap(configuration['integrations']);
+      final whatsapp = _asMap(configuration['whatsapp']);
+
+      _evolutionUrlController.text = _readString(evolution, 'baseUrl');
+      _evolutionKeyController.text = _readString(evolution, 'apiKey');
+      _webhookUrlController.text = _readString(integrations, 'webhookUrl');
+      _rejectedCallReplyController.text =
+          _readString(whatsapp, 'rejectedCallReply');
+      _autoApplyWebhook = _readBool(whatsapp, 'autoApplyWebhook', true);
+      _trackConnectionEvents =
+          _readBool(whatsapp, 'trackConnectionEvents', true);
+      _trackQrEvents = _readBool(whatsapp, 'trackQrEvents', true);
+      _trackMessageEvents = _readBool(whatsapp, 'trackMessageEvents', true);
+      _receiveTextMessages = _readBool(whatsapp, 'receiveTextMessages', true);
+      _receiveAudioMessages = _readBool(whatsapp, 'receiveAudioMessages', true);
+      _receiveImageMessages = _readBool(whatsapp, 'receiveImageMessages', true);
+      _receiveVideoMessages = _readBool(whatsapp, 'receiveVideoMessages', true);
+      _receiveDocumentMessages =
+          _readBool(whatsapp, 'receiveDocumentMessages', true);
+      _persistMediaMetadata = _readBool(whatsapp, 'persistMediaMetadata', true);
+      _callHandlingMode = _readString(whatsapp, 'callHandlingMode').isEmpty
+          ? 'notify'
+          : _readString(whatsapp, 'callHandlingMode');
+    } on BotConfigurationCenterApiException catch (error) {
+      _providerMessageIsError = true;
+      _providerMessage = error.message;
+    } on AuthApiException catch (error) {
+      _providerMessageIsError = true;
+      _providerMessage = error.message;
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loadingProviderSettings = false;
+      });
+    }
+  }
+
+  Future<void> _saveProviderSettings() async {
+    setState(() {
+      _isSavingProviderSettings = true;
+      _providerMessage = null;
+    });
+
+    try {
+      final token = await _requireToken();
+
+      await _configurationApi.putJson(
+        '/bot-configuration/evolution',
+        {
+          'baseUrl': _evolutionUrlController.text.trim(),
+          'apiKey': _evolutionKeyController.text.trim(),
+        },
+        token: token,
+      );
+
+      await _configurationApi.putJson(
+        '/bot-configuration/integrations',
+        {
+          'webhookUrl': _webhookUrlController.text.trim(),
+        },
+        token: token,
+      );
+
+      await _configurationApi.putJson(
+        '/bot-configuration/whatsapp',
+        {
+          'autoApplyWebhook': _autoApplyWebhook,
+          'trackConnectionEvents': _trackConnectionEvents,
+          'trackQrEvents': _trackQrEvents,
+          'trackMessageEvents': _trackMessageEvents,
+          'receiveTextMessages': _receiveTextMessages,
+          'receiveAudioMessages': _receiveAudioMessages,
+          'receiveImageMessages': _receiveImageMessages,
+          'receiveVideoMessages': _receiveVideoMessages,
+          'receiveDocumentMessages': _receiveDocumentMessages,
+          'persistMediaMetadata': _persistMediaMetadata,
+          'callHandlingMode': _callHandlingMode,
+          'rejectedCallReply': _rejectedCallReplyController.text.trim(),
+        },
+        token: token,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _providerMessageIsError = false;
+        _providerMessage =
+            'Configuración de Evolution y WhatsApp guardada correctamente.';
+      });
+    } on BotConfigurationCenterApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _providerMessageIsError = true;
+        _providerMessage = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _providerMessageIsError = true;
+        _providerMessage = error.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSavingProviderSettings = false;
+      });
+    }
+  }
+
+  Future<void> _testEvolutionConnection() async {
+    setState(() {
+      _isTestingProviderConnection = true;
+      _providerMessage = null;
+    });
+
+    try {
+      final token = await _requireToken();
+
+      await _configurationApi.putJson(
+        '/bot-configuration/evolution',
+        {
+          'baseUrl': _evolutionUrlController.text.trim(),
+          'apiKey': _evolutionKeyController.text.trim(),
+        },
+        token: token,
+      );
+
+      final response = await _configurationApi.getJson(
+        '/bot-configuration/evolution/connection',
+        token: token,
+      );
+
+      final status =
+          (response['connectionStatus'] as String? ?? 'desconocido').trim();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _providerMessageIsError = false;
+        _providerMessage = 'Estado de Evolution: $status.';
+      });
+    } on BotConfigurationCenterApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _providerMessageIsError = true;
+        _providerMessage = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _providerMessageIsError = true;
+        _providerMessage = error.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isTestingProviderConnection = false;
+      });
+    }
   }
 
   Future<void> _loadExisting() async {
@@ -542,6 +773,92 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     }
   }
 
+  Future<void> _showLargeQr(Uint8List qrBytes) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final qrSize = constraints.maxWidth < 620
+                  ? constraints.maxWidth - 48
+                  : 520.0;
+
+              return ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Escanea este QR',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Abre WhatsApp en tu teléfono, entra en Dispositivos vinculados y apunta la cámara a este código.',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.68),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Center(
+                        child: Container(
+                          width: qrSize,
+                          height: qrSize,
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.colorScheme.primary
+                                    .withValues(alpha: 0.12),
+                                blurRadius: 30,
+                                offset: const Offset(0, 18),
+                              ),
+                            ],
+                          ),
+                          child: Image.memory(qrBytes, fit: BoxFit.contain),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   Uint8List? _decodeQrBytes(String? value) {
     final raw = value?.trim();
     if (raw == null || raw.isEmpty) return null;
@@ -565,6 +882,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     final statusTitle = _statusTitle();
     final statusDescription = _statusDescription();
     final canGoBack = Navigator.of(context).canPop();
+    final nextAction = _nextActionCopy();
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -575,7 +893,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
             ModuleHeader(
               title: 'Canal WhatsApp',
               subtitle:
-                  'Crea y conecta una instancia Evolution API con un flujo más claro de estado, QR y vinculación.',
+                  'Conecta tu número con un proceso simple: crear la instancia, escanear el QR y empezar a operar.',
               trailing: canGoBack
                   ? OutlinedButton.icon(
                       onPressed: () => Navigator.of(context).maybePop(),
@@ -600,8 +918,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Container(
-                            width: compact ? double.infinity : 320,
-                            padding: const EdgeInsets.all(18),
+                            width: compact ? double.infinity : 340,
+                            padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(22),
                               gradient: LinearGradient(
@@ -636,6 +954,52 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                         .withValues(alpha: 0.72),
                                   ),
                                 ),
+                                const SizedBox(height: 18),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(18),
+                                    color: theme.colorScheme.surface
+                                        .withValues(alpha: 0.14),
+                                    border: Border.all(
+                                      color: theme.colorScheme.outlineVariant
+                                          .withValues(alpha: 0.42),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Siguiente paso',
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          fontWeight: FontWeight.w900,
+                                          color: theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.72),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        nextAction.title,
+                                        style:
+                                            theme.textTheme.bodyLarge?.copyWith(
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        nextAction.description,
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          color: theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.68),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -643,31 +1007,39 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                             width: compact
                                 ? double.infinity
                                 : constraints.maxWidth - 348,
-                            child: Wrap(
-                              spacing: 12,
-                              runSpacing: 12,
+                            child: Column(
                               children: [
-                                _buildTopMetricCard(
-                                  theme: theme,
-                                  title: 'Instancia activa',
-                                  value: _activeInstanceName ?? 'Sin definir',
-                                  icon: Icons.dns_rounded,
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children: [
+                                    _buildTopMetricCard(
+                                      theme: theme,
+                                      title: 'Instancia activa',
+                                      value:
+                                          _activeInstanceName ?? 'Sin definir',
+                                      icon: Icons.dns_rounded,
+                                    ),
+                                    _buildTopMetricCard(
+                                      theme: theme,
+                                      title: 'Estado QR',
+                                      value: qrBytes == null
+                                          ? 'Pendiente'
+                                          : 'Disponible',
+                                      icon: Icons.qr_code_2_rounded,
+                                    ),
+                                    _buildTopMetricCard(
+                                      theme: theme,
+                                      title: 'Sincronización',
+                                      value: _loadingExisting
+                                          ? 'Cargando'
+                                          : 'Lista',
+                                      icon: Icons.sync_rounded,
+                                    ),
+                                  ],
                                 ),
-                                _buildTopMetricCard(
-                                  theme: theme,
-                                  title: 'Estado QR',
-                                  value: qrBytes == null
-                                      ? 'Pendiente'
-                                      : 'Disponible',
-                                  icon: Icons.qr_code_2_rounded,
-                                ),
-                                _buildTopMetricCard(
-                                  theme: theme,
-                                  title: 'Sincronización',
-                                  value:
-                                      _loadingExisting ? 'Cargando' : 'Lista',
-                                  icon: Icons.sync_rounded,
-                                ),
+                                const SizedBox(height: 14),
+                                _buildJourneyStrip(theme),
                               ],
                             ),
                           ),
@@ -684,6 +1056,369 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                     ],
                   );
                 },
+              ),
+            ),
+            const SizedBox(height: 14),
+            ExecutiveGlassCard(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Evolution API y webhook',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Toda la configuración específica del canal vive aquí: servidor Evolution, clave, webhook y comportamiento de WhatsApp.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.68),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          color:
+                              theme.colorScheme.primary.withValues(alpha: 0.12),
+                        ),
+                        child: Text(
+                          'Dentro de Canales',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_providerMessage != null) ...[
+                    const SizedBox(height: 14),
+                    _buildProviderBanner(theme),
+                  ],
+                  if (_loadingProviderSettings) ...[
+                    const SizedBox(height: 14),
+                    const LinearProgressIndicator(),
+                  ],
+                  const SizedBox(height: 16),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 980;
+
+                      return Wrap(
+                        spacing: 14,
+                        runSpacing: 14,
+                        children: [
+                          SizedBox(
+                            width: compact
+                                ? constraints.maxWidth
+                                : (constraints.maxWidth - 14) * 0.48,
+                            child: Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                color: theme.colorScheme.surface
+                                    .withValues(alpha: 0.10),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: 0.48),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Conexión del proveedor',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Estos datos controlan la conexión con Evolution y el webhook principal del canal.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.66),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _buildConfigField(
+                                    controller: _evolutionUrlController,
+                                    label: 'URL de Evolution API',
+                                    hint: 'https://evolution.example.com',
+                                    enabled: !_isSavingProviderSettings &&
+                                        !_loadingProviderSettings,
+                                  ),
+                                  _buildConfigField(
+                                    controller: _evolutionKeyController,
+                                    label: 'Clave de Evolution API',
+                                    hint: 'evo_…',
+                                    obscure: true,
+                                    enabled: !_isSavingProviderSettings &&
+                                        !_loadingProviderSettings,
+                                  ),
+                                  _buildConfigField(
+                                    controller: _webhookUrlController,
+                                    label: 'URL del webhook',
+                                    hint: 'https://midominio.com/webhook',
+                                    enabled: !_isSavingProviderSettings &&
+                                        !_loadingProviderSettings,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: [
+                                      FilledButton.icon(
+                                        onPressed: _isSavingProviderSettings ||
+                                                _loadingProviderSettings
+                                            ? null
+                                            : _saveProviderSettings,
+                                        icon: _isSavingProviderSettings
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              )
+                                            : const Icon(Icons.save_rounded),
+                                        label: Text(_isSavingProviderSettings
+                                            ? 'Guardando...'
+                                            : 'Guardar configuración'),
+                                      ),
+                                      OutlinedButton.icon(
+                                        onPressed:
+                                            _isTestingProviderConnection ||
+                                                    _loadingProviderSettings
+                                                ? null
+                                                : _testEvolutionConnection,
+                                        icon: const Icon(Icons.bolt_rounded),
+                                        label: Text(_isTestingProviderConnection
+                                            ? 'Probando...'
+                                            : 'Probar conexión'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: compact
+                                ? constraints.maxWidth
+                                : (constraints.maxWidth - 14) * 0.52,
+                            child: Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                color: theme.colorScheme.surface
+                                    .withValues(alpha: 0.10),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: 0.48),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Comportamiento de WhatsApp',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Mantén solo lo necesario para el cliente. Todo lo específico del canal se administra desde aquí.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.66),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _TwoColumnSwitchGrid(
+                                    left: [
+                                      _ConfigSwitchTile(
+                                        title:
+                                            'Aplicar webhook automáticamente',
+                                        subtitle:
+                                            'Vuelve a configurar el webhook al crear o recrear la instancia.',
+                                        value: _autoApplyWebhook,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(
+                                          () => _autoApplyWebhook = value,
+                                        ),
+                                      ),
+                                      _ConfigSwitchTile(
+                                        title: 'Seguir eventos de conexión',
+                                        subtitle:
+                                            'Actualiza el estado del canal cuando se conecta o desconecta.',
+                                        value: _trackConnectionEvents,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(
+                                          () => _trackConnectionEvents = value,
+                                        ),
+                                      ),
+                                      _ConfigSwitchTile(
+                                        title: 'Seguir eventos de QR',
+                                        subtitle:
+                                            'Permite refrescar el QR desde Evolution cuando cambia.',
+                                        value: _trackQrEvents,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(
+                                          () => _trackQrEvents = value,
+                                        ),
+                                      ),
+                                      _ConfigSwitchTile(
+                                        title: 'Seguir eventos de mensajes',
+                                        subtitle:
+                                            'Habilita el procesamiento de messages.upsert.',
+                                        value: _trackMessageEvents,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(
+                                          () => _trackMessageEvents = value,
+                                        ),
+                                      ),
+                                    ],
+                                    right: [
+                                      _ConfigSwitchTile(
+                                        title: 'Recibir texto',
+                                        subtitle:
+                                            'Mensajes normales y textos extendidos.',
+                                        value: _receiveTextMessages,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(
+                                          () => _receiveTextMessages = value,
+                                        ),
+                                      ),
+                                      _ConfigSwitchTile(
+                                        title: 'Recibir audio',
+                                        subtitle:
+                                            'Audios y notas de voz reportadas por Evolution.',
+                                        value: _receiveAudioMessages,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(
+                                          () => _receiveAudioMessages = value,
+                                        ),
+                                      ),
+                                      _ConfigSwitchTile(
+                                        title: 'Recibir imágenes y videos',
+                                        subtitle:
+                                            'Adjuntos visuales con caption cuando exista.',
+                                        value: _receiveImageMessages &&
+                                            _receiveVideoMessages,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(() {
+                                          _receiveImageMessages = value;
+                                          _receiveVideoMessages = value;
+                                        }),
+                                      ),
+                                      _ConfigSwitchTile(
+                                        title: 'Recibir documentos',
+                                        subtitle:
+                                            'Documentos y otros adjuntos de archivo.',
+                                        value: _receiveDocumentMessages,
+                                        enabled: !_isSavingProviderSettings &&
+                                            !_loadingProviderSettings,
+                                        onChanged: (value) => setState(
+                                          () =>
+                                              _receiveDocumentMessages = value,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _ConfigSwitchTile(
+                                    title: 'Guardar metadatos multimedia',
+                                    subtitle:
+                                        'Conserva mimetype, caption, duración y datos relevantes del mensaje.',
+                                    value: _persistMediaMetadata,
+                                    enabled: !_isSavingProviderSettings &&
+                                        !_loadingProviderSettings,
+                                    onChanged: (value) => setState(
+                                      () => _persistMediaMetadata = value,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  DropdownButtonFormField<String>(
+                                    value: _callHandlingMode,
+                                    decoration: const InputDecoration(
+                                      labelText:
+                                          'Política de llamadas entrantes',
+                                      helperText:
+                                          'Define si las llamadas se ignoran, solo se registran o se marcan para rechazo.',
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'ignore',
+                                        child: Text('Ignorar llamadas'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'notify',
+                                        child: Text('Registrar llamada'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'reject_if_supported',
+                                        child: Text(
+                                            'Rechazar si el proveedor lo permite'),
+                                      ),
+                                    ],
+                                    onChanged: (_isSavingProviderSettings ||
+                                            _loadingProviderSettings)
+                                        ? null
+                                        : (value) {
+                                            if (value == null) {
+                                              return;
+                                            }
+                                            setState(() {
+                                              _callHandlingMode = value;
+                                            });
+                                          },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _buildConfigField(
+                                    controller: _rejectedCallReplyController,
+                                    label:
+                                        'Mensaje sugerido al rechazar llamada',
+                                    hint:
+                                        'Ahora mismo no atendemos llamadas. Escríbenos por mensaje.',
+                                    enabled: !_isSavingProviderSettings &&
+                                        !_loadingProviderSettings,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 14),
@@ -705,7 +1440,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Configuración de instancia',
+                              'Configuración sencilla',
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w900,
@@ -713,7 +1448,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Define o actualiza el identificador técnico que usará Evolution API para este canal.',
+                              'Usa un nombre fácil de reconocer para la cuenta. El resto del proceso será guiado paso a paso.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurface
                                     .withValues(alpha: 0.68),
@@ -753,14 +1488,16 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           _isMutatingInstance)
                                       ? null
                                       : _createInstance,
-                                  icon: const Icon(Icons.add_circle_outline),
+                                  icon: const Icon(Icons.play_circle_outline),
                                   label: Text(
                                     _status ==
                                                 WhatsappChannelUiStatus
                                                     .creating ||
                                             _isMutatingInstance
-                                        ? 'Creando instancia...'
-                                        : 'Crear instancia',
+                                        ? 'Preparando...'
+                                        : _activeInstanceName == null
+                                            ? 'Crear y continuar'
+                                            : 'Guardar cambios',
                                   ),
                                 ),
                                 OutlinedButton.icon(
@@ -825,6 +1562,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Expanded(
                                         child: Column(
@@ -832,7 +1571,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'QR para vincular WhatsApp',
+                                              'Escanea el QR para conectar',
                                               style: theme.textTheme.titleMedium
                                                   ?.copyWith(
                                                 fontSize: 15,
@@ -841,7 +1580,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                             ),
                                             const SizedBox(height: 8),
                                             Text(
-                                              'Abre WhatsApp en tu teléfono, entra en Dispositivos vinculados y escanea el código para completar la conexión.',
+                                              'Abre WhatsApp en tu teléfono, entra en Dispositivos vinculados y escanea el código. Cuando termine, el estado cambiará automáticamente.',
                                               style: theme.textTheme.bodySmall
                                                   ?.copyWith(
                                                 color: theme
@@ -879,15 +1618,17 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                     ],
                                   ),
                                   const SizedBox(height: 20),
+                                  _buildSupportHint(theme),
+                                  const SizedBox(height: 18),
                                   Center(
                                     child: AnimatedContainer(
                                       duration:
                                           const Duration(milliseconds: 220),
-                                      width: 292,
-                                      height: 292,
-                                      padding: const EdgeInsets.all(16),
+                                      width: compact ? 330 : 430,
+                                      height: compact ? 330 : 430,
+                                      padding: const EdgeInsets.all(20),
                                       decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(24),
+                                        borderRadius: BorderRadius.circular(30),
                                         gradient: LinearGradient(
                                           begin: Alignment.topLeft,
                                           end: Alignment.bottomRight,
@@ -909,8 +1650,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           BoxShadow(
                                             color: theme.colorScheme.primary
                                                 .withValues(alpha: 0.10),
-                                            blurRadius: 26,
-                                            offset: const Offset(0, 16),
+                                            blurRadius: 32,
+                                            offset: const Offset(0, 20),
                                           ),
                                         ],
                                       ),
@@ -958,17 +1699,44 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                               decoration: BoxDecoration(
                                                 color: Colors.white,
                                                 borderRadius:
-                                                    BorderRadius.circular(18),
+                                                    BorderRadius.circular(22),
                                               ),
                                               child: Padding(
                                                 padding:
-                                                    const EdgeInsets.all(10),
+                                                    const EdgeInsets.all(16),
                                                 child: Image.memory(qrBytes,
                                                     fit: BoxFit.contain),
                                               ),
                                             ),
                                     ),
                                   ),
+                                  if (qrBytes != null) ...[
+                                    const SizedBox(height: 18),
+                                    Center(
+                                      child: Wrap(
+                                        spacing: 10,
+                                        runSpacing: 10,
+                                        alignment: WrapAlignment.center,
+                                        children: [
+                                          FilledButton.icon(
+                                            onPressed: () =>
+                                                _showLargeQr(qrBytes),
+                                            icon:
+                                                const Icon(Icons.zoom_out_map),
+                                            label: const Text('Ver QR grande'),
+                                          ),
+                                          OutlinedButton.icon(
+                                            onPressed: _isMutatingInstance
+                                                ? null
+                                                : _fetchQr,
+                                            icon: const Icon(
+                                                Icons.refresh_rounded),
+                                            label: const Text('Actualizar QR'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             )
@@ -1085,14 +1853,14 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   ),
                                   const SizedBox(height: 14),
                                   Text(
-                                    'Opciones de la instancia',
+                                    'Qué puedes hacer ahora',
                                     style: theme.textTheme.bodyMedium?.copyWith(
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    'Puedes actualizar el estado de conexión, aplicar el webhook guardado en Configuración > Claves API, desconectar la instancia para volver a vincularla o eliminarla. Para cambiar su nombre técnico, primero debes desconectarla.',
+                                    'Puedes actualizar el estado, volver a aplicar el webhook guardado en Configuración > Claves API o desconectar la cuenta si necesitas escanear un nuevo QR.',
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: theme.colorScheme.onSurface
                                           .withValues(alpha: 0.68),
@@ -1187,11 +1955,70 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     );
   }
 
+  Widget _buildProviderBanner(ThemeData theme) {
+    final accent = _providerMessageIsError
+        ? const Color(0xFFEF4444)
+        : const Color(0xFF22C55E);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: accent.withValues(alpha: 0.10),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _providerMessageIsError
+                ? Icons.error_outline_rounded
+                : Icons.check_circle_outline,
+            color: accent,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _providerMessage ?? '',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.84),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConfigField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    bool obscure = false,
+    required bool enabled,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        enabled: enabled,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+        ),
+      ),
+    );
+  }
+
   Widget _buildChecklist(ThemeData theme) {
     final steps = <String>[
-      'Crea una instancia con un nombre fácil de reconocer.',
-      'Genera o actualiza el QR si aún no aparece.',
-      'Escanea el código desde WhatsApp en tu teléfono.',
+      'Escribe un nombre simple para la instancia, por ejemplo tienda_principal.',
+      'Espera a que aparezca el QR en pantalla.',
+      'Escanea el código desde WhatsApp y deja que el sistema confirme la conexión.',
     ];
 
     return Column(
@@ -1239,6 +2066,163 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildJourneyStrip(ThemeData theme) {
+    final steps = [
+      _JourneyStep(
+        title: '1. Crear',
+        description: 'Registrar la cuenta',
+        isActive: _status == WhatsappChannelUiStatus.notConfigured ||
+            _status == WhatsappChannelUiStatus.creating,
+        isDone: _activeInstanceName != null,
+      ),
+      _JourneyStep(
+        title: '2. Escanear QR',
+        description: 'Vincular el teléfono',
+        isActive: _status == WhatsappChannelUiStatus.waitingScan,
+        isDone: _status == WhatsappChannelUiStatus.connected,
+      ),
+      _JourneyStep(
+        title: '3. Operar',
+        description: 'Canal listo',
+        isActive: _status == WhatsappChannelUiStatus.connected,
+        isDone: _status == WhatsappChannelUiStatus.connected,
+      ),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: theme.colorScheme.surface.withValues(alpha: 0.10),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.44),
+        ),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: steps
+            .map((step) => _buildJourneyItem(theme: theme, step: step))
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  Widget _buildJourneyItem({
+    required ThemeData theme,
+    required _JourneyStep step,
+  }) {
+    final accent = step.isDone
+        ? const Color(0xFF22C55E)
+        : step.isActive
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurface.withValues(alpha: 0.36);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 170, maxWidth: 210),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: accent.withValues(
+              alpha: step.isActive || step.isDone ? 0.12 : 0.06),
+          border: Border.all(
+            color: accent.withValues(alpha: 0.24),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              step.isDone
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_checked_rounded,
+              size: 18,
+              color: accent,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              step.title,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              step.description,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSupportHint(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: theme.colorScheme.primary.withValues(alpha: 0.08),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.smartphone_rounded,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Consejo: si el cliente está lejos de la pantalla, usa “Ver QR grande” para mostrarlo mucho más grande y facilitar el escaneo.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.74),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ({String title, String description}) _nextActionCopy() {
+    return switch (_status) {
+      WhatsappChannelUiStatus.notConfigured => (
+          title: 'Crear la instancia',
+          description: 'Escribe un nombre simple y pulsa “Crear y continuar”.',
+        ),
+      WhatsappChannelUiStatus.creating => (
+          title: 'Esperar la preparación',
+          description:
+              'En unos segundos se generará el QR para vincular el teléfono.',
+        ),
+      WhatsappChannelUiStatus.waitingScan => (
+          title: 'Escanear el código QR',
+          description:
+              'Usa WhatsApp > Dispositivos vinculados y escanea el código grande de la derecha.',
+        ),
+      WhatsappChannelUiStatus.connected => (
+          title: 'Operar normalmente',
+          description: 'El canal ya está listo para recibir y enviar mensajes.',
+        ),
+      WhatsappChannelUiStatus.disconnected => (
+          title: 'Reconectar la cuenta',
+          description:
+              'Actualiza el estado o desconecta para generar un nuevo QR.',
+        ),
+    };
   }
 
   Color _statusColor(ThemeData theme) {
@@ -1313,6 +2297,136 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         style: theme.textTheme.bodySmall?.copyWith(
           color: color,
           fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _JourneyStep {
+  const _JourneyStep({
+    required this.title,
+    required this.description,
+    required this.isActive,
+    required this.isDone,
+  });
+
+  final String title;
+  final String description;
+  final bool isActive;
+  final bool isDone;
+}
+
+Map<String, dynamic> _asMap(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+
+  if (value is Map) {
+    return value.map(
+      (key, nestedValue) => MapEntry(key.toString(), nestedValue),
+    );
+  }
+
+  return const <String, dynamic>{};
+}
+
+String _readString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  return value is String ? value : '';
+}
+
+bool _readBool(Map<String, dynamic> json, String key, bool fallback) {
+  final value = json[key];
+  return value is bool ? value : fallback;
+}
+
+class _TwoColumnSwitchGrid extends StatelessWidget {
+  const _TwoColumnSwitchGrid({
+    required this.left,
+    required this.right,
+  });
+
+  final List<Widget> left;
+  final List<Widget> right;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final singleColumn = constraints.maxWidth < 860;
+
+        if (singleColumn) {
+          return Column(
+            children: [
+              ...left,
+              const SizedBox(height: 6),
+              ...right,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: Column(children: left)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(children: right)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ConfigSwitchTile extends StatelessWidget {
+  const _ConfigSwitchTile({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+    required this.enabled,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+          ),
+          color: theme.colorScheme.surface.withValues(alpha: 0.22),
+        ),
+        child: SwitchListTile.adaptive(
+          value: value,
+          onChanged: enabled ? onChanged : null,
+          title: Text(
+            title,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+            ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 4,
+          ),
         ),
       ),
     );

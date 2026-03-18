@@ -14,7 +14,8 @@ class PromptEditorScreen extends StatefulWidget {
 
 class _PromptEditorScreenState extends State<PromptEditorScreen> {
   final _controller = TextEditingController(
-    text: 'Eres un asistente de nivel empresarial para una plataforma de mensajería multi-tenant.\n\n- Sé conciso\n- Haz preguntas de aclaración cuando sea necesario\n- Sigue la política de la empresa\n',
+    text:
+        'Eres un asistente de nivel empresarial para una plataforma de mensajería multi-tenant.\n\n- Sé conciso\n- Haz preguntas de aclaración cuando sea necesario\n- Sigue la política de la empresa\n',
   );
 
   final _testInputController = TextEditingController(
@@ -42,11 +43,9 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
     if (!mounted) return;
 
     final prompt = _controller.text.trim();
-    final input = _testInputController.text.trim();
-
     final safePromptHint = prompt.isEmpty
-      ? 'No hay un prompt configurado.'
-      : 'Prompt cargado (${prompt.length} caracteres).';
+        ? 'No hay un prompt configurado.'
+        : 'Prompt cargado (${prompt.length} caracteres).';
 
     setState(() {
       _isTesting = false;
@@ -59,13 +58,15 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
     final content = _controller.text;
     if (content.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El prompt está vacío. No hay nada que guardar.')),
+        const SnackBar(
+            content: Text('El prompt está vacío. No hay nada que guardar.')),
       );
       return;
     }
 
     setState(() {
-      _versions.insert(0, _PromptVersion(createdAt: DateTime.now(), content: content));
+      _versions.insert(
+          0, _PromptVersion(createdAt: DateTime.now(), content: content));
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -81,12 +82,14 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: theme.colorScheme.surface.withValues(alpha: 0.92),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-              title: const Text('Historial de versiones'),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          title: const Text('Historial de versiones'),
           content: SizedBox(
             width: 640,
             child: _versions.isEmpty
-                ? const Text('Aún no hay versiones. Presiona Guardar para crear una.')
+                ? const Text(
+                    'Aún no hay versiones. Presiona Guardar para crear una.')
                 : ListView.separated(
                     shrinkWrap: true,
                     itemCount: _versions.length,
@@ -195,7 +198,8 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
                           child: Text(
                             'Tip: mantén los prompts aislados por tenant y evita filtrar datos privados entre empresas.',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.64),
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.64),
                             ),
                           ),
                         ),
@@ -228,9 +232,11 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
                       borderRadius: BorderRadius.circular(16),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.surface.withValues(alpha: 0.20),
+                          color:
+                              theme.colorScheme.surface.withValues(alpha: 0.20),
                           border: Border.all(
-                            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.65),
+                            color: theme.colorScheme.outlineVariant
+                                .withValues(alpha: 0.65),
                           ),
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -285,14 +291,16 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
                         FilledButton.icon(
                           onPressed: _isTesting ? null : _runTest,
                           icon: const Icon(Icons.play_arrow_rounded),
-                          label: Text(_isTesting ? 'Ejecutando…' : 'Ejecutar prueba'),
+                          label: Text(
+                              _isTesting ? 'Ejecutando…' : 'Ejecutar prueba'),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             'Esto es una simulación solo de UI. Conecta tu runtime para ejecutar llamadas reales al proveedor.',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.62),
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.62),
                             ),
                           ),
                         ),
@@ -304,9 +312,11 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
                         borderRadius: BorderRadius.circular(16),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: theme.colorScheme.surface.withValues(alpha: 0.16),
+                            color: theme.colorScheme.surface
+                                .withValues(alpha: 0.16),
                             border: Border.all(
-                              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.65),
+                              color: theme.colorScheme.outlineVariant
+                                  .withValues(alpha: 0.65),
                             ),
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -314,7 +324,8 @@ class _PromptEditorScreenState extends State<PromptEditorScreen> {
                             padding: const EdgeInsets.all(12),
                             child: Text(
                               _testOutput!,
-                              style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+                              style: theme.textTheme.bodyMedium
+                                  ?.copyWith(height: 1.45),
                             ),
                           ),
                         ),
