@@ -129,6 +129,7 @@ export interface SendTestMessageResponse {
   message: string;
   dispatchedAt: string;
   status: 'accepted';
+  outboundMessage?: BotMessageResponse;
 }
 
 export interface BotCenterConversationRecord {

@@ -435,11 +435,16 @@ export class BotCenterService {
     const conversation = memoryTarget?.chat ?? await this.getConversationOrThrow(companyId, payload.conversationId);
     const dispatchedAt = new Date().toISOString();
 
-    await this.whatsappMessagingService.sendText(companyId, {
+    const outboundDispatch = await this.whatsappMessagingService.sendText(companyId, {
       channelConfigId: conversation.channelConfigId,
       remoteJid: conversation.remoteJid,
       text: payload.message,
     });
+
+    const outboundMessageId = this.readString(this.readMap(outboundDispatch['message'])['id']);
+    const persistedOutbound = outboundMessageId
+      ? await this.messagesRepository.findOne({ where: { id: outboundMessageId, companyId } })
+      : null;
 
     if (memoryTarget) {
       await this.memoryService.appendConversationMemory({
@@ -473,6 +478,7 @@ export class BotCenterService {
       message: 'Mensaje enviado correctamente por el canal de WhatsApp.',
       dispatchedAt,
       status: 'accepted',
+      ...(persistedOutbound ? { outboundMessage: this.toBotMessage(persistedOutbound) } : {}),
     };
   }
 

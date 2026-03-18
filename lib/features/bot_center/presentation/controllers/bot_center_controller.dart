@@ -264,7 +264,9 @@ class BotCenterController extends ChangeNotifier {
         _repository.getMemory(conversationId),
       ]);
 
-      _messagesByConversation[conversationId] = results[0] as List<BotMessage>;
+      final fetchedMessages = results[0] as List<BotMessage>;
+      _messagesByConversation[conversationId] =
+          _mergeOptimisticMessages(conversationId, fetchedMessages);
       _contactsByConversation[conversationId] = results[1] as BotContactContext;
       _memoryByConversation[conversationId] = results[2] as List<BotMemoryItem>;
     } catch (error) {
@@ -477,6 +479,12 @@ class BotCenterController extends ChangeNotifier {
         message: text,
       );
 
+      _updateMessageState(
+        conversationId: conversationId,
+        messageId: optimisticMessage.id,
+        state: BotMessageState.sent,
+      );
+
       await selectConversation(conversationId, forceReload: true);
       await _reloadGlobalLists();
       _actionMessage = responseMessage;
@@ -519,6 +527,32 @@ class BotCenterController extends ChangeNotifier {
     }
 
     messages.removeWhere((message) => message.id == messageId);
+  }
+
+  void _updateMessageState({
+    required String conversationId,
+    required String messageId,
+    required BotMessageState state,
+  }) {
+    final messages = _messagesByConversation[conversationId];
+    if (messages == null) {
+      return;
+    }
+
+    for (var index = 0; index < messages.length; index++) {
+      final message = messages[index];
+      if (message.id == messageId) {
+        messages[index] = BotMessage(
+          id: message.id,
+          conversationId: message.conversationId,
+          author: message.author,
+          body: message.body,
+          timestamp: message.timestamp,
+          state: state,
+        );
+        return;
+      }
+    }
   }
 
   void clearActionMessage() {
@@ -575,8 +609,10 @@ class BotCenterController extends ChangeNotifier {
     final selectedConversationData = overview.selectedConversationData;
     if (selectedConversationData != null) {
       _selectedConversationId = selectedConversationData.conversation.id;
-      _messagesByConversation[_selectedConversationId] =
-          selectedConversationData.messages;
+      _messagesByConversation[_selectedConversationId] = _mergeOptimisticMessages(
+        _selectedConversationId,
+        selectedConversationData.messages,
+      );
       _contactsByConversation[_selectedConversationId] =
           selectedConversationData.contact;
       _memoryByConversation[_selectedConversationId] =
@@ -675,8 +711,9 @@ class BotCenterController extends ChangeNotifier {
         ]);
 
         _selectedConversationId = nextSelectedConversationId;
+        final refreshedMessages = conversationResults[0] as List<BotMessage>;
         _messagesByConversation[nextSelectedConversationId] =
-            conversationResults[0] as List<BotMessage>;
+            _mergeOptimisticMessages(nextSelectedConversationId, refreshedMessages);
         _contactsByConversation[nextSelectedConversationId] =
             conversationResults[1] as BotContactContext;
         _memoryByConversation[nextSelectedConversationId] =
@@ -711,6 +748,48 @@ class BotCenterController extends ChangeNotifier {
     }
 
     return conversations.first.id;
+  }
+
+  List<BotMessage> _mergeOptimisticMessages(
+    String conversationId,
+    List<BotMessage> fetched,
+  ) {
+    final existing = _messagesByConversation[conversationId] ?? const <BotMessage>[];
+    final optimistic = existing
+        .where(
+          (message) =>
+              message.author == BotMessageAuthor.operator &&
+              (message.state == BotMessageState.queued ||
+                  message.id.startsWith('local-outbound-')),
+        )
+        .toList(growable: false);
+
+    if (optimistic.isEmpty) {
+      return fetched;
+    }
+
+    final merged = <BotMessage>[...fetched];
+
+    for (final optimisticMessage in optimistic) {
+      final alreadyPresent = fetched.any((remoteMessage) {
+        if (remoteMessage.author != BotMessageAuthor.operator) {
+          return false;
+        }
+        if (remoteMessage.body.trim() != optimisticMessage.body.trim()) {
+          return false;
+        }
+        final deltaSeconds =
+            remoteMessage.timestamp.difference(optimisticMessage.timestamp).inSeconds.abs();
+        return deltaSeconds <= 120;
+      });
+
+      if (!alreadyPresent) {
+        merged.add(optimisticMessage);
+      }
+    }
+
+    merged.sort((left, right) => left.timestamp.compareTo(right.timestamp));
+    return merged;
   }
 
   @override
