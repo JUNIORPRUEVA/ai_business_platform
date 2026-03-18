@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../../core/config/app_backend_config.dart';
@@ -42,8 +43,11 @@ class BotCenterApiClient {
     Map<String, String>? queryParameters,
   }) async {
     final headers = await _headers();
+    final uri = _buildUri(path, queryParameters);
     final response = await _send(
-      () => _client.get(_buildUri(path, queryParameters), headers: headers),
+      () => _client.get(uri, headers: headers),
+      method: 'GET',
+      uri: uri,
     );
     return _decodeObject(response.body);
   }
@@ -53,8 +57,11 @@ class BotCenterApiClient {
     Map<String, String>? queryParameters,
   }) async {
     final headers = await _headers();
+    final uri = _buildUri(path, queryParameters);
     final response = await _send(
-      () => _client.get(_buildUri(path, queryParameters), headers: headers),
+      () => _client.get(uri, headers: headers),
+      method: 'GET',
+      uri: uri,
     );
     return _decodeList(response.body);
   }
@@ -62,12 +69,15 @@ class BotCenterApiClient {
   Future<Map<String, dynamic>> putJson(
       String path, Map<String, dynamic> body) async {
     final headers = await _headers();
+    final uri = _buildUri(path);
     final response = await _send(
       () => _client.put(
-        _buildUri(path),
+        uri,
         headers: headers,
         body: jsonEncode(body),
       ),
+      method: 'PUT',
+      uri: uri,
     );
     return _decodeObject(response.body);
   }
@@ -75,12 +85,15 @@ class BotCenterApiClient {
   Future<Map<String, dynamic>> postJson(
       String path, Map<String, dynamic> body) async {
     final headers = await _headers();
+    final uri = _buildUri(path);
     final response = await _send(
       () => _client.post(
-        _buildUri(path),
+        uri,
         headers: headers,
         body: jsonEncode(body),
       ),
+      method: 'POST',
+      uri: uri,
     );
     return _decodeObject(response.body);
   }
@@ -88,23 +101,29 @@ class BotCenterApiClient {
   Future<Map<String, dynamic>> patchJson(
       String path, Map<String, dynamic> body) async {
     final headers = await _headers();
+    final uri = _buildUri(path);
     final response = await _send(
       () => _client.patch(
-        _buildUri(path),
+        uri,
         headers: headers,
         body: jsonEncode(body),
       ),
+      method: 'PATCH',
+      uri: uri,
     );
     return _decodeObject(response.body);
   }
 
   Future<Map<String, dynamic>> deleteJson(String path) async {
     final headers = await _headers();
+    final uri = _buildUri(path);
     final response = await _send(
       () => _client.delete(
-        _buildUri(path),
+        uri,
         headers: headers,
       ),
+      method: 'DELETE',
+      uri: uri,
     );
     return _decodeObject(response.body);
   }
@@ -133,9 +152,21 @@ class BotCenterApiClient {
         .replace(queryParameters: queryParameters);
   }
 
-  Future<http.Response> _send(Future<http.Response> Function() request) async {
+  Future<http.Response> _send(
+    Future<http.Response> Function() request, {
+    required String method,
+    required Uri uri,
+  }) async {
     try {
+      if (kDebugMode) {
+        debugPrint('[BOT_CENTER_HTTP] request method=$method url=$uri');
+      }
       final response = await request().timeout(_timeout);
+
+      if (kDebugMode) {
+        debugPrint(
+            '[BOT_CENTER_HTTP] response method=$method url=$uri status=${response.statusCode}');
+      }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw BotCenterApiException(

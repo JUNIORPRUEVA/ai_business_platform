@@ -458,6 +458,8 @@ class BotCenterController extends ChangeNotifier {
     }
 
     final conversationId = _selectedConversationId;
+    debugPrint(
+        '[BOT_CENTER_UI] sendDraftMessage conversationId=$conversationId length=${text.length}');
     final optimisticMessage = BotMessage(
       id: 'local-outbound-${DateTime.now().microsecondsSinceEpoch}',
       conversationId: conversationId,
@@ -479,6 +481,8 @@ class BotCenterController extends ChangeNotifier {
         message: text,
       );
 
+      debugPrint('[BOT_CENTER_UI] sendDraftMessage accepted');
+
       _updateMessageState(
         conversationId: conversationId,
         messageId: optimisticMessage.id,
@@ -489,6 +493,7 @@ class BotCenterController extends ChangeNotifier {
       await _reloadGlobalLists();
       _actionMessage = responseMessage;
     } catch (error) {
+      debugPrint('[BOT_CENTER_UI] sendDraftMessage failed error=$error');
       // Keep the optimistic message visible so it does not “disappear”.
       messageComposerController
         ..text = text
