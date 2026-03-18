@@ -425,10 +425,10 @@ export class WhatsappInstancesService {
       return;
     }
 
-    const instanceWebhookUrl = this.evolutionService.buildInstanceWebhookUrl();
-    const events = this.buildWebhookEvents();
-
     try {
+      const instanceWebhookUrl = this.evolutionService.buildInstanceWebhookUrl();
+      const events = this.buildWebhookEvents();
+
       await this.evolutionService.setWebhook({
         instanceName,
         url: instanceWebhookUrl,
