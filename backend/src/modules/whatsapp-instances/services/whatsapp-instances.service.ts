@@ -210,6 +210,61 @@ export class WhatsappInstancesService {
     return { ok: true, webhookUrl, events: webhookEvents };
   }
 
+  async getWebhookStatus(
+    tenantId: string,
+    instanceName: string,
+  ): Promise<{
+    instanceName: string;
+    expectedWebhookUrl: string;
+    expectedEvents: string[];
+    remoteWebhookUrl: string;
+    remoteEvents: string[];
+    isConfigured: boolean;
+    matchesExpected: boolean;
+    remote: Record<string, unknown> | null;
+    error: string | null;
+  }> {
+    const entity = await this.getByInstanceName(tenantId, instanceName);
+    const expectedWebhookUrl = this.evolutionService.buildInstanceWebhookUrl();
+    const expectedEvents = await this.getConfiguredWebhookEvents();
+
+    try {
+      const remote = await this.evolutionService.findWebhook(entity.instanceName);
+      const remoteWebhookUrl =
+        this.readStringFromMap(remote, 'url') ||
+        this.readStringFromMap(remote, 'webhookUrl');
+      const remoteEvents = this.readStringArrayFromMap(remote, 'events');
+      const matchesExpectedUrl = remoteWebhookUrl === expectedWebhookUrl;
+      const matchesExpectedEvents =
+        remoteEvents.length > 0 &&
+        expectedEvents.every((event) => remoteEvents.includes(event));
+
+      return {
+        instanceName: entity.instanceName,
+        expectedWebhookUrl,
+        expectedEvents,
+        remoteWebhookUrl,
+        remoteEvents,
+        isConfigured: remoteWebhookUrl.length > 0,
+        matchesExpected: matchesExpectedUrl && matchesExpectedEvents,
+        remote,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        instanceName: entity.instanceName,
+        expectedWebhookUrl,
+        expectedEvents,
+        remoteWebhookUrl: '',
+        remoteEvents: [],
+        isConfigured: false,
+        matchesExpected: false,
+        remote: null,
+        error: error instanceof Error ? error.message : 'No se pudo consultar el webhook en Evolution.',
+      };
+    }
+  }
+
   async applyWebhook(payload: {
     event?: string;
     instance?: string;
@@ -441,6 +496,25 @@ export class WhatsappInstancesService {
 
   private readBoolean(value: unknown, fallback: boolean): boolean {
     return typeof value === 'boolean' ? value : fallback;
+  }
+
+  private readStringFromMap(source: Record<string, unknown>, key: string): string {
+    return this.readString(source[key]);
+  }
+
+  private readStringArrayFromMap(
+    source: Record<string, unknown>,
+    key: string,
+  ): string[] {
+    const value = source[key];
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
   }
 
   private extractPhoneNumber(data: Record<string, unknown>): string | null {

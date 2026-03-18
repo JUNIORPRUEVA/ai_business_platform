@@ -78,4 +78,10 @@ export class WhatsappInstancesController {
   configureWebhook(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
     return this.whatsappInstancesService.configureWebhook(user.companyId, params.instance);
   }
+
+  @Roles('admin', 'operator', 'viewer')
+  @Get('instances/:instance/webhook')
+  getWebhookStatus(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
+    return this.whatsappInstancesService.getWebhookStatus(user.companyId, params.instance);
+  }
 }

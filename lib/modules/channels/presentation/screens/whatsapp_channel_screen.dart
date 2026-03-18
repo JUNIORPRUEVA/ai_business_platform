@@ -42,13 +42,16 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   String? _fieldError;
   String? _requestError;
   String? _providerMessage;
+  String? _webhookStatusMessage;
   Timer? _pollTimer;
   bool _loadingExisting = true;
   bool _loadingProviderSettings = true;
   bool _isMutatingInstance = false;
   bool _isSavingProviderSettings = false;
   bool _isTestingProviderConnection = false;
+  bool _isCheckingWebhookStatus = false;
   bool _providerMessageIsError = false;
+  bool _webhookStatusIsError = false;
 
   bool get _showAdvancedProviderPanel => kDebugMode;
 
@@ -228,6 +231,76 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       }
       setState(() {
         _isTestingProviderConnection = false;
+      });
+    }
+  }
+
+  Future<void> _checkWebhookStatus() async {
+    final currentName = _activeInstanceName?.trim();
+    if (currentName == null || currentName.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isCheckingWebhookStatus = true;
+      _webhookStatusMessage = null;
+    });
+
+    try {
+      final token = await _requireToken();
+      final response = await _api.getWebhookStatus(
+        token: token,
+        instanceName: currentName,
+      );
+
+      final matchesExpected = response['matchesExpected'] == true;
+      final isConfigured = response['isConfigured'] == true;
+      final remoteWebhookUrl =
+          (response['remoteWebhookUrl'] as String? ?? '').trim();
+      final error = (response['error'] as String? ?? '').trim();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _webhookStatusIsError = !matchesExpected;
+        if (matchesExpected) {
+          _webhookStatusMessage =
+              'Webhook conectado correctamente en Evolution.';
+        } else if (error.isNotEmpty) {
+          _webhookStatusMessage = error;
+        } else if (!isConfigured) {
+          _webhookStatusMessage =
+              'Evolution no tiene un webhook configurado para esta instancia.';
+        } else {
+          _webhookStatusMessage = remoteWebhookUrl.isEmpty
+              ? 'El webhook no coincide con la configuración esperada.'
+              : 'Webhook detectado en Evolution, pero apunta a una URL distinta: $remoteWebhookUrl';
+        }
+      });
+    } on WhatsappInstancesApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _webhookStatusIsError = true;
+        _webhookStatusMessage = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _webhookStatusIsError = true;
+        _webhookStatusMessage = error.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isCheckingWebhookStatus = false;
       });
     }
   }
@@ -1359,8 +1432,30 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       const Icon(Icons.delete_outline_rounded),
                                   label: const Text('Eliminar'),
                                 ),
+                                OutlinedButton.icon(
+                                  onPressed: (_activeInstanceName == null ||
+                                          _isCheckingWebhookStatus)
+                                      ? null
+                                      : _checkWebhookStatus,
+                                  icon: _isCheckingWebhookStatus
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.verified_user_rounded),
+                                  label: Text(_isCheckingWebhookStatus
+                                      ? 'Verificando...'
+                                      : 'Verificar webhook'),
+                                ),
                               ],
                             ),
+                            if (_webhookStatusMessage != null) ...[
+                              const SizedBox(height: 14),
+                              _buildWebhookStatusBanner(theme),
+                            ],
                             const SizedBox(height: 18),
                             _buildChecklist(theme),
                           ],
@@ -1588,8 +1683,30 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                             Icons.delete_outline_rounded),
                                         label: const Text('Eliminar'),
                                       ),
+                                      OutlinedButton.icon(
+                                        onPressed: _isCheckingWebhookStatus
+                                            ? null
+                                            : _checkWebhookStatus,
+                                        icon: _isCheckingWebhookStatus
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.verified_user_rounded),
+                                        label: Text(_isCheckingWebhookStatus
+                                            ? 'Verificando...'
+                                            : 'Verificar webhook'),
+                                      ),
                                     ],
                                   ),
+                                  if (_webhookStatusMessage != null) ...[
+                                    const SizedBox(height: 14),
+                                    _buildWebhookStatusBanner(theme),
+                                  ],
                                   const SizedBox(height: 14),
                                   Text(
                                     'Qué puedes hacer ahora',
@@ -2001,6 +2118,44 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
           Expanded(
             child: Text(
               _providerMessage ?? '',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.84),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebhookStatusBanner(ThemeData theme) {
+    final accent = _webhookStatusIsError
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFF22C55E);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: accent.withValues(alpha: 0.10),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _webhookStatusIsError
+                ? Icons.info_outline_rounded
+                : Icons.check_circle_outline,
+            color: accent,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _webhookStatusMessage ?? '',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.84),
                 fontWeight: FontWeight.w700,

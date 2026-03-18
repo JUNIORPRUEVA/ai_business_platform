@@ -183,6 +183,17 @@ export class EvolutionService {
     });
   }
 
+  async findWebhook(instanceName: string): Promise<Record<string, unknown>> {
+    const response = await this.requestJson<unknown>(
+      `/webhook/find/${encodeURIComponent(instanceName)}`,
+      { method: 'GET' },
+    );
+
+    return typeof response === 'object' && response != null
+        ? response as Record<string, unknown>
+        : {'raw': response};
+  }
+
   async getQrCode(instanceName: string): Promise<unknown> {
     return this.requestJson(`/instance/qrcode/${encodeURIComponent(instanceName)}`, {
       method: 'GET',
