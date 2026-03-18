@@ -3,8 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { DatabaseService } from '../../../common/database/database.service';
+import { ClientMemoryEntity } from '../../ai_brain/entities/client-memory.entity';
+import { MemoryService } from '../../ai-engine/memory.service';
+import { ContactMemoryEntity } from '../../ai-engine/entities/contact-memory.entity';
+import { ConversationMemoryEntity } from '../../ai-engine/entities/conversation-memory.entity';
+import { ConversationSummaryEntity } from '../../ai-engine/entities/conversation-summary.entity';
 import { BotConfigurationService } from '../../bot-configuration/services/bot-configuration.service';
-import { BotMemoryService } from '../../bot-memory/services/bot-memory.service';
+import { ContactsService } from '../../contacts/contacts.service';
+import { ConversationsService } from '../../conversations/conversations.service';
 import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsapp-channel-log.entity';
 import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
@@ -37,14 +43,24 @@ export class BotCenterService {
 
   constructor(
     private readonly botConfigurationService: BotConfigurationService,
-    private readonly botMemoryService: BotMemoryService,
+    private readonly memoryService: MemoryService,
     private readonly databaseService: DatabaseService,
+    private readonly contactsService: ContactsService,
+    private readonly conversationsService: ConversationsService,
     @InjectRepository(WhatsappChatEntity)
     private readonly chatsRepository: Repository<WhatsappChatEntity>,
     @InjectRepository(WhatsappMessageEntity)
     private readonly messagesRepository: Repository<WhatsappMessageEntity>,
     @InjectRepository(WhatsappChannelLogEntity)
     private readonly channelLogsRepository: Repository<WhatsappChannelLogEntity>,
+    @InjectRepository(ConversationMemoryEntity)
+    private readonly conversationMemoryRepository: Repository<ConversationMemoryEntity>,
+    @InjectRepository(ContactMemoryEntity)
+    private readonly contactMemoryRepository: Repository<ContactMemoryEntity>,
+    @InjectRepository(ClientMemoryEntity)
+    private readonly clientMemoryRepository: Repository<ClientMemoryEntity>,
+    @InjectRepository(ConversationSummaryEntity)
+    private readonly conversationSummaryRepository: Repository<ConversationSummaryEntity>,
     private readonly whatsappMessagingService: WhatsappMessagingService,
   ) {}
 
@@ -130,13 +146,21 @@ export class BotCenterService {
     companyId: string,
     conversationId: string,
   ): Promise<BotMemoryResponse> {
-    await this.getConversationOrThrow(companyId, conversationId);
-    const memoryContext = this.botMemoryService.buildMemoryContext(conversationId);
+    const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, conversationId);
+    const [recentWindow, summary, longTermFacts, operationalState] = await Promise.all([
+      this.memoryService.listConversationMemory(companyId, memoryTarget.conversation.id, 12),
+      this.memoryService.getConversationSummary(companyId, memoryTarget.conversation.id),
+      this.memoryService.listClientMemories(companyId, memoryTarget.contact.id),
+      this.memoryService.listOperationalMemory(companyId, memoryTarget.contact.id),
+    ]);
 
     return {
-      shortTerm: memoryContext.shortTerm.map((item) => this.mapMemoryItem(item)),
-      longTerm: memoryContext.longTerm.map((item) => this.mapMemoryItem(item)),
-      operational: memoryContext.operational.map((item) => this.mapMemoryItem(item)),
+      shortTerm: recentWindow.map((item) => this.mapConversationMemoryItem(item)),
+      longTerm: [
+        ...(summary ? [this.mapSummaryMemoryItem(summary)] : []),
+        ...longTermFacts.map((item) => this.mapClientMemoryItem(item)),
+      ],
+      operational: operationalState.map((item) => this.mapOperationalMemoryItem(item)),
     };
   }
 
@@ -145,10 +169,12 @@ export class BotCenterService {
     conversationId: string,
     payload: CreateMemoryItemDto,
   ): Promise<BotMemoryItemResponse> {
-    await this.getConversationOrThrow(companyId, conversationId);
-    const item = await this.botMemoryService.createManualMemory({
-      conversationId,
-      scope: payload.type,
+    const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, conversationId);
+    const item = await this.memoryService.createManualMemory({
+      companyId,
+      contactId: memoryTarget.contact.id,
+      conversationId: memoryTarget.conversation.id,
+      type: payload.type,
       title: payload.title,
       content: payload.content,
     });
@@ -162,14 +188,7 @@ export class BotCenterService {
       conversationId,
     });
 
-    return {
-      id: item.id,
-      title: item.title,
-      content: item.content,
-      type: item.scope,
-      updatedAt: item.updatedAt,
-      isEditable: true,
-    };
+    return this.mapManualMemoryItem(item);
   }
 
   async updateConversationMemory(
@@ -178,16 +197,16 @@ export class BotCenterService {
     memoryId: string,
     payload: UpdateMemoryItemDto,
   ): Promise<BotMemoryItemResponse> {
-    await this.getConversationOrThrow(companyId, conversationId);
-    const item = await this.botMemoryService.updateManualMemory(memoryId, {
-      scope: payload.type,
+    const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, conversationId);
+    const item = await this.memoryService.updateManualMemory({
+      companyId,
+      contactId: memoryTarget.contact.id,
+      conversationId: memoryTarget.conversation.id,
+      memoryId,
+      type: payload.type,
       title: payload.title,
       content: payload.content,
     });
-
-    if (item.conversationId !== conversationId) {
-      throw new NotFoundException(`Memory item ${memoryId} was not found.`);
-    }
 
     this.prependLog(companyId, {
       id: `log-${Date.now()}`,
@@ -198,14 +217,7 @@ export class BotCenterService {
       conversationId,
     });
 
-    return {
-      id: item.id,
-      title: item.title,
-      content: item.content,
-      type: item.scope,
-      updatedAt: item.updatedAt,
-      isEditable: true,
-    };
+    return this.mapManualMemoryItem(item);
   }
 
   async deleteConversationMemory(
@@ -213,8 +225,13 @@ export class BotCenterService {
     conversationId: string,
     memoryId: string,
   ): Promise<{ deleted: true }> {
-    await this.getConversationOrThrow(companyId, conversationId);
-    await this.botMemoryService.deleteManualMemory(memoryId);
+    const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, conversationId);
+    await this.memoryService.deleteManualMemory({
+      companyId,
+      contactId: memoryTarget.contact.id,
+      conversationId: memoryTarget.conversation.id,
+      memoryId,
+    });
 
     this.prependLog(companyId, {
       id: `log-${Date.now()}`,
@@ -254,7 +271,7 @@ export class BotCenterService {
       {
         id: 'tool-bot-memory',
         name: 'Bot memory',
-        description: 'Mantiene memoria operativa y notas manuales por conversacion.',
+        description: 'Usa memoria persistente en PostgreSQL con cache e idempotencia en Redis.',
         category: 'memory',
         active: true,
       },
@@ -283,14 +300,27 @@ export class BotCenterService {
   async getStatus(companyId: string): Promise<BotStatusResponse> {
     const configuration = this.botConfigurationService.getConfiguration();
     const databaseHealth = this.databaseService.getHealth();
-    const memoryStats = this.botMemoryService.getStats();
     const openAiConfigured =
       Boolean(configuration.openai.apiKey) && !configuration.openai.apiKey.includes('*');
-    const [conversationCount, messageCount, failedChannelCalls] = await Promise.all([
+    const [
+      conversationCount,
+      messageCount,
+      failedChannelCalls,
+      conversationMemoryCount,
+      contactMemoryCount,
+      clientMemoryCount,
+      summaryCount,
+    ] = await Promise.all([
       this.chatsRepository.count({ where: { companyId } }),
       this.messagesRepository.count({ where: { companyId } }),
       this.channelLogsRepository.count({ where: { companyId, success: false } }),
+      this.conversationMemoryRepository.count({ where: { companyId } }),
+      this.contactMemoryRepository.count({ where: { companyId } }),
+      this.clientMemoryRepository.count({ where: { companyId } }),
+      this.conversationSummaryRepository.count({ where: { companyId } }),
     ]);
+    const totalMemoryRecords =
+      conversationMemoryCount + contactMemoryCount + clientMemoryCount + summaryCount;
 
     return {
       connectedChannel: this.buildStatusCard(
@@ -323,9 +353,9 @@ export class BotCenterService {
       ),
       memoryStatus: this.buildStatusCard(
         'Memory Status',
-        `${memoryStats.messageRecords} records / ${messageCount} mensajes`,
-        `Memoria auxiliar: ${memoryStats.messageRecords}. Mensajes WhatsApp persistidos: ${messageCount}. Fallos recientes del canal: ${failedChannelCalls}.`,
-        configuration.memory.enableShortTermMemory && failedChannelCalls === 0 ? 'healthy' : 'degraded',
+        `${totalMemoryRecords} registros / ${messageCount} mensajes`,
+        `Memoria conversacional: ${conversationMemoryCount}. Estado operacional: ${contactMemoryCount}. Hechos del cliente: ${clientMemoryCount}. Resumenes: ${summaryCount}. Mensajes WhatsApp persistidos: ${messageCount}. Fallos recientes del canal: ${failedChannelCalls}.`,
+        configuration.memory.usePostgreSql && failedChannelCalls === 0 ? 'healthy' : 'degraded',
       ),
     };
   }
@@ -370,7 +400,8 @@ export class BotCenterService {
     companyId: string,
     payload: SendTestMessageDto,
   ): Promise<SendTestMessageResponse> {
-    const conversation = await this.getConversationOrThrow(companyId, payload.conversationId);
+    const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, payload.conversationId);
+    const conversation = memoryTarget.chat;
     const dispatchedAt = new Date().toISOString();
 
     await this.whatsappMessagingService.sendText(companyId, {
@@ -378,12 +409,19 @@ export class BotCenterService {
       text: payload.message,
     });
 
-    await this.botMemoryService.saveOutgoingMessageMemory({
-      conversationId: payload.conversationId,
-      senderId: conversation.remoteJid,
-      channel: 'whatsapp',
+    await this.memoryService.appendConversationMemory({
+      companyId,
+      contactId: memoryTarget.contact.id,
+      conversationId: memoryTarget.conversation.id,
+      role: 'assistant',
       content: payload.message,
-      metadata: { source: 'bot-center-send-message' },
+      contentType: 'text',
+      metadataJson: {
+        source: 'bot-center-send-message',
+        remoteJid: conversation.remoteJid,
+      },
+      source: 'bot_center_outbound',
+      dedupeAgainstLast: false,
     });
 
     this.prependLog(companyId, {
@@ -435,6 +473,29 @@ export class BotCenterService {
     }
 
     return chat;
+  }
+
+  private async resolveCanonicalMemoryTarget(
+    companyId: string,
+    botCenterConversationId: string,
+  ): Promise<{
+    chat: WhatsappChatEntity;
+    contact: { id: string };
+    conversation: { id: string };
+  }> {
+    const chat = await this.getConversationOrThrow(companyId, botCenterConversationId);
+    const contact = await this.contactsService.findOrCreateByPhone(
+      companyId,
+      chat.remoteJid,
+      this.resolveContactName(chat),
+    );
+    const conversation = await this.conversationsService.findOrCreateOpen(
+      companyId,
+      chat.channelConfigId,
+      contact.id,
+    );
+
+    return { chat, contact, conversation };
   }
 
   private async findLatestMessages(
@@ -606,22 +667,82 @@ export class BotCenterService {
     return responseRemoteJid.length > 0 ? responseRemoteJid : null;
   }
 
-  private mapMemoryItem(item: {
+  private mapConversationMemoryItem(item: ConversationMemoryEntity): BotMemoryItemResponse {
+    return {
+      id: item.id,
+      title:
+        this.readString(item.metadataJson['title']) ||
+        this.resolveConversationMemoryTitle(item.role),
+      content: item.content,
+      type: 'shortTerm',
+      updatedAt: item.updatedAt.toISOString(),
+      isEditable: Boolean(item.metadataJson['isEditable']),
+    };
+  }
+
+  private mapSummaryMemoryItem(item: ConversationSummaryEntity): BotMemoryItemResponse {
+    return {
+      id: item.id,
+      title: 'Conversation summary',
+      content: item.summaryText,
+      type: 'longTerm',
+      updatedAt: item.updatedAt.toISOString(),
+      isEditable: false,
+    };
+  }
+
+  private mapClientMemoryItem(item: ClientMemoryEntity): BotMemoryItemResponse {
+    return {
+      id: item.id,
+      title: this.readString(item.metadata['title']) || item.key,
+      content: item.value,
+      type: 'longTerm',
+      updatedAt: item.updatedAt.toISOString(),
+      isEditable: true,
+    };
+  }
+
+  private mapOperationalMemoryItem(item: ContactMemoryEntity): BotMemoryItemResponse {
+    return {
+      id: item.id,
+      title: this.readString(item.metadataJson['title']) || item.key,
+      content: item.value,
+      type: 'operational',
+      updatedAt: item.updatedAt.toISOString(),
+      isEditable: item.stateType === 'manual_note' || Boolean(item.metadataJson['isEditable']),
+    };
+  }
+
+  private mapManualMemoryItem(item: {
     id: string;
     title: string;
     content: string;
-    scope: 'shortTerm' | 'longTerm' | 'operational';
-    createdAt: string;
-    isEditable?: boolean;
+    type: 'shortTerm' | 'longTerm' | 'operational';
+    updatedAt: string;
+    isEditable: boolean;
   }): BotMemoryItemResponse {
     return {
       id: item.id,
       title: item.title,
       content: item.content,
-      type: item.scope,
-      updatedAt: item.createdAt,
-      isEditable: item.isEditable ?? false,
+      type: item.type,
+      updatedAt: item.updatedAt,
+      isEditable: item.isEditable,
     };
+  }
+
+  private resolveConversationMemoryTitle(role: ConversationMemoryEntity['role']): string {
+    switch (role) {
+      case 'user':
+        return 'Incoming message';
+      case 'assistant':
+        return 'Outgoing message';
+      case 'tool':
+        return 'Tool execution';
+      case 'system':
+      default:
+        return 'System note';
+    }
   }
 
   private prependLog(companyId: string, log: BotLogResponse): void {
