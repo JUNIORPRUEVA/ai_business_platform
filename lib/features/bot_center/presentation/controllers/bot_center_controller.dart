@@ -524,17 +524,6 @@ class BotCenterController extends ChangeNotifier {
     }
   }
 
-  void _removeMessage(String conversationId, String messageId) {
-    final existing = _messagesByConversation[conversationId];
-    if (existing == null) {
-      return;
-    }
-
-    final updated = List<BotMessage>.of(existing, growable: true)
-      ..removeWhere((message) => message.id == messageId);
-    _messagesByConversation[conversationId] = updated;
-  }
-
   void _updateMessageState({
     required String conversationId,
     required String messageId,

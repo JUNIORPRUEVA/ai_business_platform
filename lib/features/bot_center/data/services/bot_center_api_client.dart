@@ -169,6 +169,11 @@ class BotCenterApiClient {
       }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (kDebugMode) {
+          final raw = response.body;
+          final compact = raw.length <= 2000 ? raw : '${raw.substring(0, 2000)}…(truncated)';
+          debugPrint('[BOT_CENTER_HTTP] error-body method=$method url=$uri body=$compact');
+        }
         throw BotCenterApiException(
           _extractError(response.body) ??
               'Bot Center request failed with status ${response.statusCode}. Backend=$_baseUrl',

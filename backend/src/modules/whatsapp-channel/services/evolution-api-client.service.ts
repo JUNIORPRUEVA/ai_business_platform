@@ -1,4 +1,9 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogService } from './whatsapp-channel-log.service';
@@ -143,6 +148,8 @@ export class EvolutionApiClientService {
           );
         }
 
+        const requestBody = typeof init.body === 'string' ? init.body : '';
+
         const response = await fetch(url, {
           ...init,
           headers: {
@@ -161,6 +168,13 @@ export class EvolutionApiClientService {
           );
         }
 
+        if (!response.ok) {
+          const compactBody = text && text.length > 2000 ? `${text.slice(0, 2000)}…(truncated)` : (text || '(empty)');
+          this.logger.warn(
+            `[EVOLUTION API] failure action=${eventName} instanceName=${config.instanceName} endpoint=${url} status=${response.status} request=${requestBody || '{}'} response=${compactBody}`,
+          );
+        }
+
         await this.logsService.create({
           companyId: config.companyId,
           instanceName: config.instanceName,
@@ -175,9 +189,14 @@ export class EvolutionApiClientService {
         });
 
         if (!response.ok) {
-          throw new ServiceUnavailableException(
-            this.extractErrorMessage(payload, text) || `Evolution API error (${response.status}).`,
-          );
+          const errorMessage =
+            this.extractErrorMessage(payload, text) || `Evolution API error (${response.status}).`;
+
+          if (response.status >= 400 && response.status < 500) {
+            throw new BadRequestException(errorMessage);
+          }
+
+          throw new ServiceUnavailableException(errorMessage);
         }
 
         return payload;

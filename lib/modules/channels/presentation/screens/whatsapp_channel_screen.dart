@@ -430,6 +430,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     await Future.wait([
       _refreshStatus(silent: silent),
       _loadHealth(silent: true),
+      if (_showAdvancedProviderPanel) _checkWebhookStatus(),
     ]);
   }
 
@@ -653,55 +654,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
           _requestError = error.message;
         });
       }
-    }
-  }
-
-  Future<void> _logoutInstance() async {
-    final instanceName = _activeInstanceName?.trim();
-    if (instanceName == null || instanceName.isEmpty) {
-      return;
-    }
-
-    final token = await _readToken();
-    if (token == null || token.trim().isEmpty) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _requestError = 'Tu sesión expiró. Inicia sesión otra vez.';
-      });
-      return;
-    }
-
-    setState(() {
-      _requestError = null;
-      _isMutatingInstance = true;
-    });
-
-    try {
-      await _api.logout(token: token, instanceName: instanceName);
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _status = WhatsappChannelUiStatus.disconnected;
-        _qrBase64 = null;
-        _isMutatingInstance = false;
-      });
-
-      await _fetchQr();
-      await _loadHealth(silent: true);
-      _startPolling();
-    } on WhatsappInstancesApiException catch (e) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _requestError = e.message;
-        _isMutatingInstance = false;
-      });
     }
   }
 
@@ -1192,7 +1144,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                         const SizedBox(height: 16),
                         _buildErrorBanner(theme),
                       ],
-                      if (_loadingExisting || _isLoadingHealth) ...[
+                      if (_loadingExisting || _isLoadingHealth || _isCheckingWebhookStatus) ...[
                         const SizedBox(height: 16),
                         const LinearProgressIndicator(),
                       ],
@@ -2114,37 +2066,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     );
   }
 
-  Widget _buildSignalChip({
-    required ThemeData theme,
-    required IconData icon,
-    required String label,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: Colors.white.withValues(alpha: 0.06),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.10),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.82),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSectionEyebrow({
     required ThemeData theme,
     required String label,
@@ -2434,156 +2355,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     );
   }
 
-  Widget _buildChecklist(ThemeData theme) {
-    final steps = <String>[
-      'Escribe un nombre simple para la instancia, por ejemplo tienda_principal.',
-      'Espera a que aparezca el QR en pantalla.',
-      'Escanea el código desde WhatsApp y deja que el sistema confirme la conexión.',
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Flujo recomendado',
-          style:
-              theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 10),
-        ...steps.map(
-          (step) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 2),
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: theme.colorScheme.primary.withValues(alpha: 0.16),
-                  ),
-                  child: Icon(
-                    Icons.check_rounded,
-                    size: 14,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    step,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color:
-                          theme.colorScheme.onSurface.withValues(alpha: 0.72),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildJourneyStrip(ThemeData theme) {
-    final steps = [
-      _JourneyStep(
-        title: '1. Crear',
-        description: 'Registrar la cuenta',
-        isActive: _status == WhatsappChannelUiStatus.notConfigured ||
-            _status == WhatsappChannelUiStatus.creating,
-        isDone: _activeInstanceName != null,
-      ),
-      _JourneyStep(
-        title: '2. Escanear QR',
-        description: 'Vincular el teléfono',
-        isActive: _status == WhatsappChannelUiStatus.waitingScan,
-        isDone: _status == WhatsappChannelUiStatus.connected,
-      ),
-      _JourneyStep(
-        title: '3. Operar',
-        description: 'Canal listo',
-        isActive: _status == WhatsappChannelUiStatus.connected,
-        isDone: _status == WhatsappChannelUiStatus.connected,
-      ),
-    ];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: theme.colorScheme.surface.withValues(alpha: 0.10),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.44),
-        ),
-      ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: steps
-            .map((step) => _buildJourneyItem(theme: theme, step: step))
-            .toList(growable: false),
-      ),
-    );
-  }
-
-  Widget _buildJourneyItem({
-    required ThemeData theme,
-    required _JourneyStep step,
-  }) {
-    final accent = step.isDone
-        ? const Color(0xFF22C55E)
-        : step.isActive
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurface.withValues(alpha: 0.36);
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 170, maxWidth: 210),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          color: accent.withValues(
-              alpha: step.isActive || step.isDone ? 0.12 : 0.06),
-          border: Border.all(
-            color: accent.withValues(alpha: 0.24),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              step.isDone
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_checked_rounded,
-              size: 18,
-              color: accent,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              step.title,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              step.description,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildSupportHint(ThemeData theme) {
     return Container(
       width: double.infinity,
@@ -2615,34 +2386,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         ],
       ),
     );
-  }
-
-  ({String title, String description}) _nextActionCopy() {
-    return switch (_status) {
-      WhatsappChannelUiStatus.notConfigured => (
-          title: 'Crear la instancia',
-          description: 'Escribe un nombre simple y pulsa “Crear y continuar”.',
-        ),
-      WhatsappChannelUiStatus.creating => (
-          title: 'Esperar la preparación',
-          description:
-              'En unos segundos se generará el QR para vincular el teléfono.',
-        ),
-      WhatsappChannelUiStatus.waitingScan => (
-          title: 'Escanear el código QR',
-          description:
-              'Usa WhatsApp > Dispositivos vinculados y escanea el código grande de la derecha.',
-        ),
-      WhatsappChannelUiStatus.connected => (
-          title: 'Operar normalmente',
-          description: 'El canal ya está listo para recibir y enviar mensajes.',
-        ),
-      WhatsappChannelUiStatus.disconnected => (
-          title: 'Reconectar la cuenta',
-          description:
-              'Actualiza el estado o desconecta para generar un nuevo QR.',
-        ),
-    };
   }
 
   Color _statusColor(ThemeData theme) {
@@ -2721,20 +2464,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       ),
     );
   }
-}
-
-class _JourneyStep {
-  const _JourneyStep({
-    required this.title,
-    required this.description,
-    required this.isActive,
-    required this.isDone,
-  });
-
-  final String title;
-  final String description;
-  final bool isActive;
-  final bool isDone;
 }
 
 Map<String, dynamic> _asMap(dynamic value) {

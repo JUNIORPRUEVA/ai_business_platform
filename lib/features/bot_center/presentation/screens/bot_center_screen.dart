@@ -45,7 +45,6 @@ class BotCenterModule extends ConsumerStatefulWidget {
 
 class _BotCenterModuleState extends ConsumerState<BotCenterModule> {
   late final BotCenterController _controller;
-  final ScrollController _horizontalScrollController = ScrollController();
 
   @override
   void initState() {
@@ -60,7 +59,6 @@ class _BotCenterModuleState extends ConsumerState<BotCenterModule> {
 
   @override
   void dispose() {
-    _horizontalScrollController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -113,6 +111,13 @@ class BotCenterContent extends StatefulWidget {
 
 class _BotCenterContentState extends State<BotCenterContent> {
   bool _isContextExpanded = true;
+  final ScrollController _horizontalScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _horizontalScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
