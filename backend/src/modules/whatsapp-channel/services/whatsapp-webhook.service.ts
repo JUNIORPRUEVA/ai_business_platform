@@ -193,6 +193,12 @@ export class WhatsappWebhookService {
 
     const canonicalRemoteJid = this.extractCanonicalRemoteJid(data, key, message);
 
+    if (remoteJid.endsWith('@lid') && !canonicalRemoteJid) {
+      this.logger.warn(
+        `[EVOLUTION INBOUND] missing canonical recipient remoteJid=${remoteJid} messageId=${messageId ?? '(none)'} keysPresent=${Object.keys(data).slice(0, 30).join(',')}`,
+      );
+    }
+
     this.logger.log(
       `[EVOLUTION INBOUND] instance=${config.instanceName} companyId=${config.companyId} remoteJid=${remoteJid} messageId=${messageId ?? '(none)'} type=${type} accepted=${type !== 'unknown' || content.textBody != null}`,
     );
@@ -322,23 +328,69 @@ export class WhatsappWebhookService {
     key: Record<string, unknown>,
     message: Record<string, unknown>,
   ): string | null {
+    const toCanonicalFromDigits = (raw: string): string | null => {
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length < 10 || digits.length > 15) {
+        return null;
+      }
+
+      const normalized = digits.length === 10 ? `1${digits}` : digits;
+      return `${normalized}@s.whatsapp.net`;
+    };
+
     const candidates = [
       this.readString(key['participant']),
       this.readString(data['participant']),
       this.readString(data['sender']),
+      this.readString(this.readMap(data['messageContextInfo'])['participant']),
     ].filter((v) => v);
 
     for (const candidate of candidates) {
       if (candidate.endsWith('@s.whatsapp.net')) {
         return candidate;
       }
+      const canonicalFromDigits = toCanonicalFromDigits(candidate);
+      if (canonicalFromDigits) {
+        return canonicalFromDigits;
+      }
     }
 
+    const participantFromContext = (context: Record<string, unknown>): string | null => {
+      const participant = this.readString(context['participant']);
+      return participant.endsWith('@s.whatsapp.net') ? participant : null;
+    };
+
     const extended = this.readMap(message['extendedTextMessage']);
-    const contextInfo = this.readMap(extended['contextInfo'] ?? message['contextInfo']);
-    const participant = this.readString(contextInfo['participant']);
-    if (participant.endsWith('@s.whatsapp.net')) {
-      return participant;
+    const topContext = this.readMap(extended['contextInfo'] ?? message['contextInfo']);
+    const direct = participantFromContext(topContext);
+    if (direct) {
+      return direct;
+    }
+
+    const mediaContexts: Array<Record<string, unknown>> = [
+      this.readMap(this.readMap(message['imageMessage'])['contextInfo']),
+      this.readMap(this.readMap(message['videoMessage'])['contextInfo']),
+      this.readMap(this.readMap(message['audioMessage'])['contextInfo']),
+      this.readMap(this.readMap(message['documentMessage'])['contextInfo']),
+    ];
+
+    for (const ctx of mediaContexts) {
+      const p = participantFromContext(ctx);
+      if (p) {
+        return p;
+      }
+    }
+
+    const reaction = this.readMap(message['reactionMessage']);
+    const reactionKey = this.readMap(reaction['key']);
+    const reactionParticipant = this.readString(reactionKey['participant']);
+    if (reactionParticipant.endsWith('@s.whatsapp.net')) {
+      return reactionParticipant;
+    }
+
+    const reactionDigits = toCanonicalFromDigits(reactionParticipant);
+    if (reactionDigits) {
+      return reactionDigits;
     }
 
     return null;

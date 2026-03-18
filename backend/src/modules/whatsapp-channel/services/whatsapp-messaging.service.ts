@@ -284,7 +284,7 @@ export class WhatsappMessagingService {
       const normalizedCanonical = this.normalizeCanonicalRemoteJid(canonicalRemoteJid);
       if (normalizedCanonical && existing.canonicalRemoteJid !== normalizedCanonical) {
         existing.canonicalRemoteJid = normalizedCanonical;
-        existing.canonicalNumber = this.jidToNumber(normalizedCanonical);
+        existing.canonicalNumber = this.normalizeOutboundNumber(this.jidToNumber(normalizedCanonical));
       }
 
       return this.chatsRepository.save(existing);
@@ -296,8 +296,10 @@ export class WhatsappMessagingService {
       remoteJid,
       canonicalRemoteJid: this.normalizeCanonicalRemoteJid(canonicalRemoteJid),
       canonicalNumber: this.normalizeCanonicalRemoteJid(canonicalRemoteJid)
-        ? this.jidToNumber(this.normalizeCanonicalRemoteJid(canonicalRemoteJid)!)
-        : (remoteJid.endsWith('@s.whatsapp.net') ? this.jidToNumber(remoteJid) : null),
+        ? this.normalizeOutboundNumber(this.jidToNumber(this.normalizeCanonicalRemoteJid(canonicalRemoteJid)!))
+        : (remoteJid.endsWith('@s.whatsapp.net')
+            ? this.normalizeOutboundNumber(this.jidToNumber(remoteJid))
+            : null),
       pushName: pushName ?? null,
       profileName: null,
       profilePictureUrl: null,
@@ -493,7 +495,7 @@ export class WhatsappMessagingService {
     if (!trimmed.endsWith('@s.whatsapp.net')) {
       return null;
     }
-    const digits = this.jidToNumber(trimmed);
+    const digits = this.normalizeOutboundNumber(this.jidToNumber(trimmed));
     if (!digits) {
       return null;
     }
@@ -509,18 +511,18 @@ export class WhatsappMessagingService {
     remoteJid: string,
   ): Promise<{ jid: string; number: string }> {
     if (remoteJid.endsWith('@s.whatsapp.net')) {
-      const number = this.jidToNumber(remoteJid);
+      const number = this.normalizeOutboundNumber(this.jidToNumber(remoteJid));
       if (!number) {
         throw new BadRequestException('remoteJid no contiene digitos.');
       }
-      return { jid: remoteJid, number };
+      return { jid: `${number}@s.whatsapp.net`, number };
     }
 
     if (remoteJid.endsWith('@lid')) {
       const chat = await this.chatsRepository.findOne({ where: { companyId, remoteJid } });
       const canonical = this.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid);
       if (canonical) {
-        const number = this.jidToNumber(canonical);
+        const number = this.normalizeOutboundNumber(this.jidToNumber(canonical));
         if (number) {
           return { jid: canonical, number };
         }
@@ -538,7 +540,7 @@ export class WhatsappMessagingService {
         : null;
 
       if (extracted) {
-        const number = this.jidToNumber(extracted);
+        const number = this.normalizeOutboundNumber(this.jidToNumber(extracted));
         if (chat) {
           chat.canonicalRemoteJid = extracted;
           chat.canonicalNumber = number;
@@ -573,15 +575,37 @@ export class WhatsappMessagingService {
       }
     }
 
-    const contextInfo = this.readMap(
-      this.readMap(this.readMap(message['extendedTextMessage'])['contextInfo'])['participant']
-        ? this.readMap(message['extendedTextMessage'])['contextInfo']
-        : this.readMap(message['contextInfo']),
-    );
+    const participantFromContext = (context: Record<string, unknown>): string | null => {
+      const participant = this.readString(context['participant']);
+      return participant.endsWith('@s.whatsapp.net') ? participant : null;
+    };
 
-    const participant = this.readString(contextInfo['participant']);
-    if (participant.endsWith('@s.whatsapp.net')) {
-      return participant;
+    const extended = this.readMap(message['extendedTextMessage']);
+    const topContext = this.readMap(extended['contextInfo'] ?? message['contextInfo']);
+    const direct = participantFromContext(topContext);
+    if (direct) {
+      return direct;
+    }
+
+    const mediaContexts: Array<Record<string, unknown>> = [
+      this.readMap(this.readMap(message['imageMessage'])['contextInfo']),
+      this.readMap(this.readMap(message['videoMessage'])['contextInfo']),
+      this.readMap(this.readMap(message['audioMessage'])['contextInfo']),
+      this.readMap(this.readMap(message['documentMessage'])['contextInfo']),
+    ];
+
+    for (const ctx of mediaContexts) {
+      const p = participantFromContext(ctx);
+      if (p) {
+        return p;
+      }
+    }
+
+    const reaction = this.readMap(message['reactionMessage']);
+    const reactionKey = this.readMap(reaction['key']);
+    const reactionParticipant = this.readString(reactionKey['participant']);
+    if (reactionParticipant.endsWith('@s.whatsapp.net')) {
+      return reactionParticipant;
     }
 
     return null;
@@ -619,6 +643,25 @@ export class WhatsappMessagingService {
 
   private readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private normalizeOutboundNumber(value: string): string {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) {
+      return '';
+    }
+
+    // Project requirement: when receiving 10-digit NANP numbers (e.g. 8295344286),
+    // send with country prefix "1" (e.g. 18295344286).
+    if (digits.length === 10) {
+      return `1${digits}`;
+    }
+
+    if (digits.length === 11 && digits.startsWith('1')) {
+      return digits;
+    }
+
+    return digits;
   }
 
   private safeJsonForLog(value: unknown, maxLen = 2000): string {
