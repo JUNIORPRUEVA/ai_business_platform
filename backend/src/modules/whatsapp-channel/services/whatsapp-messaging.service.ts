@@ -27,8 +27,12 @@ export class WhatsappMessagingService {
   ) {}
 
   async sendText(companyId: string, payload: SendWhatsappTextDto): Promise<Record<string, unknown>> {
-    const config = await this.configService.getEntity(companyId);
     const normalizedJid = this.normalizeRemoteJid(payload.remoteJid);
+    const config = await this.resolveOutboundConfig(
+      companyId,
+      normalizedJid,
+      payload.channelConfigId,
+    );
     const response = await this.evolutionApiClient.sendText(config, {
       number: this.toEvolutionNumber(normalizedJid),
       text: payload.text.trim(),
@@ -57,8 +61,8 @@ export class WhatsappMessagingService {
   }
 
   async sendMedia(companyId: string, payload: SendWhatsappMediaDto): Promise<Record<string, unknown>> {
-    const config = await this.configService.getEntity(companyId);
     const normalizedJid = this.normalizeRemoteJid(payload.remoteJid);
+    const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.mediaUrl);
 
     const response = await this.evolutionApiClient.sendMedia(config, {
@@ -97,8 +101,8 @@ export class WhatsappMessagingService {
   }
 
   async sendAudio(companyId: string, payload: SendWhatsappAudioDto): Promise<Record<string, unknown>> {
-    const config = await this.configService.getEntity(companyId);
     const normalizedJid = this.normalizeRemoteJid(payload.remoteJid);
+    const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.audioUrl);
 
     const response = await this.evolutionApiClient.sendWhatsAppAudio(config, {
@@ -362,6 +366,26 @@ export class WhatsappMessagingService {
     }
 
     throw new BadRequestException('Debes enviar attachmentId o mediaUrl/audioUrl.');
+  }
+
+  private async resolveOutboundConfig(
+    companyId: string,
+    remoteJid: string,
+    explicitChannelConfigId?: string,
+  ): Promise<WhatsappChannelConfigEntity> {
+    if (explicitChannelConfigId) {
+      return this.configService.getEntityById(companyId, explicitChannelConfigId);
+    }
+
+    const existingChat = await this.chatsRepository.findOne({
+      where: { companyId, remoteJid },
+    });
+
+    if (existingChat?.channelConfigId) {
+      return this.configService.getEntityById(companyId, existingChat.channelConfigId);
+    }
+
+    return this.configService.getEntity(companyId);
   }
 
   private normalizeRemoteJid(value: string): string {

@@ -1,6 +1,10 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class SendWhatsappTextDto {
+  @IsOptional()
+  @IsUUID()
+  channelConfigId?: string;
+
   @IsString()
   @MaxLength(80)
   remoteJid!: string;

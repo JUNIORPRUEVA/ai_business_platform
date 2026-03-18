@@ -240,6 +240,19 @@ export class WhatsappChannelConfigService {
     return entity;
   }
 
+  async getEntityById(
+    companyId: string,
+    configId: string,
+  ): Promise<WhatsappChannelConfigEntity> {
+    const entity = await this.configsRepository.findOne({
+      where: { id: configId, companyId, provider: 'evolution' },
+    });
+    if (!entity) {
+      throw new NotFoundException('No existe la configuracion de WhatsApp solicitada.');
+    }
+    return entity;
+  }
+
   async upsertAutomationConfig(params: {
     companyId: string;
     evolutionServerUrl: string;

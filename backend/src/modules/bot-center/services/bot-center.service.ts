@@ -436,6 +436,7 @@ export class BotCenterService {
     const dispatchedAt = new Date().toISOString();
 
     await this.whatsappMessagingService.sendText(companyId, {
+      channelConfigId: conversation.channelConfigId,
       remoteJid: conversation.remoteJid,
       text: payload.message,
     });
