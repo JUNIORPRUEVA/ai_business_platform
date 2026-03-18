@@ -8,6 +8,9 @@ import { BillingModule } from '../billing/billing.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { EvolutionWebhookModule } from '../evolution-webhook/evolution-webhook.module';
 import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
+import { WhatsappChannelConfigEntity } from '../whatsapp-channel/entities/whatsapp-channel-config.entity';
+import { WhatsappChannelLogEntity } from '../whatsapp-channel/entities/whatsapp-channel-log.entity';
+import { WhatsappMessageEntity } from '../whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappInstanceEntity } from './entities/whatsapp-instance.entity';
 import { WhatsappInstancesController } from './controllers/whatsapp-instances.controller';
 import { WhatsappInstancesService } from './services/whatsapp-instances.service';
@@ -21,7 +24,13 @@ import { EvolutionInstanceWebhookController } from './controllers/evolution-inst
     ChannelsModule,
     EvolutionWebhookModule,
     WhatsappChannelModule,
-    TypeOrmModule.forFeature([WhatsappInstanceEntity, BotConfigurationEntity]),
+    TypeOrmModule.forFeature([
+      WhatsappInstanceEntity,
+      BotConfigurationEntity,
+      WhatsappChannelConfigEntity,
+      WhatsappChannelLogEntity,
+      WhatsappMessageEntity,
+    ]),
   ],
   controllers: [WhatsappInstancesController, EvolutionInstanceWebhookController],
   providers: [WhatsappInstancesService],

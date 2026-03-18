@@ -170,6 +170,37 @@ class WhatsappInstancesApiClient {
     return _decodeObject(response.body);
   }
 
+  Future<Map<String, dynamic>> reapplyWebhook({
+    required String token,
+    required String instanceName,
+  }) async {
+    final response = await _send(
+      () => _client.post(
+        _buildUri(
+            '/whatsapp/instances/${Uri.encodeComponent(instanceName)}/webhook/reapply'),
+        headers: _authorizedHeaders(token),
+        body: jsonEncode(const <String, dynamic>{}),
+      ),
+    );
+
+    return _decodeObject(response.body);
+  }
+
+  Future<Map<String, dynamic>> getHealth({
+    required String token,
+    required String instanceName,
+  }) async {
+    final response = await _send(
+      () => _client.get(
+        _buildUri(
+            '/whatsapp/instances/${Uri.encodeComponent(instanceName)}/health'),
+        headers: _authorizedHeaders(token),
+      ),
+    );
+
+    return _decodeObject(response.body);
+  }
+
   Map<String, String> get _jsonHeaders => const {
         'Accept': 'application/json',
         'Content-Type': 'application/json',

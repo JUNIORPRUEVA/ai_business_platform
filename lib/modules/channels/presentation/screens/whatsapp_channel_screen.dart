@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../auth/application/auth_providers.dart';
 import '../../../auth/data/auth_api_client.dart';
+import '../../../messages/presentation/screens/messages_screen.dart';
 import '../../data/whatsapp_instances_api_client.dart';
 import '../../../shared/presentation/widgets/module_header.dart';
 import '../../../../features/bot_configuration_center/data/services/bot_configuration_center_api_client.dart';
@@ -43,6 +44,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   String? _requestError;
   String? _providerMessage;
   String? _webhookStatusMessage;
+  Map<String, dynamic>? _channelHealth;
   Timer? _pollTimer;
   bool _loadingExisting = true;
   bool _loadingProviderSettings = true;
@@ -50,6 +52,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   bool _isSavingProviderSettings = false;
   bool _isTestingProviderConnection = false;
   bool _isCheckingWebhookStatus = false;
+  bool _isLoadingHealth = false;
+  bool _isReapplyingWebhook = false;
   bool _providerMessageIsError = false;
   bool _webhookStatusIsError = false;
 
@@ -307,6 +311,143 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     }
   }
 
+  Future<void> _loadHealth({bool silent = false}) async {
+    final instanceName = _activeInstanceName?.trim();
+    if (instanceName == null || instanceName.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _channelHealth = null;
+        _isLoadingHealth = false;
+      });
+      return;
+    }
+
+    if (!silent) {
+      setState(() {
+        _isLoadingHealth = true;
+      });
+    }
+
+    try {
+      final token = await _requireToken();
+      final response = await _api.getHealth(
+        token: token,
+        instanceName: instanceName,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _channelHealth = response;
+      });
+    } on WhatsappInstancesApiException catch (error) {
+      if (!mounted || silent) {
+        return;
+      }
+      setState(() {
+        _requestError = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted || silent) {
+        return;
+      }
+      setState(() {
+        _requestError = error.message;
+      });
+    } finally {
+      if (!mounted || silent) {
+        return;
+      }
+      setState(() {
+        _isLoadingHealth = false;
+      });
+    }
+  }
+
+  Future<void> _reapplyWebhook() async {
+    final instanceName = _activeInstanceName?.trim();
+    if (instanceName == null || instanceName.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isReapplyingWebhook = true;
+      _webhookStatusMessage = null;
+      _requestError = null;
+    });
+
+    try {
+      final token = await _requireToken();
+      await _api.reapplyWebhook(token: token, instanceName: instanceName);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _webhookStatusIsError = false;
+        _webhookStatusMessage = 'Webhook reaplicado correctamente.';
+      });
+
+      await Future.wait([
+        _loadHealth(silent: true),
+        _refreshStatus(silent: true),
+      ]);
+    } on WhatsappInstancesApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _webhookStatusIsError = true;
+        _webhookStatusMessage = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _webhookStatusIsError = true;
+        _webhookStatusMessage = error.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isReapplyingWebhook = false;
+      });
+    }
+  }
+
+  Future<void> _refreshOperationalState({bool silent = false}) async {
+    await Future.wait([
+      _refreshStatus(silent: silent),
+      _loadHealth(silent: true),
+    ]);
+  }
+
+  Future<void> _reconnectInstance() async {
+    await _fetchQr();
+    await _refreshOperationalState();
+    _startPolling();
+  }
+
+  void _openMessages() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(
+          body: SafeArea(
+            child: MessagesScreen(),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadExisting() async {
     setState(() {
       _loadingExisting = true;
@@ -352,6 +493,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
             : (latest['qrCode'] as String?);
         _loadingExisting = false;
       });
+
+      await _loadHealth(silent: true);
 
       // If not connected, fetch fresh QR and start polling.
       if (uiStatus != WhatsappChannelUiStatus.connected &&
@@ -423,6 +566,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       });
 
       await _fetchQr();
+      await _loadHealth(silent: true);
       _startPolling();
     } on WhatsappInstancesApiException catch (e) {
       setState(() {
@@ -471,11 +615,11 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     _pollTimer?.cancel();
 
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      unawaited(_refreshStatus());
+      unawaited(_refreshOperationalState(silent: true));
     });
   }
 
-  Future<void> _refreshStatus() async {
+  Future<void> _refreshStatus({bool silent = false}) async {
     final instanceName = _activeInstanceName?.trim();
     if (instanceName == null || instanceName.isEmpty) return;
 
@@ -500,8 +644,12 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       if (uiStatus == WhatsappChannelUiStatus.connected) {
         _pollTimer?.cancel();
       }
-    } on WhatsappInstancesApiException {
-      // Avoid spamming errors during polling.
+    } on WhatsappInstancesApiException catch (error) {
+      if (!silent && mounted) {
+        setState(() {
+          _requestError = error.message;
+        });
+      }
     }
   }
 
@@ -541,6 +689,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       });
 
       await _fetchQr();
+      await _loadHealth(silent: true);
       _startPolling();
     } on WhatsappInstancesApiException catch (e) {
       if (!mounted) {
@@ -721,6 +870,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         _instanceController.clear();
         _status = WhatsappChannelUiStatus.notConfigured;
         _qrBase64 = null;
+        _channelHealth = null;
         _isMutatingInstance = false;
       });
     } on WhatsappInstancesApiException catch (e) {
@@ -843,7 +993,18 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     final statusTitle = _statusTitle();
     final statusDescription = _statusDescription();
     final canGoBack = Navigator.of(context).canPop();
-    final nextAction = _nextActionCopy();
+    final healthConnected = _healthBool('connected') ||
+        _status == WhatsappChannelUiStatus.connected;
+    final healthWebhook = _healthBool('webhookConfigured');
+    final healthReady = _healthBool('channelReady');
+    final healthEvent = _healthString('lastWebhookEvent');
+    final healthEventAt = _healthString('lastWebhookEventAt');
+    final healthMessage = _healthString('lastInboundMessage');
+    final healthMessageAt = _healthString('lastInboundMessageAt');
+    final healthError = _healthString('lastError');
+    final activityLabel = _healthString('activityLabel') ??
+        'Aún estamos validando la actividad del canal';
+    final activityBadge = _healthString('activityBadge') ?? 'inactive';
 
     return Scaffold(
       body: Stack(
@@ -855,9 +1016,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ModuleHeader(
-                  title: 'WhatsApp Evolution API',
+                  title: 'Canal WhatsApp',
                   subtitle:
-                    'Cada empresa solo necesita crear su instancia, escanear el QR y comenzar a operar.',
+                      'Crea tu instancia, escanea el QR y confirma si el canal está funcionando en tiempo real.',
                   trailing: canGoBack
                       ? OutlinedButton.icon(
                           onPressed: () => Navigator.of(context).maybePop(),
@@ -869,233 +1030,147 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                 const SizedBox(height: 14),
                 ExecutiveGlassCard(
                   padding: const EdgeInsets.all(22),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 860;
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(28),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  const Color(0xFF0F172A).withValues(alpha: 0.82),
-                                  statusColor.withValues(alpha: 0.18),
-                                  theme.colorScheme.surface.withValues(alpha: 0.06),
-                                ],
-                              ),
-                              border: Border.all(
-                                color: statusColor.withValues(alpha: 0.28),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: statusColor.withValues(alpha: 0.12),
-                                  blurRadius: 28,
-                                  offset: const Offset(0, 18),
-                                ),
-                              ],
-                            ),
-                            child: Stack(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(28),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              const Color(0xFF071827).withValues(alpha: 0.88),
+                              statusColor.withValues(alpha: 0.18),
+                              const Color(0xFF0B2236).withValues(alpha: 0.60),
+                            ],
+                          ),
+                          border: Border.all(
+                            color: statusColor.withValues(alpha: 0.26),
+                          ),
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final compact = constraints.maxWidth < 860;
+                            return Wrap(
+                              spacing: 18,
+                              runSpacing: 18,
                               children: [
-                                Positioned(
-                                  right: -20,
-                                  top: -18,
-                                  child: Container(
-                                    width: 140,
-                                    height: 140,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: statusColor.withValues(alpha: 0.08),
-                                    ),
-                                  ),
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
-                                      children: [
-                                        badge,
-                                        _buildSignalChip(
-                                          theme: theme,
-                                          icon: Icons.qr_code_scanner_rounded,
-                                          label: 'Escaneo guiado',
-                                        ),
-                                        _buildSignalChip(
-                                          theme: theme,
-                                          icon: Icons.apartment_rounded,
-                                          label: 'Instancia por empresa',
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 18),
-                                    Wrap(
-                                      spacing: 16,
-                                      runSpacing: 16,
-                                      crossAxisAlignment:
-                                          WrapCrossAlignment.center,
-                                      children: [
-                                        SizedBox(
-                                          width: compact ? double.infinity : 360,
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                statusTitle,
-                                                style: theme.textTheme.headlineSmall?.copyWith(
-                                                  fontWeight: FontWeight.w900,
-                                                  height: 1.05,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 10),
-                                              Text(
-                                                statusDescription,
-                                                style: theme.textTheme.bodyMedium?.copyWith(
-                                                  color: theme.colorScheme.onSurface
-                                                      .withValues(alpha: 0.76),
-                                                  height: 1.5,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        SizedBox(
-                                          width: compact
-                                              ? double.infinity
-                                              : constraints.maxWidth - 430,
-                                          child: Wrap(
-                                            spacing: 12,
-                                            runSpacing: 12,
-                                            children: [
-                                              _buildTopMetricCard(
-                                                theme: theme,
-                                                title: 'Instancia activa',
-                                                value: _activeInstanceName ??
-                                                    'Sin definir',
-                                                icon: Icons.dns_rounded,
-                                              ),
-                                              _buildTopMetricCard(
-                                                theme: theme,
-                                                title: 'Estado QR',
-                                                value: qrBytes == null
-                                                    ? 'Pendiente'
-                                                    : 'Disponible',
-                                                icon:
-                                                    Icons.qr_code_2_rounded,
-                                              ),
-                                              if (_showAdvancedProviderPanel)
-                                                _buildTopMetricCard(
-                                                  theme: theme,
-                                                  title: 'Sincronización',
-                                                  value: _loadingExisting
-                                                      ? 'Cargando'
-                                                      : 'Lista',
-                                                  icon: Icons.sync_rounded,
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 18),
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        color: Colors.white.withValues(alpha: 0.04),
-                                        border: Border.all(
-                                          color: Colors.white.withValues(alpha: 0.08),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                SizedBox(
+                                  width: compact ? double.infinity : 360,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Wrap(
+                                        spacing: 10,
+                                        runSpacing: 10,
                                         children: [
-                                          Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              color: statusColor.withValues(
-                                                  alpha: 0.14),
-                                            ),
-                                            child: Icon(
-                                              Icons.arrow_outward_rounded,
-                                              color: statusColor,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'Siguiente paso',
-                                                  style: theme.textTheme.bodySmall?.copyWith(
-                                                    fontWeight: FontWeight.w900,
-                                                    color: theme.colorScheme.onSurface
-                                                        .withValues(alpha: 0.68),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  nextAction.title,
-                                                  style: theme.textTheme.titleMedium?.copyWith(
-                                                    fontWeight: FontWeight.w900,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  nextAction.description,
-                                                  style: theme.textTheme.bodySmall?.copyWith(
-                                                    color: theme.colorScheme.onSurface
-                                                        .withValues(alpha: 0.68),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'El webhook y la recepción de texto, audio, imagen, video y archivos se preparan automáticamente.',
-                                                  style: theme.textTheme.bodySmall?.copyWith(
-                                                    color: theme.colorScheme.primary
-                                                        .withValues(alpha: 0.92),
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
+                                          badge,
+                                          _buildActivityBadge(theme, activityBadge, activityLabel),
                                         ],
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 18),
+                                      Text(
+                                        statusTitle,
+                                        style: theme.textTheme.headlineSmall?.copyWith(
+                                          fontWeight: FontWeight.w900,
+                                          height: 1.0,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        statusDescription,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.74),
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 18),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(20),
+                                          color: Colors.white.withValues(alpha: 0.05),
+                                          border: Border.all(
+                                            color: Colors.white.withValues(alpha: 0.08),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Indicador operativo',
+                                              style: theme.textTheme.bodySmall?.copyWith(
+                                                color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              activityLabel,
+                                              style: theme.textTheme.titleMedium?.copyWith(
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              healthReady
+                                                  ? 'La vinculación y el webhook están listos. Solo necesitas confirmar actividad reciente.'
+                                                  : 'Si el canal ya está conectado pero no ves actividad, actualiza el estado o reaplica el webhook.',
+                                              style: theme.textTheme.bodySmall?.copyWith(
+                                                color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: compact ? double.infinity : constraints.maxWidth - 420,
+                                  child: Wrap(
+                                    spacing: 12,
+                                    runSpacing: 12,
+                                    children: [
+                                      _buildTopMetricCard(
+                                        theme: theme,
+                                        title: 'Estado general',
+                                        value: healthConnected ? 'Conectado' : 'Pendiente',
+                                        icon: Icons.link_rounded,
+                                      ),
+                                      _buildTopMetricCard(
+                                        theme: theme,
+                                        title: 'Webhook',
+                                        value: healthWebhook ? 'Activo' : 'Requiere atención',
+                                        icon: Icons.verified_user_rounded,
+                                      ),
+                                      _buildTopMetricCard(
+                                        theme: theme,
+                                        title: 'Última actividad',
+                                        value: _formatRelativeTimestamp(healthMessageAt),
+                                        icon: Icons.schedule_rounded,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          _buildJourneyStrip(theme),
-                          if (_requestError != null) ...[
-                            const SizedBox(height: 16),
-                            _buildErrorBanner(theme),
-                          ],
-                          if (_loadingExisting) ...[
-                            const SizedBox(height: 16),
-                            const LinearProgressIndicator(),
-                          ],
-                        ],
-                      );
-                    },
+                            );
+                          },
+                        ),
+                      ),
+                      if (_requestError != null) ...[
+                        const SizedBox(height: 16),
+                        _buildErrorBanner(theme),
+                      ],
+                      if (_loadingExisting || _isLoadingHealth) ...[
+                        const SizedBox(height: 16),
+                        const LinearProgressIndicator(),
+                      ],
+                    ],
                   ),
                 ),
                 if (_showAdvancedProviderPanel) ...[
@@ -1315,426 +1390,478 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                     ),
                   ),
                 ],
-            const SizedBox(height: 14),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final compact = constraints.maxWidth < 960;
-
-                return Wrap(
-                  spacing: 14,
-                  runSpacing: 14,
-                  children: [
-                    SizedBox(
-                      width: compact
-                          ? constraints.maxWidth
-                          : (constraints.maxWidth - 14) * 0.42,
-                      child: ExecutiveGlassCard(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildSectionEyebrow(
-                              theme: theme,
-                              label: 'PAIRING FLOW',
-                              accent: statusColor,
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Vinculación WhatsApp',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Usa un nombre fácil de reconocer para la cuenta y luego continúa con el escaneo del QR.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.68),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            TextField(
-                              controller: _instanceController,
-                              decoration: InputDecoration(
-                                labelText: 'Nombre de instancia',
-                                hintText: 'mi-instancia',
-                                errorText: _fieldError,
-                                prefixIcon:
-                                    const Icon(Icons.settings_ethernet_rounded),
-                              ),
-                              enabled:
-                                  _status != WhatsappChannelUiStatus.creating &&
-                                      !_isMutatingInstance,
-                              onChanged: (_) {
-                                if (_fieldError != null) {
-                                  setState(() {
-                                    _fieldError = null;
-                                  });
-                                }
-                              },
-                              onSubmitted: (_) => _createInstance(),
-                            ),
-                            const SizedBox(height: 14),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
+                const SizedBox(height: 14),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 960;
+                    return Wrap(
+                      spacing: 14,
+                      runSpacing: 14,
+                      children: [
+                        SizedBox(
+                          width: compact ? constraints.maxWidth : (constraints.maxWidth - 14) * 0.56,
+                          child: ExecutiveGlassCard(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                FilledButton.icon(
-                                  onPressed: (_status ==
-                                              WhatsappChannelUiStatus
-                                                  .creating ||
-                                          _isMutatingInstance)
-                                      ? null
-                                      : _createInstance,
-                                  icon: const Icon(Icons.play_circle_outline),
-                                  label: Text(
-                                    _status ==
-                                                WhatsappChannelUiStatus
-                                                    .creating ||
-                                            _isMutatingInstance
-                                        ? 'Preparando...'
-                                        : _activeInstanceName == null
-                                            ? 'Crear y continuar'
-                                            : 'Guardar cambios',
+                                _buildSectionEyebrow(
+                                  theme: theme,
+                                  label: 'VINCULACIÓN',
+                                  accent: statusColor,
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Crear instancia y escanear QR',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w900,
                                   ),
                                 ),
-                                OutlinedButton.icon(
-                                  onPressed: (_status ==
-                                              WhatsappChannelUiStatus
-                                                  .creating ||
-                                          _isMutatingInstance ||
-                                          _activeInstanceName == null)
-                                      ? null
-                                      : () async {
-                                          setState(() {
-                                            _requestError = null;
-                                          });
-                                          await _fetchQr();
-                                          await _refreshStatus();
-                                        },
-                                  icon: const Icon(Icons.refresh_rounded),
-                                  label: const Text('Actualizar'),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Escribe un nombre fácil de reconocer y escanea este código con WhatsApp para completar la conexión.',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
+                                  ),
                                 ),
-                                OutlinedButton.icon(
-                                  onPressed: (_activeInstanceName == null ||
-                                          _isMutatingInstance)
-                                      ? null
-                                      : _renameInstance,
-                                  icon: const Icon(Icons.edit_outlined),
-                                  label: const Text('Editar'),
+                                const SizedBox(height: 16),
+                                TextField(
+                                  controller: _instanceController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Nombre de instancia',
+                                    hintText: 'tienda_principal',
+                                    errorText: _fieldError,
+                                    prefixIcon: const Icon(Icons.dns_rounded),
+                                  ),
+                                  enabled: _status != WhatsappChannelUiStatus.creating && !_isMutatingInstance,
+                                  onChanged: (_) {
+                                    if (_fieldError != null) {
+                                      setState(() {
+                                        _fieldError = null;
+                                      });
+                                    }
+                                  },
+                                  onSubmitted: (_) => _createInstance(),
                                 ),
-                                OutlinedButton.icon(
-                                  onPressed: (_activeInstanceName == null ||
-                                          _isMutatingInstance)
-                                      ? null
-                                      : _deleteInstance,
-                                  icon:
-                                      const Icon(Icons.delete_outline_rounded),
-                                  label: const Text('Eliminar'),
+                                const SizedBox(height: 14),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: [
+                                    FilledButton.icon(
+                                      onPressed: (_status == WhatsappChannelUiStatus.creating || _isMutatingInstance)
+                                          ? null
+                                          : _createInstance,
+                                      icon: const Icon(Icons.play_circle_outline),
+                                      label: Text(
+                                        _activeInstanceName == null ? 'Crear instancia' : 'Actualizar instancia',
+                                      ),
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: (_activeInstanceName == null || _isMutatingInstance)
+                                          ? null
+                                          : _renameInstance,
+                                      icon: const Icon(Icons.edit_outlined),
+                                      label: const Text('Renombrar'),
+                                    ),
+                                  ],
                                 ),
-                                OutlinedButton.icon(
-                                  onPressed: (_activeInstanceName == null ||
-                                          _isCheckingWebhookStatus)
-                                      ? null
-                                      : _checkWebhookStatus,
-                                  icon: _isCheckingWebhookStatus
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.verified_user_rounded),
-                                  label: Text(_isCheckingWebhookStatus
-                                      ? 'Verificando...'
-                                      : 'Verificar webhook'),
+                                const SizedBox(height: 18),
+                                _buildSupportHint(theme),
+                                const SizedBox(height: 18),
+                                Center(
+                                  child: _buildQrShell(
+                                    theme: theme,
+                                    qrBytes: qrBytes,
+                                    compact: compact,
+                                  ),
                                 ),
+                                const SizedBox(height: 16),
+                                Center(
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        qrBytes == null ? 'QR en preparación' : 'Escanea este código con WhatsApp',
+                                        style: theme.textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        qrBytes == null
+                                            ? 'El QR aparecerá aquí cuando la instancia termine de prepararse.'
+                                            : 'Abre WhatsApp > Dispositivos vinculados y apunta la cámara a este código.',
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (qrBytes != null) ...[
+                                  const SizedBox(height: 16),
+                                  Center(
+                                    child: Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      alignment: WrapAlignment.center,
+                                      children: [
+                                        FilledButton.icon(
+                                          onPressed: () => _showLargeQr(qrBytes),
+                                          icon: const Icon(Icons.zoom_out_map_rounded),
+                                          label: const Text('Ver QR grande'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: _isMutatingInstance ? null : _fetchQr,
+                                          icon: const Icon(Icons.refresh_rounded),
+                                          label: const Text('Actualizar QR'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
-                            if (_webhookStatusMessage != null) ...[
-                              const SizedBox(height: 14),
-                              _buildWebhookStatusBanner(theme),
-                            ],
-                            const SizedBox(height: 18),
-                            _buildChecklist(theme),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: compact
-                          ? constraints.maxWidth
-                          : (constraints.maxWidth - 14) * 0.58,
-                      child: _status != WhatsappChannelUiStatus.connected
-                          ? ExecutiveGlassCard(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildSectionEyebrow(
-                                    theme: theme,
-                                    label: 'SCAN MATRIX',
-                                    accent: const Color(0xFFF59E0B),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Escanea el QR para conectar',
-                                              style: theme.textTheme.titleMedium
-                                                  ?.copyWith(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w900,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Abre WhatsApp en tu teléfono, entra en Dispositivos vinculados y escanea el código. Cuando termine, el estado cambiará automáticamente.',
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                color: theme
-                                                    .colorScheme.onSurface
-                                                    .withValues(alpha: 0.66),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12, vertical: 8),
-                                        decoration: BoxDecoration(
-                                          color: theme.colorScheme.primary
-                                              .withValues(alpha: 0.12),
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                          border: Border.all(
-                                            color: theme.colorScheme.primary
-                                                .withValues(alpha: 0.18),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          qrBytes == null
-                                              ? 'Esperando QR'
-                                              : 'Listo para escanear',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: theme.colorScheme.primary,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 20),
-                                  _buildSupportHint(theme),
-                                  const SizedBox(height: 18),
-                                  Center(
-                                    child: _buildQrShell(
+                        SizedBox(
+                          width: compact ? constraints.maxWidth : (constraints.maxWidth - 14) * 0.44,
+                          child: Column(
+                            children: [
+                              ExecutiveGlassCard(
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildSectionEyebrow(
                                       theme: theme,
-                                      qrBytes: qrBytes,
-                                      compact: compact,
+                                      label: 'ESTADO DEL CANAL',
+                                      accent: healthReady ? const Color(0xFF22C55E) : const Color(0xFFF59E0B),
                                     ),
-                                  ),
-                                  if (qrBytes != null) ...[
-                                    const SizedBox(height: 18),
-                                    Center(
-                                      child: Wrap(
-                                        spacing: 10,
-                                        runSpacing: 10,
-                                        alignment: WrapAlignment.center,
-                                        children: [
-                                          FilledButton.icon(
-                                            onPressed: () =>
-                                                _showLargeQr(qrBytes),
-                                            icon:
-                                                const Icon(Icons.zoom_out_map),
-                                            label: const Text('Ver QR grande'),
-                                          ),
-                                          OutlinedButton.icon(
-                                            onPressed: _isMutatingInstance
-                                                ? null
-                                                : _fetchQr,
-                                            icon: const Icon(
-                                                Icons.refresh_rounded),
-                                            label: const Text('Actualizar QR'),
-                                          ),
-                                        ],
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'Resumen operativo',
+                                      style: theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w900,
                                       ),
                                     ),
-                                  ],
-                                ],
-                              ),
-                            )
-                          : ExecutiveGlassCard(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 54,
-                                        height: 54,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: const Color(0xFF22C55E)
-                                              .withValues(alpha: 0.18),
-                                          border: Border.all(
-                                            color: const Color(0xFF22C55E)
-                                                .withValues(alpha: 0.30),
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                            Icons.verified_rounded,
-                                            color: Color(0xFF22C55E)),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Canal conectado',
-                                              style: theme.textTheme.titleMedium
-                                                  ?.copyWith(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w900,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            Text(
-                                              'La instancia está operativa y lista para enviar o recibir mensajes.',
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                color: theme
-                                                    .colorScheme.onSurface
-                                                    .withValues(alpha: 0.68),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 18),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(22),
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [
-                                          const Color(0xFF22C55E)
-                                              .withValues(alpha: 0.12),
-                                          theme.colorScheme.surface
-                                              .withValues(alpha: 0.08),
-                                        ],
-                                      ),
-                                      border: Border.all(
-                                        color: const Color(0xFF22C55E)
-                                            .withValues(alpha: 0.18),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Instancia activa: ${_activeInstanceName ?? 'Sin nombre'}',
-                                      style:
-                                          theme.textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 10,
-                                    children: [
-                                      OutlinedButton.icon(
-                                        onPressed: _isMutatingInstance
-                                            ? null
-                                            : _refreshStatus,
-                                        icon: const Icon(Icons.sync_rounded),
-                                        label: const Text('Actualizar estado'),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: _isMutatingInstance
-                                            ? null
-                                            : _logoutInstance,
-                                        icon:
-                                            const Icon(Icons.link_off_rounded),
-                                        label: const Text('Desconectar'),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: _isMutatingInstance
-                                            ? null
-                                            : _deleteInstance,
-                                        icon: const Icon(
-                                            Icons.delete_outline_rounded),
-                                        label: const Text('Eliminar'),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: _isCheckingWebhookStatus
-                                            ? null
-                                            : _checkWebhookStatus,
-                                        icon: _isCheckingWebhookStatus
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                ),
-                                              )
-                                            : const Icon(
-                                                Icons.verified_user_rounded),
-                                        label: Text(_isCheckingWebhookStatus
-                                            ? 'Verificando...'
-                                            : 'Verificar webhook'),
-                                      ),
-                                    ],
-                                  ),
-                                  if (_webhookStatusMessage != null) ...[
                                     const SizedBox(height: 14),
-                                    _buildWebhookStatusBanner(theme),
+                                    _buildSummaryRow(theme, 'Instancia conectada', healthConnected ? 'Sí' : 'No', healthConnected),
+                                    _buildSummaryRow(theme, 'Webhook activo', healthWebhook ? 'Sí' : 'No', healthWebhook),
+                                    _buildSummaryRow(theme, 'Último evento recibido', _friendlyEventLabel(healthEvent), healthEvent != null),
+                                    _buildSummaryRow(theme, 'Último mensaje recibido', healthMessage ?? 'Sin mensajes detectados', healthMessage != null),
+                                    _buildSummaryRow(theme, 'Último error', healthError ?? 'Sin errores recientes', healthError == null),
+                                    const SizedBox(height: 16),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        color: _activityToneColor(activityBadge).withValues(alpha: 0.12),
+                                        border: Border.all(
+                                          color: _activityToneColor(activityBadge).withValues(alpha: 0.24),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            activityLabel,
+                                            style: theme.textTheme.bodyMedium?.copyWith(
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            'Último evento: ${_formatRelativeTimestamp(healthEventAt)} · Último mensaje: ${_formatRelativeTimestamp(healthMessageAt)}',
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                              color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ],
-                                  const SizedBox(height: 14),
-                                  Text(
-                                    'Qué puedes hacer ahora',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Puedes actualizar el estado o desconectar la cuenta si necesitas escanear un nuevo QR. La sincronización técnica del canal se resuelve automáticamente en segundo plano.',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurface
-                                          .withValues(alpha: 0.68),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 14),
+                              ExecutiveGlassCard(
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildSectionEyebrow(
+                                      theme: theme,
+                                      label: 'ACCIONES RÁPIDAS',
+                                      accent: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: [
+                                        FilledButton.icon(
+                                          onPressed: _openMessages,
+                                          icon: const Icon(Icons.forum_rounded),
+                                          label: const Text('Abrir mensajes'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: (_activeInstanceName == null || _isReapplyingWebhook)
+                                              ? null
+                                              : _reapplyWebhook,
+                                          icon: _isReapplyingWebhook
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons.settings_backup_restore_rounded),
+                                          label: const Text('Reaplicar webhook'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: _activeInstanceName == null ? null : _refreshOperationalState,
+                                          icon: const Icon(Icons.sync_rounded),
+                                          label: const Text('Actualizar estado'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: _activeInstanceName == null ? null : _reconnectInstance,
+                                          icon: const Icon(Icons.qr_code_scanner_rounded),
+                                          label: const Text('Reconectar'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: _activeInstanceName == null ? null : _deleteInstance,
+                                          icon: const Icon(Icons.delete_outline_rounded),
+                                          label: const Text('Eliminar canal'),
+                                        ),
+                                      ],
+                                    ),
+                                    if (_webhookStatusMessage != null) ...[
+                                      const SizedBox(height: 14),
+                                      _buildWebhookStatusBanner(theme),
+                                    ],
+                                    if (healthConnected && healthMessageAt == null) ...[
+                                      const SizedBox(height: 14),
+                                      _buildSoftNotice(
+                                        theme,
+                                        title: 'Canal conectado, pero sin mensajes detectados todavía',
+                                        description: 'Esto no es un error. Envía un mensaje de prueba para confirmar la actividad reciente del canal.',
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+        ),
+        ],
+      ),
+    );
+  }
+
+  bool _healthBool(String key) => _channelHealth?[key] == true;
+
+  String? _healthString(String key) {
+    final value = _channelHealth?[key];
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+    return null;
+  }
+
+  String _friendlyEventLabel(String? value) {
+    final event = value?.trim();
+    if (event == null || event.isEmpty) {
+      return 'Sin eventos recientes';
+    }
+
+    switch (event.toUpperCase()) {
+      case 'MESSAGES_UPSERT':
+        return 'Mensaje recibido';
+      case 'QRCODE_UPDATED':
+        return 'QR actualizado';
+      case 'CONNECTION_UPDATE':
+        return 'Estado de conexión actualizado';
+      case 'MESSAGES_UPDATE':
+        return 'Mensaje actualizado';
+      case 'MESSAGES_DELETE':
+        return 'Mensaje eliminado';
+      case 'SEND_MESSAGE':
+        return 'Mensaje enviado';
+      default:
+        return event.replaceAll('_', ' ');
+    }
+  }
+
+  String _formatRelativeTimestamp(String? raw) {
+    final value = raw?.trim();
+    if (value == null || value.isEmpty) {
+      return 'Sin registro';
+    }
+
+    final date = DateTime.tryParse(value)?.toLocal();
+    if (date == null) {
+      return value;
+    }
+
+    final difference = DateTime.now().difference(date);
+    if (difference.inSeconds < 60) {
+      return 'Hace unos segundos';
+    }
+    if (difference.inMinutes < 60) {
+      return 'Hace ${difference.inMinutes} min';
+    }
+    if (difference.inHours < 24) {
+      return 'Hace ${difference.inHours} h';
+    }
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  Color _activityToneColor(String badge) {
+    switch (badge) {
+      case 'healthy':
+        return const Color(0xFF22C55E);
+      case 'quiet':
+        return const Color(0xFFF59E0B);
+      case 'issue':
+        return const Color(0xFFEF4444);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  Widget _buildActivityBadge(ThemeData theme, String badge, String label) {
+    final color = _activityToneColor(badge);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: color.withValues(alpha: 0.14),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pulse_monitor_rounded, size: 15, color: color),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(
+    ThemeData theme,
+    String label,
+    String value,
+    bool positive,
+  ) {
+    final accent = positive ? const Color(0xFF22C55E) : const Color(0xFFF59E0B);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: Colors.white.withValues(alpha: 0.04),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.44),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(top: 4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: accent,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.62),
                     ),
-                  ],
-                );
-              },
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSoftNotice(
+    ThemeData theme, {
+    required String title,
+    required String description,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.10),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.24),
         ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFFF59E0B)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -90,4 +90,10 @@ export class WhatsappInstancesController {
   getWebhookStatus(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
     return this.whatsappInstancesService.getWebhookStatus(user.companyId, params.instance);
   }
+
+  @Roles('admin', 'operator', 'viewer')
+  @Get('instances/:instance/health')
+  getInstanceHealth(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
+    return this.whatsappInstancesService.getInstanceHealth(user.companyId, params.instance);
+  }
 }

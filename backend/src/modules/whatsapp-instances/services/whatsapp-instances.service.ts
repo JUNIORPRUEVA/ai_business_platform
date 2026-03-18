@@ -13,6 +13,9 @@ import { BotConfigurationEntity } from '../../bot-configuration/entities/bot-con
 import { ChannelsService } from '../../channels/channels.service';
 import { EVOLUTION_INSTANCE_WEBHOOK_EVENTS, EvolutionService } from '../../evolution/evolution.service';
 import { EvolutionWebhookService } from '../../evolution-webhook/services/evolution-webhook.service';
+import { WhatsappChannelConfigEntity } from '../../whatsapp-channel/entities/whatsapp-channel-config.entity';
+import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsapp-channel-log.entity';
+import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappChannelConfigService } from '../../whatsapp-channel/services/whatsapp-channel-config.service';
 import { WhatsappWebhookService } from '../../whatsapp-channel/services/whatsapp-webhook.service';
 import { WhatsappInstanceEntity, WhatsappInstanceStatus } from '../entities/whatsapp-instance.entity';
@@ -27,6 +30,12 @@ export class WhatsappInstancesService {
     private readonly repo: Repository<WhatsappInstanceEntity>,
     @InjectRepository(BotConfigurationEntity)
     private readonly botConfigurationRepository: Repository<BotConfigurationEntity>,
+    @InjectRepository(WhatsappChannelConfigEntity)
+    private readonly whatsappChannelConfigRepository: Repository<WhatsappChannelConfigEntity>,
+    @InjectRepository(WhatsappChannelLogEntity)
+    private readonly whatsappChannelLogRepository: Repository<WhatsappChannelLogEntity>,
+    @InjectRepository(WhatsappMessageEntity)
+    private readonly whatsappMessageRepository: Repository<WhatsappMessageEntity>,
     private readonly evolutionService: EvolutionService,
     private readonly configService: ConfigService,
     private readonly channelsService: ChannelsService,
@@ -295,6 +304,76 @@ export class WhatsappInstancesService {
         error: error instanceof Error ? error.message : 'No se pudo consultar el webhook en Evolution.',
       };
     }
+  }
+
+  async getInstanceHealth(
+    tenantId: string,
+    instanceName: string,
+  ): Promise<{
+    instanceName: string;
+    connected: boolean;
+    webhookConfigured: boolean;
+    lastWebhookEventAt: string | null;
+    lastWebhookEvent: string | null;
+    lastInboundMessageAt: string | null;
+    lastInboundMessage: string | null;
+    lastError: string | null;
+    activityBadge: 'healthy' | 'quiet' | 'inactive' | 'issue';
+    activityLabel: string;
+    channelReady: boolean;
+  }> {
+    const entity = await this.getByInstanceName(tenantId, instanceName);
+    await this.ensureWhatsappChannelBridge(entity.tenantId, entity.instanceName, entity.status);
+
+    const [webhookStatus, latestWebhookLog, latestInboundMessage, latestErrorLog] =
+        await Promise.all([
+          this.getWebhookStatus(tenantId, instanceName),
+          this.whatsappChannelLogRepository.findOne({
+            where: {
+              companyId: tenantId,
+              instanceName: entity.instanceName,
+              direction: 'incoming_webhook',
+            },
+            order: { createdAt: 'DESC' },
+          }),
+          this.findLatestInboundMessage(tenantId, entity.instanceName),
+          this.whatsappChannelLogRepository.findOne({
+            where: {
+              companyId: tenantId,
+              instanceName: entity.instanceName,
+              success: false,
+            },
+            order: { createdAt: 'DESC' },
+          }),
+        ]);
+
+    const connected = entity.status === 'connected';
+    const webhookConfigured = webhookStatus.matchesExpected;
+    const lastWebhookEventAt = latestWebhookLog?.createdAt.toISOString() ?? null;
+    const lastWebhookEvent = latestWebhookLog?.eventName ?? this.readSessionString(entity, 'lastInboundMessage', 'event');
+    const lastInboundMessageAt = latestInboundMessage?.createdAt.toISOString() ?? this.readSessionString(entity, 'lastInboundMessage', 'receivedAt');
+    const lastInboundMessage = this.readMessagePreview(latestInboundMessage) ?? this.readSessionString(entity, 'lastInboundMessage', 'inferredType');
+    const lastError = latestErrorLog?.errorMessage?.trim() || null;
+    const activity = this.computeActivityState({
+      connected,
+      webhookConfigured,
+      lastInboundMessageAt,
+      lastError,
+    });
+
+    return {
+      instanceName: entity.instanceName,
+      connected,
+      webhookConfigured,
+      lastWebhookEventAt,
+      lastWebhookEvent,
+      lastInboundMessageAt,
+      lastInboundMessage,
+      lastError,
+      activityBadge: activity.badge,
+      activityLabel: activity.label,
+      channelReady: connected && webhookConfigured,
+    };
   }
 
   async applyWebhook(payload: {
@@ -816,5 +895,107 @@ export class WhatsappInstancesService {
         `[EVOLUTION INSTANCE WEBHOOK] failed to sync whatsapp channel config instanceName=${instanceName} error=${message}`,
       );
     }
+  }
+
+  private async findLatestInboundMessage(
+    companyId: string,
+    instanceName: string,
+  ): Promise<WhatsappMessageEntity | null> {
+    const config = await this.whatsappChannelConfigRepository.findOne({
+      where: { companyId, provider: 'evolution', instanceName },
+    });
+    if (!config) {
+      return null;
+    }
+
+    return this.whatsappMessageRepository.findOne({
+      where: {
+        companyId,
+        channelConfigId: config.id,
+        direction: 'inbound',
+      },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  private readSessionString(
+    entity: WhatsappInstanceEntity,
+    scopeKey: string,
+    nestedKey: string,
+  ): string | null {
+    const scope = entity.sessionData?.[scopeKey];
+    if (typeof scope !== 'object' || scope == null) {
+      return null;
+    }
+
+    const value = (scope as Record<string, unknown>)[nestedKey];
+    const normalized = this.readString(value);
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  private readMessagePreview(message: WhatsappMessageEntity | null): string | null {
+    if (!message) {
+      return null;
+    }
+
+    return message.textBody?.trim() ||
+      message.caption?.trim() ||
+      (message.messageType == 'text' ? 'Mensaje recibido' : '${message.messageType} recibido');
+  }
+
+  private computeActivityState(params: {
+    connected: boolean;
+    webhookConfigured: boolean;
+    lastInboundMessageAt: string | null;
+    lastError: string | null;
+  }): { badge: 'healthy' | 'quiet' | 'inactive' | 'issue'; label: string } {
+    if (params.lastError != null && params.lastError.isNotEmpty) {
+      return {
+        badge: 'issue',
+        label: 'Se detectó un problema reciente en la operación del canal',
+      };
+    }
+
+    if (!params.webhookConfigured) {
+      return {
+        badge: 'issue',
+        label: 'Webhook inactivo o fuera de sincronización',
+      };
+    }
+
+    if (!params.connected) {
+      return {
+        badge: 'inactive',
+        label: 'El canal no está conectado en este momento',
+      };
+    }
+
+    if (params.lastInboundMessageAt == null) {
+      return {
+        badge: 'quiet',
+        label: 'Aún no se detectan mensajes',
+      };
+    }
+
+    final inboundAt = DateTime.tryParse(params.lastInboundMessageAt)?.toUtc();
+    if (inboundAt == null) {
+      return {
+        badge: 'quiet',
+        label: 'Webhook activo pero sin actividad reciente',
+      };
+    }
+
+    final minutes = DateTime.now().toUtc().difference(inboundAt).inMinutes;
+    if (minutes <= 10) {
+      return {
+        badge: 'healthy',
+        label: 'Recibiendo mensajes correctamente',
+      };
+    }
+
+    return {
+      badge: 'quiet',
+      label: 'Webhook activo pero sin actividad reciente',
+    };
   }
 }
