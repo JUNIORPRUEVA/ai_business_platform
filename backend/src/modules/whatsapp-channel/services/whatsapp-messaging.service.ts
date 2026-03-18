@@ -51,7 +51,19 @@ export class WhatsappMessagingService {
       `[WHATSAPP OUTBOUND] send payload instanceName=${config.instanceName} endpoint=/message/sendText payload=${JSON.stringify(evolutionPayload)}`,
     );
 
-    const response = await this.evolutionApiClient.sendText(config, evolutionPayload);
+    let response: Record<string, unknown>;
+    try {
+      response = await this.evolutionApiClient.sendText(config, evolutionPayload);
+    } catch (error) {
+      this.logger.error(
+        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} rawRemoteJid=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} error=${this.formatErrorForLog(error)}`,
+      );
+      throw error;
+    }
+
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] send success instanceName=${config.instanceName} endpoint=/message/sendText response=${this.safeJsonForLog(response)}`,
+    );
 
     const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
     const message = await this.createOutboundMessage({
@@ -81,7 +93,7 @@ export class WhatsappMessagingService {
 
     const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
 
-    const response = await this.evolutionApiClient.sendMedia(config, {
+    const evolutionPayload: Record<string, unknown> = {
       number: recipient.number,
       mediatype: payload.mediaType,
       mimetype: payload.mimeType ?? outboundMedia.mimeType,
@@ -89,7 +101,28 @@ export class WhatsappMessagingService {
       media: outboundMedia.url,
       fileName: payload.fileName ?? outboundMedia.fileName,
       ...(payload.quotedMessageId ? { quoted: { key: { id: payload.quotedMessageId } } } : {}),
-    });
+    };
+
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=${payload.mediaType}`,
+    );
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] send payload instanceName=${config.instanceName} endpoint=/message/sendMedia payload=${this.safeJsonForLog(evolutionPayload)}`,
+    );
+
+    let response: Record<string, unknown>;
+    try {
+      response = await this.evolutionApiClient.sendMedia(config, evolutionPayload);
+    } catch (error) {
+      this.logger.error(
+        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=${payload.mediaType} error=${this.formatErrorForLog(error)}`,
+      );
+      throw error;
+    }
+
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] send success instanceName=${config.instanceName} endpoint=/message/sendMedia response=${this.safeJsonForLog(response)}`,
+    );
 
     const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
     const message = await this.createOutboundMessage({
@@ -123,11 +156,32 @@ export class WhatsappMessagingService {
 
     const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
 
-    const response = await this.evolutionApiClient.sendWhatsAppAudio(config, {
+    const evolutionPayload: Record<string, unknown> = {
       number: recipient.number,
       audio: outboundMedia.url,
       ...(payload.quotedMessageId ? { quoted: { key: { id: payload.quotedMessageId } } } : {}),
-    });
+    };
+
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=audio`,
+    );
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] send payload instanceName=${config.instanceName} endpoint=/message/sendWhatsAppAudio payload=${this.safeJsonForLog(evolutionPayload)}`,
+    );
+
+    let response: Record<string, unknown>;
+    try {
+      response = await this.evolutionApiClient.sendWhatsAppAudio(config, evolutionPayload);
+    } catch (error) {
+      this.logger.error(
+        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=audio error=${this.formatErrorForLog(error)}`,
+      );
+      throw error;
+    }
+
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] send success instanceName=${config.instanceName} endpoint=/message/sendWhatsAppAudio response=${this.safeJsonForLog(response)}`,
+    );
 
     const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
     const message = await this.createOutboundMessage({
@@ -565,5 +619,29 @@ export class WhatsappMessagingService {
 
   private readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private safeJsonForLog(value: unknown, maxLen = 2000): string {
+    try {
+      const raw = JSON.stringify(value);
+      if (raw.length <= maxLen) {
+        return raw;
+      }
+      return `${raw.slice(0, maxLen)}...<truncated>`;
+    } catch {
+      return '<unserializable>';
+    }
+  }
+
+  private formatErrorForLog(error: unknown, maxLen = 1200): string {
+    if (error instanceof Error) {
+      const stackOrMessage = error.stack ?? error.message;
+      return stackOrMessage.length <= maxLen
+        ? stackOrMessage
+        : `${stackOrMessage.slice(0, maxLen)}...<truncated>`;
+    }
+
+    const asString = this.safeJsonForLog(error, maxLen);
+    return asString;
   }
 }
