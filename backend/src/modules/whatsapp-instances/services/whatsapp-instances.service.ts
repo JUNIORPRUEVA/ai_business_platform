@@ -930,7 +930,7 @@ export class WhatsappInstancesService {
 
     const value = (scope as Record<string, unknown>)[nestedKey];
     const normalized = this.readString(value);
-    return normalized.isEmpty ? null : normalized;
+    return normalized.length === 0 ? null : normalized;
   }
 
   private readMessagePreview(message: WhatsappMessageEntity | null): string | null {
@@ -949,7 +949,7 @@ export class WhatsappInstancesService {
     lastInboundMessageAt: string | null;
     lastError: string | null;
   }): { badge: 'healthy' | 'quiet' | 'inactive' | 'issue'; label: string } {
-    if (params.lastError != null && params.lastError.isNotEmpty) {
+    if (params.lastError != null && params.lastError.length > 0) {
       return {
         badge: 'issue',
         label: 'Se detectó un problema reciente en la operación del canal',
@@ -977,15 +977,15 @@ export class WhatsappInstancesService {
       };
     }
 
-    final inboundAt = DateTime.tryParse(params.lastInboundMessageAt)?.toUtc();
-    if (inboundAt == null) {
+    const inboundAt = new Date(params.lastInboundMessageAt);
+    if (Number.isNaN(inboundAt.getTime())) {
       return {
         badge: 'quiet',
         label: 'Webhook activo pero sin actividad reciente',
       };
     }
 
-    final minutes = DateTime.now().toUtc().difference(inboundAt).inMinutes;
+    const minutes = Math.floor((Date.now() - inboundAt.getTime()) / 60000);
     if (minutes <= 10) {
       return {
         badge: 'healthy',

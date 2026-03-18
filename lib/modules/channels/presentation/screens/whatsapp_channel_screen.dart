@@ -1750,7 +1750,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.pulse_monitor_rounded, size: 15, color: color),
+          Icon(Icons.insights_rounded, size: 15, color: color),
           const SizedBox(width: 8),
           Text(
             label,
