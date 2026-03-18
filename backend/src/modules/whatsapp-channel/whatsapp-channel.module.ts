@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { BillingModule } from '../billing/billing.module';
 import { StorageModule } from '../storage/storage.module';
 import { WhatsappChannelController } from './controllers/whatsapp-channel.controller';
 import { WhatsappWebhookController } from './controllers/whatsapp-webhook.controller';
@@ -23,6 +24,7 @@ import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
 @Module({
   imports: [
     ConfigModule,
+    BillingModule,
     StorageModule,
     BullModule.registerQueue({ name: 'whatsapp-webhook-processing' }),
     TypeOrmModule.forFeature([
