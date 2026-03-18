@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { WhatsappMessagingService } from './modules/whatsapp-channel/services/whatsapp-messaging.service';
 import { WhatsappWebhookService } from './modules/whatsapp-channel/services/whatsapp-webhook.service';
 import { WhatsappInstancesService } from './modules/whatsapp-instances/services/whatsapp-instances.service';
+import { EvolutionWebhookService } from './modules/evolution-webhook/services/evolution-webhook.service';
 
 class InMemoryRepository<T extends { id?: string; createdAt?: Date; updatedAt?: Date }> {
   constructor(private readonly items: T[] = []) {}
@@ -524,4 +525,67 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   assert.equal(updatedChat?.canonicalNumber, '18295344286');
   assert.equal(updatedChat?.sendTarget, '18295344286');
   assert.equal(updatedChat?.replyTargetUnresolved, false);
+});
+
+test('EvolutionWebhookService usa el numero canonico para contacts.phone cuando remoteJid es @lid', async () => {
+  const capturedContactPhones: string[] = [];
+  const queuedJobs: Array<Record<string, unknown>> = [];
+
+  const service = new EvolutionWebhookService(
+    {
+      getByIdUnsafe: async () => ({
+        id: 'channel-1',
+        companyId: 'company-1',
+        type: 'whatsapp',
+        config: {},
+      }),
+    } as never,
+    {
+      findOrCreateByPhone: async (_companyId: string, phone: string) => {
+        capturedContactPhones.push(phone);
+        return { id: 'contact-1', phone };
+      },
+    } as never,
+    {
+      findOrCreateOpen: async () => ({ id: 'conversation-1', channelId: 'channel-1', contactId: 'contact-1' }),
+    } as never,
+    {
+      findByMetadataValue: async () => null,
+      create: async () => ({ id: 'message-1' }),
+    } as never,
+    { acquireIdempotency: async () => true, idempotencyKey: () => 'idem-key' } as never,
+    { buildEventKey: () => 'event-key' } as never,
+    { add: async (_name: string, payload: Record<string, unknown>) => { queuedJobs.push(payload); return undefined; } } as never,
+    {
+      findOne: async () => ({ payload: { whatsapp: { deduplicationEnabled: false, persistMediaMetadata: true } } }),
+    } as never,
+  );
+
+  const result = await service.processIncomingMessage({
+    channelId: 'channel-1',
+    payload: {
+      event: 'messages.upsert',
+      instance: 'demo-instance',
+      data: {
+        key: {
+          remoteJid: '234840490270800@lid',
+          id: 'wamid-8',
+        },
+        pushName: 'Cliente',
+        source: {
+          owner: {
+            phoneNumber: '+1 (829) 534-4286',
+          },
+        },
+        message: {
+          conversation: 'hola',
+        },
+        messageTimestamp: '1710000001',
+      },
+    } as never,
+  });
+
+  assert.equal(result.normalizedMessage.senderId, '18295344286');
+  assert.equal(capturedContactPhones[0], '18295344286');
+  assert.equal(queuedJobs[0]['contactPhone'], '18295344286');
 });

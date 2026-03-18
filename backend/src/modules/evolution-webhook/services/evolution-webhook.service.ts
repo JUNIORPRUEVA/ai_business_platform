@@ -165,7 +165,12 @@ export class EvolutionWebhookService {
   private normalizePayload(
     payload: EvolutionMessageWebhookDto,
   ): NormalizedEvolutionMessage {
-    const senderId = payload.data.key.remoteJid?.trim();
+    const rawRemoteJid = payload.data.key.remoteJid?.trim() ?? '';
+    const canonicalSenderJid = this.extractCanonicalRemoteJid(payload);
+    const canonicalSenderNumber = canonicalSenderJid
+      ? this.normalizeOutboundNumber(this.jidToNumber(canonicalSenderJid))
+      : '';
+    const senderId = canonicalSenderNumber || rawRemoteJid;
     const normalizedContent = this.extractNormalizedContent(payload);
 
     if (!senderId || !normalizedContent.message) {
@@ -185,9 +190,145 @@ export class EvolutionWebhookService {
         event: payload.event,
         instance: payload.instance,
         externalMessageId: payload.data.key.id,
+        rawRemoteJid,
+        canonicalSenderJid: canonicalSenderJid || null,
+        canonicalSenderNumber: canonicalSenderNumber || null,
         ...normalizedContent.metadata,
       },
     };
+  }
+
+  private extractCanonicalRemoteJid(payload: EvolutionMessageWebhookDto): string | null {
+    const data = this.asMap(payload.data) ?? {};
+    const key = this.asMap(data['key']) ?? {};
+    const message = this.asMap(data['message']) ?? {};
+    const remoteJid = this.readString(key['remoteJid']);
+    const disallowedDigits = this.buildDisallowedDigits(remoteJid);
+
+    const candidates = [
+      this.readString(key['participantJid']),
+      this.readString(key['participant']),
+      this.readString(key['participantPn']),
+      this.readString(key['sender']),
+      this.readString(key['senderJid']),
+      this.readString(key['senderPn']),
+      this.readString(data['participant']),
+      this.readString(data['participantJid']),
+      this.readString(data['participantPn']),
+      this.readString(data['sender']),
+      this.readString(data['senderJid']),
+      this.readString(data['senderPn']),
+      this.readString(data['senderId']),
+      this.readString(data['sender_id']),
+      this.readString(data['author']),
+      this.readString(data['authorJid']),
+      this.readString(data['from']),
+      this.readString(data['fromJid']),
+      this.readString(data['phone']),
+      this.readString(data['phoneNumber']),
+      this.readString(data['wa_id']),
+      this.readString(data['waId']),
+      this.readString((this.asMap(data['source']) ?? {})['sender']),
+      this.readString((this.asMap(data['source']) ?? {})['senderJid']),
+      this.readString((this.asMap(data['source']) ?? {})['senderPn']),
+      this.readString((this.asMap(data['source']) ?? {})['phone']),
+      this.readString((this.asMap(data['source']) ?? {})['phoneNumber']),
+      this.readString((this.asMap(data['source']) ?? {})['wa_id']),
+      this.readString((this.asMap(data['source']) ?? {})['waId']),
+    ];
+
+    for (const candidate of candidates) {
+      const canonical = this.resolveCanonicalCandidate(candidate, disallowedDigits);
+      if (canonical) {
+        return canonical;
+      }
+    }
+
+    const contacts = data['contacts'];
+    if (Array.isArray(contacts)) {
+      for (const item of contacts) {
+        const contact = this.asMap(item) ?? {};
+        const contactCandidates = [
+          this.readString(contact['id']),
+          this.readString(contact['jid']),
+          this.readString(contact['wa_id']),
+          this.readString(contact['waId']),
+          this.readString(contact['phone']),
+          this.readString(contact['phoneNumber']),
+          this.readString(contact['number']),
+        ];
+        for (const candidate of contactCandidates) {
+          const canonical = this.resolveCanonicalCandidate(candidate, disallowedDigits);
+          if (canonical) {
+            return canonical;
+          }
+        }
+      }
+    }
+
+    return this.extractCanonicalByHeuristicScan(
+      {
+        data,
+        key,
+        message,
+        source: this.asMap(data['source']) ?? {},
+      },
+      disallowedDigits,
+    );
+  }
+
+  private extractCanonicalByHeuristicScan(
+    value: unknown,
+    disallowedDigits: Set<string>,
+    path = '',
+    depth = 0,
+  ): string | null {
+    if (depth > 5 || value == null) {
+      return null;
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      const lastSegment = path.split('.').slice(-1)[0]?.toLowerCase() ?? '';
+      if (!this.shouldInspectCanonicalPath(lastSegment)) {
+        return null;
+      }
+      return this.resolveCanonicalCandidate(String(value), disallowedDigits);
+    }
+
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) {
+        const nested = this.extractCanonicalByHeuristicScan(
+          value[index],
+          disallowedDigits,
+          `${path}[${index}]`,
+          depth + 1,
+        );
+        if (nested) {
+          return nested;
+        }
+      }
+      return null;
+    }
+
+    const map = this.asMap(value);
+    if (!map) {
+      return null;
+    }
+
+    for (const [key, nestedValue] of Object.entries(map)) {
+      const nextPath = path ? `${path}.${key}` : key;
+      const nested = this.extractCanonicalByHeuristicScan(
+        nestedValue,
+        disallowedDigits,
+        nextPath,
+        depth + 1,
+      );
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return null;
   }
 
   private extractNormalizedContent(payload: EvolutionMessageWebhookDto): {
@@ -381,5 +522,92 @@ export class EvolutionWebhookService {
 
   private readBoolean(value: unknown, fallback: boolean): boolean {
     return typeof value === 'boolean' ? value : fallback;
+  }
+
+  private resolveCanonicalCandidate(value: string, disallowedDigits: Set<string>): string | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (trimmed.endsWith('@lid') || trimmed.endsWith('@g.us')) {
+      return null;
+    }
+
+    if (trimmed.endsWith('@s.whatsapp.net')) {
+      const normalized = this.normalizeOutboundNumber(this.jidToNumber(trimmed));
+      if (!normalized || disallowedDigits.has(normalized)) {
+        return null;
+      }
+      return `${normalized}@s.whatsapp.net`;
+    }
+
+    if (trimmed.includes('@')) {
+      return null;
+    }
+
+    const normalized = this.normalizeOutboundNumber(trimmed.replace(/\D/g, ''));
+    if (normalized.length < 10 || normalized.length > 15 || disallowedDigits.has(normalized)) {
+      return null;
+    }
+
+    return `${normalized}@s.whatsapp.net`;
+  }
+
+  private buildDisallowedDigits(remoteJid: string): Set<string> {
+    const digits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+    return digits ? new Set([digits]) : new Set();
+  }
+
+  private jidToNumber(jid: string): string {
+    return jid.replace(/@.+$/, '').replace(/\D/g, '');
+  }
+
+  private normalizeOutboundNumber(value: string): string {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) {
+      return '';
+    }
+
+    if (digits.length === 10) {
+      return `1${digits}`;
+    }
+
+    if (digits.length === 11 && digits.startsWith('1')) {
+      return digits;
+    }
+
+    return digits;
+  }
+
+  private shouldInspectCanonicalPath(segment: string): boolean {
+    if (!segment) {
+      return false;
+    }
+
+    const normalized = segment.replace(/\[\d+\]/g, '').toLowerCase();
+    if (
+      normalized.includes('remotejid') ||
+      normalized.includes('messageid') ||
+      normalized.includes('timestamp') ||
+      normalized.includes('instanceid') ||
+      normalized === 'status' ||
+      normalized === 'type'
+    ) {
+      return false;
+    }
+
+    return normalized.includes('sender') ||
+      normalized.includes('participant') ||
+      normalized.includes('author') ||
+      normalized.includes('owner') ||
+      normalized.includes('contact') ||
+      normalized.includes('phone') ||
+      normalized.includes('number') ||
+      normalized.includes('jid') ||
+      normalized.includes('wa_id') ||
+      normalized.includes('waid') ||
+      normalized.includes('from') ||
+      normalized.endsWith('pn');
   }
 }
