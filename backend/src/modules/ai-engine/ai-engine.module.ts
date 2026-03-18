@@ -67,6 +67,7 @@ import { ToolRunnerService } from './tool-runner.service';
     BotEngineService,
     MemoryService,
     MemoryCacheService,
+    MemoryDeduplicationService,
     ConversationMemoryService,
     ClientMemoryService,
     ContactMemoryService,
