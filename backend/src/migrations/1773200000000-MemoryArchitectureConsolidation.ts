@@ -28,7 +28,7 @@ export class MemoryArchitectureConsolidation1773200000000 implements MigrationIn
           WHEN memory.role = 'system' THEN 'system_prompt'
           ELSE 'inbound_message'
         END,
-        content_hash = encode(digest(coalesce(memory.content, ''), 'sha256'), 'hex')
+        content_hash = md5(coalesce(memory.content, ''))
       FROM conversations conversation
       WHERE conversation.id = memory.conversation_id
         AND (memory.company_id IS NULL OR memory.contact_id IS NULL OR memory.content_hash IS NULL);
