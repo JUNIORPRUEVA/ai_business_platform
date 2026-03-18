@@ -18,6 +18,8 @@ abstract interface class BotCenterRepository {
 
   Future<BotContactContext> getContactContext(String conversationId);
 
+  Future<void> deleteConversation(String conversationId);
+
   Future<List<BotMemoryItem>> getMemory(String conversationId);
 
   Future<BotMemoryItem> createMemory({

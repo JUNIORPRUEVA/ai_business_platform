@@ -30,6 +30,7 @@ class ChatWorkspacePanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _ConversationHeader(
+          controller: controller,
           conversation: conversation,
           isProcessingWithAi: controller.isProcessingWithAi,
         ),
@@ -117,10 +118,12 @@ class _EmptyConversation extends StatelessWidget {
 
 class _ConversationHeader extends StatelessWidget {
   const _ConversationHeader({
+    required this.controller,
     required this.conversation,
     required this.isProcessingWithAi,
   });
 
+  final BotCenterController controller;
   final BotConversation conversation;
   final bool isProcessingWithAi;
 
@@ -209,9 +212,48 @@ class _ConversationHeader extends StatelessWidget {
             onPressed: () {},
             icon: const Icon(Icons.search_rounded),
           ),
-          IconButton(
+          PopupMenuButton<String>(
             tooltip: 'Opciones',
-            onPressed: () {},
+            onSelected: (value) async {
+              if (value != 'delete_conversation') {
+                return;
+              }
+
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) {
+                  return AlertDialog(
+                    title: const Text('Eliminar contacto'),
+                    content: const Text(
+                      'Esto borrarÃ¡ el chat de Bot Center y los datos asociados del contacto para regenerarlos limpios con el prÃ³ximo mensaje entrante.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        child: const Text('Cancelar'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFDC2626),
+                        ),
+                        child: const Text('Eliminar'),
+                      ),
+                    ],
+                  );
+                },
+              );
+
+              if (confirmed == true) {
+                unawaited(controller.deleteSelectedConversation());
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'delete_conversation',
+                child: Text('Eliminar contacto'),
+              ),
+            ],
             icon: const Icon(Icons.more_horiz_rounded),
           ),
         ],

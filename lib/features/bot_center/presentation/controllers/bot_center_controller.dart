@@ -465,6 +465,52 @@ class BotCenterController extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteSelectedConversation() async {
+    final conversationId = _selectedConversationId;
+    if (conversationId.isEmpty) {
+      return;
+    }
+
+    _isRefreshing = true;
+    _actionMessage = null;
+    _conversationErrorMessage = null;
+    notifyListeners();
+
+    try {
+      await _repository.deleteConversation(conversationId);
+
+      _messagesByConversation.remove(conversationId);
+      _contactsByConversation.remove(conversationId);
+      _memoryByConversation.remove(conversationId);
+      _conversations.removeWhere((conversation) => conversation.id == conversationId);
+      _activityLogs.removeWhere((log) => log.conversationId == conversationId);
+
+      final nextConversationId =
+          _conversations.isEmpty ? '' : _conversations.first.id;
+      _selectedConversationId = nextConversationId;
+
+      if (nextConversationId.isNotEmpty) {
+        await selectConversation(nextConversationId, forceReload: true);
+      } else {
+        _conversationErrorMessage = null;
+      }
+
+      await _reloadGlobalLists();
+      _actionMessage =
+          'Contacto y conversaciÃ³n eliminados. Se regenerarÃ¡n con el prÃ³ximo mensaje entrante.';
+      _errorMessage = null;
+    } catch (error) {
+      _actionMessage =
+          'No se pudo eliminar el contacto. ${error.toString()}';
+    } finally {
+      _isRefreshing = false;
+      if (_hasLoaded) {
+        _scheduleNextBackgroundRefresh();
+      }
+      notifyListeners();
+    }
+  }
+
   Future<void> sendDraftMessage() async {
     final text = messageComposerController.text.trim();
     if (text.isEmpty || _selectedConversationId.isEmpty) {

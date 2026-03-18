@@ -12,8 +12,11 @@ import { BotConfigurationModule } from '../bot-configuration/bot-configuration.m
 import { BillingModule } from '../billing/billing.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { ContactsModule } from '../contacts/contacts.module';
+import { ContactEntity } from '../contacts/entities/contact.entity';
 import { ConversationsModule } from '../conversations/conversations.module';
+import { ConversationEntity } from '../conversations/entities/conversation.entity';
 import { MessagesModule } from '../messages/messages.module';
+import { MessageEntity } from '../messages/entities/message.entity';
 import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { WhatsappChannelConfigEntity } from '../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../whatsapp-channel/entities/whatsapp-channel-log.entity';
@@ -39,6 +42,9 @@ import { BotCenterService } from './services/bot-center.service';
       ContactMemoryEntity,
       ConversationMemoryEntity,
       ConversationSummaryEntity,
+      ContactEntity,
+      ConversationEntity,
+      MessageEntity,
       WhatsappChannelConfigEntity,
       WhatsappChatEntity,
       WhatsappMessageEntity,

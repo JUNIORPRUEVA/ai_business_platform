@@ -61,6 +61,14 @@ export class BotCenterController {
     return this.botCenterService.getConversationContext(user.companyId, conversationId);
   }
 
+  @Delete('conversations/:id')
+  async deleteConversation(
+    @CurrentUser() user: AuthUser,
+    @Param('id') conversationId: string,
+  ): Promise<{ deleted: true }> {
+    return this.botCenterService.deleteConversation(user.companyId, conversationId);
+  }
+
   @Get('conversations/:id/delivery-diagnostics')
   getDeliveryDiagnostics(
     @CurrentUser() user: AuthUser,

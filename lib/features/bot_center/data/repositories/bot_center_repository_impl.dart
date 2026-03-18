@@ -68,6 +68,16 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
   }
 
   @override
+  Future<void> deleteConversation(String conversationId) async {
+    await _resolve(
+      () => _remoteDataSource.deleteConversation(conversationId),
+      fallback: () => throw const BotCenterApiException(
+        'La eliminaciÃ³n del contacto requiere el backend real del Bot Center.',
+      ),
+    );
+  }
+
+  @override
   Future<List<BotMemoryItem>> getMemory(String conversationId) async {
     final model = await _resolve(
       () => _remoteDataSource.getMemory(conversationId),

@@ -52,6 +52,10 @@ class BotCenterRemoteDataSource {
     return BotContactContextModel.fromJson(json);
   }
 
+  Future<void> deleteConversation(String conversationId) async {
+    await _apiClient.deleteJson('/bot-center/conversations/$conversationId');
+  }
+
   Future<BotMemoryCollectionModel> getMemory(String conversationId) async {
     final json = await _apiClient
         .getJson('/bot-center/conversations/$conversationId/memory');

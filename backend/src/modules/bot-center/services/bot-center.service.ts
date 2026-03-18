@@ -12,8 +12,11 @@ import { ConversationSummaryEntity } from '../../ai-engine/entities/conversation
 import { BotConfigurationService } from '../../bot-configuration/services/bot-configuration.service';
 import { ChannelsService } from '../../channels/channels.service';
 import { ContactsService } from '../../contacts/contacts.service';
+import { ContactEntity } from '../../contacts/entities/contact.entity';
 import { ConversationsService } from '../../conversations/conversations.service';
+import { ConversationEntity } from '../../conversations/entities/conversation.entity';
 import { MessagesService } from '../../messages/messages.service';
+import { MessageEntity } from '../../messages/entities/message.entity';
 import { WhatsappChannelConfigEntity } from '../../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsapp-channel-log.entity';
 import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-chat.entity';
@@ -72,6 +75,12 @@ export class BotCenterService {
     private readonly clientMemoryRepository: Repository<ClientMemoryEntity>,
     @InjectRepository(ConversationSummaryEntity)
     private readonly conversationSummaryRepository: Repository<ConversationSummaryEntity>,
+    @InjectRepository(ContactEntity)
+    private readonly contactsRepository: Repository<ContactEntity>,
+    @InjectRepository(ConversationEntity)
+    private readonly conversationsRepository: Repository<ConversationEntity>,
+    @InjectRepository(MessageEntity)
+    private readonly appMessagesRepository: Repository<MessageEntity>,
     private readonly whatsappMessagingService: WhatsappMessagingService,
   ) {}
 
@@ -616,6 +625,79 @@ export class BotCenterService {
     });
 
     return { ok: true, queued: false, messageId: createdMessage.id };
+  }
+
+  async deleteConversation(companyId: string, conversationId: string): Promise<{ deleted: true }> {
+    const chat = await this.getConversationOrThrow(companyId, conversationId);
+    const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, conversationId);
+
+    if (memoryTarget) {
+      const contactId = memoryTarget.contact.id;
+      const relatedConversations = await this.conversationsRepository.find({
+        where: { companyId, contactId },
+      });
+      const relatedConversationIds = relatedConversations.map((item) => item.id);
+
+      if (relatedConversationIds.length > 0) {
+        await this.appMessagesRepository
+          .createQueryBuilder()
+          .delete()
+          .where('conversation_id IN (:...conversationIds)', {
+            conversationIds: relatedConversationIds,
+          })
+          .execute();
+        await this.conversationMemoryRepository
+          .createQueryBuilder()
+          .delete()
+          .where('company_id = :companyId', { companyId })
+          .andWhere('conversation_id IN (:...conversationIds)', {
+            conversationIds: relatedConversationIds,
+          })
+          .execute();
+        await this.conversationSummaryRepository
+          .createQueryBuilder()
+          .delete()
+          .where('company_id = :companyId', { companyId })
+          .andWhere('conversation_id IN (:...conversationIds)', {
+            conversationIds: relatedConversationIds,
+          })
+          .execute();
+        await this.conversationsRepository
+          .createQueryBuilder()
+          .delete()
+          .where('company_id = :companyId', { companyId })
+          .andWhere('contact_id = :contactId', { contactId })
+          .execute();
+      }
+
+      await this.clientMemoryRepository
+        .createQueryBuilder()
+        .delete()
+        .where('company_id = :companyId', { companyId })
+        .andWhere('contact_id = :contactId', { contactId })
+        .execute();
+      await this.contactMemoryRepository
+        .createQueryBuilder()
+        .delete()
+        .where('company_id = :companyId', { companyId })
+        .andWhere('contact_id = :contactId', { contactId })
+        .execute();
+      await this.contactsRepository.delete({ id: contactId, companyId });
+    }
+
+    await this.messagesRepository.delete({ companyId, chatId: conversationId });
+    await this.chatsRepository.delete({ id: conversationId, companyId });
+
+    this.prependLog(companyId, {
+      id: `log-delete-conversation-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      eventType: 'Conversation deleted',
+      summary: `Se elimino el contacto y la conversacion ${chat.id} desde Bot Center.`,
+      severity: 'warning',
+      conversationId,
+    });
+
+    return { deleted: true };
   }
 
   async getConversationDetail(
