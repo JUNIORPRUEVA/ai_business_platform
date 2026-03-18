@@ -891,9 +891,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ModuleHeader(
-              title: 'Canal WhatsApp',
+              title: 'WhatsApp Evolution API',
               subtitle:
-                  'Conecta tu número con un proceso simple: crear la instancia, escanear el QR y empezar a operar.',
+                'Administra el proveedor Evolution y la vinculación de WhatsApp desde una sola pantalla simple.',
               trailing: canGoBack
                   ? OutlinedButton.icon(
                       onPressed: () => Navigator.of(context).maybePop(),
@@ -1071,7 +1071,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Evolution API y webhook',
+                              'Proveedor Evolution',
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w900,
@@ -1079,7 +1079,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Toda la configuración específica del canal vive aquí: servidor Evolution, clave, webhook y comportamiento de WhatsApp.',
+                              'Aquí configuras el servidor Evolution, la clave del proveedor, el webhook y el comportamiento del canal.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurface
                                     .withValues(alpha: 0.68),
@@ -1440,7 +1440,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Configuración sencilla',
+                              'Vinculación WhatsApp',
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w900,
@@ -1448,7 +1448,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Usa un nombre fácil de reconocer para la cuenta. El resto del proceso será guiado paso a paso.',
+                              'Usa un nombre fácil de reconocer para la cuenta y luego continúa con el escaneo del QR.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurface
                                     .withValues(alpha: 0.68),

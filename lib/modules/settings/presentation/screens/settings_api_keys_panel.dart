@@ -5,6 +5,7 @@ import '../../../../features/executive_layout/presentation/widgets/executive_con
 import '../../../auth/application/auth_providers.dart';
 import '../../../auth/data/auth_api_client.dart';
 import '../../../../features/bot_configuration_center/data/services/bot_configuration_center_api_client.dart';
+import '../../../channels/presentation/screens/whatsapp_channel_screen.dart';
 
 class SettingsApiKeysPanel extends ConsumerStatefulWidget {
   const SettingsApiKeysPanel({super.key});
@@ -241,6 +242,18 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
                               .withValues(alpha: 0.62),
                         ),
                       ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const WhatsappChannelScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Abrir canal'),
                     ),
                     const SizedBox(width: 10),
                     FilledButton.icon(

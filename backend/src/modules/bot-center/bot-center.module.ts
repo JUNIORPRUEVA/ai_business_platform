@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { DatabaseModule } from '../../common/database/database.module';
 import { BotConfigurationModule } from '../bot-configuration/bot-configuration.module';
+import { BillingModule } from '../billing/billing.module';
 import { BotMemoryModule } from '../bot-memory/bot-memory.module';
 import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { WhatsappChannelLogEntity } from '../whatsapp-channel/entities/whatsapp-channel-log.entity';
@@ -14,6 +15,7 @@ import { BotCenterService } from './services/bot-center.service';
 @Module({
   imports: [
     BotConfigurationModule,
+    BillingModule,
     BotMemoryModule,
     DatabaseModule,
     WhatsappChannelModule,
