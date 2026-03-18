@@ -163,8 +163,8 @@ export class ProvisioningService {
 
         await this.evolutionService.setWebhook({
           instanceName: savedChannel.instanceName!,
-          url: this.evolutionService.buildWebhookUrl(savedChannel.id),
-          events: ['messages.upsert'],
+          webhookUrl: this.evolutionService.buildWebhookUrl(savedChannel.id),
+          events: this.evolutionService.getDefaultInstanceWebhookEvents(),
         });
 
         savedChannel.connectionStatus = 'connecting';

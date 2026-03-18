@@ -278,7 +278,7 @@ export class WhatsappChannelConfigService {
   private buildWebhookPayload(entity: WhatsappChannelConfigEntity): Record<string, unknown> {
     return {
       enabled: entity.webhookEnabled,
-      url: entity.webhookUrl,
+      webhook: entity.webhookUrl,
       webhookByEvents: entity.webhookByEvents,
       webhookBase64: entity.webhookBase64,
       events: entity.webhookEventsJson,
@@ -289,10 +289,49 @@ export class WhatsappChannelConfigService {
     entity: WhatsappChannelConfigEntity,
     remote: Record<string, unknown>,
   ): boolean {
-    const remoteUrl = this.readString(remote['url']) || this.readString(remote['webhookUrl']);
-    const remoteEvents = this.readStringArray(remote['events']);
+    const remoteUrl = this.readWebhookUrl(remote);
+    const remoteEvents = this.readWebhookEvents(remote);
     return remoteUrl === (entity.webhookUrl ?? '') &&
       JSON.stringify(remoteEvents.sort()) === JSON.stringify([...entity.webhookEventsJson].sort());
+  }
+
+  private readWebhookUrl(remote: Record<string, unknown>): string {
+    const direct = this.readString(remote['webhook']) ||
+      this.readString(remote['url']) ||
+      this.readString(remote['webhookUrl']);
+    if (direct) {
+      return direct;
+    }
+
+    const nestedCandidates = [remote['data'], remote['instance'], remote['webhookData']];
+    for (const candidate of nestedCandidates) {
+      const map = this.readMap(candidate);
+      const nested = this.readString(map['webhook']) ||
+        this.readString(map['url']) ||
+        this.readString(map['webhookUrl']);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return '';
+  }
+
+  private readWebhookEvents(remote: Record<string, unknown>): string[] {
+    const direct = this.readStringArray(remote['events']);
+    if (direct.length > 0) {
+      return direct;
+    }
+
+    const nestedCandidates = [remote['data'], remote['instance'], remote['webhookData']];
+    for (const candidate of nestedCandidates) {
+      const nested = this.readStringArray(this.readMap(candidate)['events']);
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+
+    return [];
   }
 
   private normalizeInstanceName(value: string): string {

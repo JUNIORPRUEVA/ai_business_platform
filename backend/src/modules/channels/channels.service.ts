@@ -3,7 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { LicenseService } from '../billing/license.service';
-import { EvolutionService, EvolutionInstanceConnectionStatus } from '../evolution/evolution.service';
+import {
+  EVOLUTION_INSTANCE_WEBHOOK_EVENTS,
+  EvolutionService,
+  EvolutionInstanceConnectionStatus,
+} from '../evolution/evolution.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelEntity } from './entities/channel.entity';
@@ -62,8 +66,8 @@ export class ChannelsService {
 
         await this.evolutionService.setWebhook({
           instanceName,
-          url: this.evolutionService.buildWebhookUrl(saved.id),
-          events: ['messages.upsert'],
+          webhookUrl: this.evolutionService.buildWebhookUrl(saved.id),
+          events: [...EVOLUTION_INSTANCE_WEBHOOK_EVENTS],
         });
 
         saved.config = {

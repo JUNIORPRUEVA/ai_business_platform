@@ -79,6 +79,12 @@ export class WhatsappInstancesController {
     return this.whatsappInstancesService.configureWebhook(user.companyId, params.instance);
   }
 
+  @Roles('admin', 'operator')
+  @Post('instances/:instance/webhook/reapply')
+  reapplyWebhook(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
+    return this.whatsappInstancesService.reapplyWebhook(user.companyId, params.instance);
+  }
+
   @Roles('admin', 'operator', 'viewer')
   @Get('instances/:instance/webhook')
   getWebhookStatus(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {

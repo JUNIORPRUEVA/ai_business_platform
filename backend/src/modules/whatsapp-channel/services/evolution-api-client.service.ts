@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogService } from './whatsapp-channel-log.service';
@@ -8,6 +8,8 @@ type JsonRecord = Record<string, unknown>;
 
 @Injectable()
 export class EvolutionApiClientService {
+  private readonly logger = new Logger(EvolutionApiClientService.name);
+
   constructor(
     private readonly logsService: WhatsappChannelLogService,
     private readonly secretService: WhatsappSecretService,
@@ -135,6 +137,12 @@ export class EvolutionApiClientService {
     let lastError: unknown;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
+        if (path.startsWith('/webhook/')) {
+          this.logger.log(
+            `[EVOLUTION WEBHOOK] request action=${eventName} instanceName=${config.instanceName} endpoint=${url} payload=${typeof init.body === 'string' ? init.body : '{}'}`,
+          );
+        }
+
         const response = await fetch(url, {
           ...init,
           headers: {
@@ -146,6 +154,12 @@ export class EvolutionApiClientService {
 
         const text = await response.text().catch(() => '');
         const payload = this.parseJson(text);
+
+        if (path.startsWith('/webhook/')) {
+          this.logger.log(
+            `[EVOLUTION WEBHOOK] response action=${eventName} instanceName=${config.instanceName} endpoint=${url} status=${response.status} body=${text || '(empty)'}`,
+          );
+        }
 
         await this.logsService.create({
           companyId: config.companyId,

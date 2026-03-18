@@ -5,6 +5,15 @@ import { Repository } from 'typeorm';
 
 import { BotConfigurationEntity } from '../bot-configuration/entities/bot-configuration.entity';
 
+export const EVOLUTION_INSTANCE_WEBHOOK_EVENTS = [
+  'messages.upsert',
+  'messages.update',
+  'messages.delete',
+  'send.message',
+  'connection.update',
+  'qr.updated',
+] as const;
+
 export type EvolutionInstanceConnectionStatus =
   | 'connecting'
   | 'connected'
@@ -72,6 +81,63 @@ export class EvolutionService {
     }
   }
 
+  private async requestJsonWithTracing<T>(
+    path: string,
+    init: RequestInit,
+    trace: {
+      action: string;
+      instanceName: string;
+      payload?: Record<string, unknown>;
+    },
+  ): Promise<T> {
+    const settings = await this.getRuntimeSettings();
+    this.assertConfigured(settings);
+
+    const url = `${settings.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+
+    this.logger.log(
+      `[EVOLUTION WEBHOOK] request action=${trace.action} instanceName=${trace.instanceName} endpoint=${url} payload=${this.stringifyForLog(trace.payload ?? {})}`,
+    );
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: settings.apiKey,
+          ...(init.headers ?? {}),
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown fetch error';
+      this.logger.error(
+        `[EVOLUTION WEBHOOK] network-error action=${trace.action} instanceName=${trace.instanceName} endpoint=${url} payload=${this.stringifyForLog(trace.payload ?? {})} error=${message}`,
+      );
+      throw new ServiceUnavailableException(
+        `No se pudo conectar con Evolution API en ${settings.baseUrl}.`,
+      );
+    }
+
+    const text = await res.text().catch(() => '');
+
+    this.logger.log(
+      `[EVOLUTION WEBHOOK] response action=${trace.action} instanceName=${trace.instanceName} endpoint=${url} status=${res.status} body=${text || '(empty)'}`,
+    );
+
+    if (!res.ok) {
+      throw new ServiceUnavailableException(`Evolution API error (${res.status}).`);
+    }
+
+    if (!text) return {} as T;
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return { raw: text } as T;
+    }
+  }
+
   buildWebhookUrl(channelId: string): string {
     const base = (this.configService.get<string>('EVOLUTION_WEBHOOK_BASE') ?? '').replace(/\/$/, '');
     if (!base) {
@@ -113,6 +179,10 @@ export class EvolutionService {
     throw new ServiceUnavailableException(
       'Define EVOLUTION_INSTANCE_WEBHOOK_URL, BACKEND_PUBLIC_URL o EVOLUTION_WEBHOOK_BASE para generar el webhook de Evolution.',
     );
+  }
+
+  getDefaultInstanceWebhookEvents(): string[] {
+    return [...EVOLUTION_INSTANCE_WEBHOOK_EVENTS];
   }
 
   async createInstance(params: {
@@ -171,22 +241,58 @@ export class EvolutionService {
 
   async setWebhook(params: {
     instanceName: string;
-    url: string;
+    webhookUrl: string;
     events?: string[];
   }): Promise<unknown> {
-    return this.requestJson(`/webhook/set/${encodeURIComponent(params.instanceName)}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        url: params.url,
-        events: params.events ?? ['messages.upsert'],
-      }),
+    const payload = {
+      webhook: params.webhookUrl,
+      events: params.events ?? this.getDefaultInstanceWebhookEvents(),
+    };
+
+    return this.requestJsonWithTracing(
+      `/webhook/set/${encodeURIComponent(params.instanceName)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      {
+        action: 'set',
+        instanceName: params.instanceName,
+        payload,
+      },
+    );
+  }
+
+  async reapplyWebhook(instanceName: string): Promise<{
+    instanceName: string;
+    webhookUrl: string;
+    events: string[];
+    remote: unknown;
+  }> {
+    const webhookUrl = this.buildInstanceWebhookUrl();
+    const events = this.getDefaultInstanceWebhookEvents();
+    const remote = await this.setWebhook({
+      instanceName,
+      webhookUrl,
+      events,
     });
+
+    return {
+      instanceName,
+      webhookUrl,
+      events,
+      remote,
+    };
   }
 
   async findWebhook(instanceName: string): Promise<Record<string, unknown>> {
-    const response = await this.requestJson<unknown>(
+    const response = await this.requestJsonWithTracing<unknown>(
       `/webhook/find/${encodeURIComponent(instanceName)}`,
       { method: 'GET' },
+      {
+        action: 'find',
+        instanceName,
+      },
     );
 
     return typeof response === 'object' && response != null
@@ -306,5 +412,13 @@ export class EvolutionService {
 
   private readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private stringifyForLog(value: unknown): string {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '[unserializable]';
+    }
   }
 }

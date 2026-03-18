@@ -11,7 +11,7 @@ import { Repository } from 'typeorm';
 
 import { BotConfigurationEntity } from '../../bot-configuration/entities/bot-configuration.entity';
 import { ChannelsService } from '../../channels/channels.service';
-import { EvolutionService } from '../../evolution/evolution.service';
+import { EVOLUTION_INSTANCE_WEBHOOK_EVENTS, EvolutionService } from '../../evolution/evolution.service';
 import { EvolutionWebhookService } from '../../evolution-webhook/services/evolution-webhook.service';
 import { WhatsappInstanceEntity, WhatsappInstanceStatus } from '../entities/whatsapp-instance.entity';
 
@@ -203,11 +203,23 @@ export class WhatsappInstancesService {
 
     await this.evolutionService.setWebhook({
       instanceName: entity.instanceName,
-      url: webhookUrl,
+      webhookUrl,
       events: webhookEvents,
     });
 
     return { ok: true, webhookUrl, events: webhookEvents };
+  }
+
+  async reapplyWebhook(tenantId: string, instanceName: string): Promise<{ ok: true; webhookUrl: string; events: string[]; response: unknown }> {
+    const entity = await this.getByInstanceName(tenantId, instanceName);
+    const result = await this.evolutionService.reapplyWebhook(entity.instanceName);
+
+    return {
+      ok: true,
+      webhookUrl: result.webhookUrl,
+      events: result.events,
+      response: result.remote,
+    };
   }
 
   async getWebhookStatus(
@@ -246,7 +258,7 @@ export class WhatsappInstancesService {
 
       await this.evolutionService.setWebhook({
         instanceName: entity.instanceName,
-        url: expectedWebhookUrl,
+        webhookUrl: expectedWebhookUrl,
         events: expectedEvents,
       });
 
@@ -445,12 +457,12 @@ export class WhatsappInstancesService {
 
       await this.evolutionService.setWebhook({
         instanceName,
-        url: instanceWebhookUrl,
+        webhookUrl: instanceWebhookUrl,
         events,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown Evolution webhook error.';
-      this.logger.warn(`Failed to set Evolution instance webhook: ${message}`);
+      this.logger.warn(`Failed to set Evolution instance webhook for ${instanceName}: ${message}`);
     }
   }
 
@@ -460,7 +472,7 @@ export class WhatsappInstancesService {
   }
 
   private buildWebhookEvents(): string[] {
-    return ['connection.update', 'qr.updated', 'messages.upsert'];
+    return [...EVOLUTION_INSTANCE_WEBHOOK_EVENTS];
   }
 
   private async readWebhookStatus(
@@ -478,10 +490,8 @@ export class WhatsappInstancesService {
     remote: Record<string, unknown> | null;
   }> {
     const remote = await this.evolutionService.findWebhook(instanceName);
-    const remoteWebhookUrl =
-      this.readStringFromMap(remote, 'url') ||
-      this.readStringFromMap(remote, 'webhookUrl');
-    const remoteEvents = this.readStringArrayFromMap(remote, 'events');
+    const remoteWebhookUrl = this.readWebhookUrl(remote);
+    const remoteEvents = this.readWebhookEvents(remote);
     const matchesExpectedUrl = remoteWebhookUrl === expectedWebhookUrl;
     const matchesExpectedEvents =
       remoteEvents.length > 0 &&
@@ -550,6 +560,67 @@ export class WhatsappInstancesService {
 
   private readStringFromMap(source: Record<string, unknown>, key: string): string {
     return this.readString(source[key]);
+  }
+
+  private readWebhookUrl(source: Record<string, unknown>): string {
+    const direct =
+      this.readStringFromMap(source, 'webhook') ||
+      this.readStringFromMap(source, 'url') ||
+      this.readStringFromMap(source, 'webhookUrl');
+    if (direct) {
+      return direct;
+    }
+
+    const nestedCandidates = [
+      source['data'],
+      source['instance'],
+      source['webhookData'],
+      source['webhook_data'],
+    ];
+
+    for (const candidate of nestedCandidates) {
+      if (typeof candidate !== 'object' || candidate == null) {
+        continue;
+      }
+
+      const map = candidate as Record<string, unknown>;
+      const nested =
+        this.readStringFromMap(map, 'webhook') ||
+        this.readStringFromMap(map, 'url') ||
+        this.readStringFromMap(map, 'webhookUrl');
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return '';
+  }
+
+  private readWebhookEvents(source: Record<string, unknown>): string[] {
+    const direct = this.readStringArrayFromMap(source, 'events');
+    if (direct.length > 0) {
+      return direct;
+    }
+
+    const nestedCandidates = [
+      source['data'],
+      source['instance'],
+      source['webhookData'],
+      source['webhook_data'],
+    ];
+
+    for (const candidate of nestedCandidates) {
+      if (typeof candidate !== 'object' || candidate == null) {
+        continue;
+      }
+
+      const nested = this.readStringArrayFromMap(candidate as Record<string, unknown>, 'events');
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+
+    return [];
   }
 
   private readStringArrayFromMap(
