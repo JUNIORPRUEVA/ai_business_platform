@@ -2,18 +2,25 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { MemoryService } from '../../ai-engine/memory.service';
 import { BotConfigurationService } from '../../bot-configuration/services/bot-configuration.service';
+import { BotConfigurationBundle } from '../../bot-configuration/types/bot-configuration.types';
+import { BotEntity } from '../../bots/entities/bot.entity';
 import { BotsService } from '../../bots/bots.service';
+import { ChannelEntity } from '../../channels/entities/channel.entity';
 import { ChannelsService } from '../../channels/channels.service';
 import { CompaniesService } from '../../companies/companies.service';
 import { ContactsService } from '../../contacts/contacts.service';
 import { ConversationsService } from '../../conversations/conversations.service';
-import { MemoryService } from '../../ai-engine/memory.service';
-import { EvolutionService } from '../../evolution/evolution.service';
+import { MessageEntity } from '../../messages/entities/message.entity';
 import { MessagesService } from '../../messages/messages.service';
+import { OpenAiChatMessage } from '../../openai/types/openai.types';
 import { OpenAiService } from '../../openai/services/openai.service';
+import { PromptEntity } from '../../prompts/entities/prompt.entity';
+import { PromptsService } from '../../prompts/prompts.service';
 import { ToolEntity } from '../../tools/entities/tool.entity';
 import { ToolsService } from '../../tools/tools.service';
+import { WhatsappMessagingService } from '../../whatsapp-channel/services/whatsapp-messaging.service';
 import { AiBrainLogEntity } from '../entities/ai-brain-log.entity';
 import { AiBrainContextBuilderService } from './ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './ai-brain-document.service';
@@ -32,12 +39,13 @@ export class AiBrainService {
     private readonly messagesService: MessagesService,
     private readonly botsService: BotsService,
     private readonly toolsService: ToolsService,
-    private readonly evolutionService: EvolutionService,
+    private readonly promptsService: PromptsService,
     private readonly memoryService: MemoryService,
     private readonly openAiService: OpenAiService,
     private readonly aiBrainDocumentService: AiBrainDocumentService,
     private readonly aiBrainContextBuilderService: AiBrainContextBuilderService,
     private readonly aiBrainToolRouterService: AiBrainToolRouterService,
+    private readonly whatsappMessagingService: WhatsappMessagingService,
     @InjectRepository(AiBrainLogEntity)
     private readonly aiBrainLogsRepository: Repository<AiBrainLogEntity>,
   ) {}
@@ -59,36 +67,88 @@ export class AiBrainService {
       Math.max(configuration.memory.summaryRefreshThreshold, 2),
       50,
     );
-    const company = await this.companiesService.getMyCompany(params.companyId);
-    const channel = await this.channelsService.get(params.companyId, params.channelId);
-    const conversation = await this.conversationsService.get(params.companyId, params.conversationId);
-    const contact = await this.contactsService.get(params.companyId, conversation.contactId);
-    const bot = await this.botsService.getDefaultActiveBot(params.companyId);
-    const recentMessages = await this.messagesService.list(
-      params.companyId,
-      params.conversationId,
-      Math.max(memoryWindowSize, 20),
-    );
-    const lastUserMessage = recentMessages.filter((message) => message.sender === 'client').slice(-1)[0];
 
-    const userMessage = lastUserMessage?.content?.trim() || '';
-    const contactPhone = params.contactPhone || contact.phone || '';
-    const detectedIntent = this.detectIntent(userMessage);
-    const baseSystemPrompt =
-      bot.systemPrompt?.trim() ||
-      configuration.prompts[0]?.content ||
-      configuration.openai.systemPromptPreview;
+    let channel: ChannelEntity | null = null;
+    let bot: BotEntity | null = null;
+    let contactId: string | null = null;
+    let detectedIntent = 'unknown';
 
-    if (configuration.memory.enableShortTermMemory && configuration.memory.usePostgreSql) {
-      await this.backfillConversationMemoryIfNeeded(
-        params.companyId,
-        params.conversationId,
-        recentMessages,
-        conversation.contactId,
-        baseSystemPrompt,
+    try {
+      this.logger.log(
+        `[AI BRAIN] inbound received conversationId=${params.conversationId} companyId=${params.companyId} channelId=${params.channelId} messageId=${params.messageId}`,
       );
 
-      if (userMessage) {
+      const company = await this.companiesService.getMyCompany(params.companyId);
+      channel = await this.channelsService.get(params.companyId, params.channelId);
+      const conversation = await this.conversationsService.get(
+        params.companyId,
+        params.conversationId,
+      );
+      const contact = await this.contactsService.get(params.companyId, conversation.contactId);
+      contactId = contact.id;
+
+      const recentMessages = await this.messagesService.list(
+        params.companyId,
+        params.conversationId,
+        Math.max(memoryWindowSize, 20),
+      );
+      const currentInboundMessage =
+        recentMessages.filter((message) => message.sender === 'client').slice(-1)[0] ?? null;
+      const userMessage = currentInboundMessage?.content?.trim() || '';
+      const contactPhone = (params.contactPhone || contact.phone || '').trim();
+
+      bot = await this.resolveActiveBot(params.companyId, channel);
+      this.logger.log(
+        `[AI BRAIN] bot resolved botId=${bot.id} channelId=${channel.id} model=${bot.model}`,
+      );
+
+      detectedIntent = this.detectIntent(userMessage);
+      const respondability = this.shouldRespondToInbound({
+        configuration,
+        bot,
+        channel,
+        userMessage,
+      });
+      if (!respondability.ok) {
+        this.logger.warn(
+          `[AI BRAIN] skipped conversationId=${params.conversationId} reason=${respondability.reason}`,
+        );
+        await this.persistAiBrainLog({
+          companyId: params.companyId,
+          conversationId: params.conversationId,
+          contactId: contact.id,
+          botId: bot.id,
+          channelId: channel.id,
+          status: 'skipped',
+          detectedIntent,
+          provider: null,
+          model: bot.model,
+          latencyMs: Date.now() - startedAt,
+          metadata: {
+            messageId: params.messageId,
+            reason: respondability.reason,
+          },
+        });
+        return { ok: true };
+      }
+
+      const activePrompts = await this.promptsService.listActive(params.companyId);
+      const promptInputs = this.resolvePromptInputs(
+        configuration,
+        bot,
+        detectedIntent,
+        activePrompts,
+      );
+
+      if (configuration.memory.enableShortTermMemory && configuration.memory.usePostgreSql) {
+        await this.backfillConversationMemoryIfNeeded(
+          params.companyId,
+          params.conversationId,
+          recentMessages,
+          conversation.contactId,
+          promptInputs.systemInstructions,
+        );
+
         await this.memoryService.appendConversationMemory({
           companyId: params.companyId,
           contactId: contact.id,
@@ -106,195 +166,246 @@ export class AiBrainService {
           dedupeAgainstLast: true,
         });
       }
-    }
 
-    const extractedMemories = this.memoryService.extractClientMemories(userMessage);
-    if (extractedMemories.length > 0) {
-      await this.memoryService.upsertClientMemories({
-        companyId: params.companyId,
-        contactId: contact.id,
-        conversationId: params.conversationId,
-        items: extractedMemories.map((item) => ({
-          ...item,
-          metadata: {
-            source: 'auto-extraction',
-          },
-        })),
-      });
-    }
-
-    if (configuration.memory.enableOperationalMemory && configuration.memory.usePostgreSql) {
-      await this.memoryService.setContactMemory({
-        companyId: params.companyId,
-        contactId: contact.id,
-        conversationId: params.conversationId,
-        key: 'last_detected_intent',
-        value: detectedIntent,
-        stateType: 'operational',
-        metadataJson: {
-          channel: channel.type,
-        },
-      });
-    }
-
-    const [assembledMemory, activeTools, documents] = await Promise.all([
-      this.memoryService.assembleContext({
-        companyId: params.companyId,
-        contactId: contact.id,
-        conversationId: params.conversationId,
-        recentWindowSize: memoryWindowSize,
-        incomingMessage: userMessage,
-      }),
-      this.listActiveTools(params.companyId, bot.id),
-      this.aiBrainDocumentService.list(params.companyId, bot.id),
-    ]);
-
-    const memoryFacts = [
-      ...assembledMemory.keyFacts.map((item) => ({
-        key: item.key,
-        value: item.value,
-        category: item.category,
-      })),
-      ...assembledMemory.operationalState
-        .filter((item) => assembledMemory.keyFacts.every((memoryItem) => memoryItem.key !== item.key))
-        .slice(0, 8)
-        .map((item) => ({
-          key: item.key,
-          value: item.value,
-          category: 'operational',
-        })),
-      ...Object.entries(await this.memoryService.getContactMemoryMap(params.companyId, contact.id))
-        .filter(([key]) => assembledMemory.keyFacts.every((item) => item.key !== key))
-        .map(([key, value]) => ({
-          key,
-          value,
-          category: 'contact_memory',
-        })),
-    ];
-
-    const context = this.aiBrainContextBuilderService.build({
-      company,
-      bot,
-      contact,
-      memoryItems: memoryFacts,
-      documents,
-      activeTools,
-      assembledMemoryContext: assembledMemory.contextText,
-      detectedIntent,
-    });
-
-    const firstDraft = await this.openAiService.draftResponse({
-      message: userMessage,
-      senderName: contact.name || undefined,
-      detectedIntent,
-      systemPrompt: context.prompt,
-      memoryContext: context.memoryContext,
-    });
-
-    let finalContent = firstDraft.content;
-    let executedTool: { tool: string; ok: boolean; result: unknown } | null = null;
-
-    const toolRequest = this.aiBrainToolRouterService.tryParse(firstDraft.content, activeTools);
-    if (toolRequest) {
-      executedTool = await this.aiBrainToolRouterService.run({
-        companyId: params.companyId,
-        botId: bot.id,
-        contactId: contact.id,
-        request: toolRequest,
-      });
-
-      if (configuration.memory.enableOperationalMemory && configuration.memory.usePostgreSql) {
-        await this.memoryService.appendConversationMemory({
+      const extractedMemories = this.memoryService.extractClientMemories(userMessage);
+      if (extractedMemories.length > 0) {
+        await this.memoryService.upsertClientMemories({
           companyId: params.companyId,
           contactId: contact.id,
           conversationId: params.conversationId,
-          role: 'tool',
-          content: `Tool executed: ${executedTool.tool}. Result: ${JSON.stringify(executedTool.result)}`,
-          contentType: 'json',
-          metadataJson: {
-            tool: executedTool.tool,
-            ok: executedTool.ok,
-          },
-          source: 'tool_execution',
-          dedupeAgainstLast: false,
+          items: extractedMemories.map((item) => ({
+            ...item,
+            metadata: {
+              source: 'auto-extraction',
+            },
+          })),
         });
+      }
 
+      if (configuration.memory.enableOperationalMemory && configuration.memory.usePostgreSql) {
         await this.memoryService.setContactMemory({
           companyId: params.companyId,
           contactId: contact.id,
           conversationId: params.conversationId,
-          key: 'last_tool',
-          value: executedTool.tool,
+          key: 'last_detected_intent',
+          value: detectedIntent,
           stateType: 'operational',
           metadataJson: {
-            ok: executedTool.ok,
+            channel: channel.type,
           },
         });
       }
 
-      const followUp = await this.openAiService.draftResponse({
-        message: `${userMessage}\n\nResultado de herramienta: ${JSON.stringify(executedTool.result)}`,
+      const activeTools = configuration.orchestrator.enableToolExecution
+        ? await this.listActiveTools(params.companyId, bot.id)
+        : [];
+      const [assembledMemory, documents, contactMemoryMap] = await Promise.all([
+        this.memoryService.assembleContext({
+          companyId: params.companyId,
+          contactId: contact.id,
+          conversationId: params.conversationId,
+          recentWindowSize: memoryWindowSize,
+          incomingMessage: userMessage,
+        }),
+        this.aiBrainDocumentService.listAvailable(params.companyId, bot.id),
+        this.memoryService.getContactMemoryMap(params.companyId, contact.id),
+      ]);
+
+      const memoryFacts = [
+        ...assembledMemory.keyFacts.map((item) => ({
+          key: item.key,
+          value: item.value,
+          category: item.category,
+        })),
+        ...assembledMemory.operationalState
+          .filter((item) => assembledMemory.keyFacts.every((memoryItem) => memoryItem.key !== item.key))
+          .slice(0, 8)
+          .map((item) => ({
+            key: item.key,
+            value: item.value,
+            category: 'operational',
+          })),
+        ...Object.entries(contactMemoryMap)
+          .filter(([key]) => assembledMemory.keyFacts.every((item) => item.key !== key))
+          .map(([key, value]) => ({
+            key,
+            value,
+            category: 'contact_memory',
+          })),
+      ];
+
+      this.logger.log(
+        `[AI BRAIN] memory loaded summary=${assembledMemory.summary != null} facts=${assembledMemory.keyFacts.length} window=${assembledMemory.recentWindow.length}`,
+      );
+      this.logger.log(`[AI BRAIN] tools resolved count=${activeTools.length}`);
+
+      const recentTranscriptMessages = this.buildRecentTranscriptMessages(recentMessages);
+      const context = this.aiBrainContextBuilderService.build({
+        company,
+        bot,
+        contact,
+        memoryItems: memoryFacts,
+        documents,
+        activeTools,
+        assembledMemoryContext: assembledMemory.contextText,
+        detectedIntent,
+        systemInstructions: promptInputs.systemInstructions,
+        mainBotPrompt: promptInputs.mainBotPrompt,
+        businessRules: promptInputs.businessRules,
+        recentMessages: recentTranscriptMessages,
+        incomingMessage: userMessage,
+      });
+      const approximatePromptTokens = this.approximateTokenCount(
+        context.modelMessages.map((item) => item.content),
+      );
+      this.logger.log(
+        `[AI BRAIN] prompt built tokens=${approximatePromptTokens} messages=${context.modelMessages.length}`,
+      );
+
+      this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
+      const firstDraft = await this.openAiService.draftResponse({
         senderName: contact.name || undefined,
         detectedIntent,
-        systemPrompt: context.prompt,
-        memoryContext: `${context.memoryContext}\n\nTool result:\n${JSON.stringify(executedTool.result)}`,
+        messages: context.modelMessages,
+        model: bot.model,
+        temperature: bot.temperature,
+        maxTokens: configuration.openai.maxTokens,
       });
+      this.logger.log(
+        `[AI BRAIN] openai response received provider=${firstDraft.provider} fallback=${firstDraft.usedMockFallback}`,
+      );
 
-      finalContent = followUp.content;
-    }
+      let finalContent = firstDraft.content;
+      let executedTool: { tool: string; ok: boolean; result: unknown } | null = null;
 
-    const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
-      sender: 'bot',
-      content: finalContent,
-      type: 'text',
-      metadata: {
-        provider: firstDraft.provider,
-        model: firstDraft.model,
-        detectedIntent,
-        tool: executedTool?.tool ?? null,
-      },
-    });
+      const toolRequest = configuration.orchestrator.enableToolExecution
+        ? this.aiBrainToolRouterService.tryParse(firstDraft.content, activeTools)
+        : null;
+      if (toolRequest) {
+        executedTool = await this.aiBrainToolRouterService.run({
+          companyId: params.companyId,
+          botId: bot.id,
+          contactId: contact.id,
+          request: toolRequest,
+        });
 
-    if (configuration.memory.enableShortTermMemory && configuration.memory.usePostgreSql) {
-      await this.memoryService.appendConversationMemory({
-        companyId: params.companyId,
-        contactId: contact.id,
-        conversationId: params.conversationId,
-        role: 'assistant',
-        content: botMessage.content,
-        contentType: 'text',
-        metadataJson: {
+        if (configuration.memory.enableOperationalMemory && configuration.memory.usePostgreSql) {
+          await this.memoryService.appendConversationMemory({
+            companyId: params.companyId,
+            contactId: contact.id,
+            conversationId: params.conversationId,
+            role: 'tool',
+            content: `Tool executed: ${executedTool.tool}. Result: ${JSON.stringify(executedTool.result)}`,
+            contentType: 'json',
+            metadataJson: {
+              tool: executedTool.tool,
+              ok: executedTool.ok,
+            },
+            source: 'tool_execution',
+            dedupeAgainstLast: false,
+          });
+
+          await this.memoryService.setContactMemory({
+            companyId: params.companyId,
+            contactId: contact.id,
+            conversationId: params.conversationId,
+            key: 'last_tool',
+            value: executedTool.tool,
+            stateType: 'operational',
+            metadataJson: {
+              ok: executedTool.ok,
+            },
+          });
+        }
+
+        const followUp = await this.openAiService.draftResponse({
+          senderName: contact.name || undefined,
+          detectedIntent,
+          model: bot.model,
+          temperature: bot.temperature,
+          maxTokens: configuration.openai.maxTokens,
+          messages: [
+            ...context.modelMessages,
+            {
+              role: 'assistant',
+              content: `[tool:${executedTool.tool}] ${JSON.stringify(executedTool.result)}`,
+            },
+            {
+              role: 'user',
+              content:
+                'Usa el resultado de la herramienta para responder al cliente con un mensaje final claro, útil y listo para enviar por WhatsApp.',
+            },
+          ],
+        });
+
+        finalContent = followUp.content;
+      }
+
+      const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
+        sender: 'bot',
+        content: finalContent,
+        type: 'text',
+        metadata: {
           provider: firstDraft.provider,
-          model: firstDraft.model,
+          model: bot.model,
+          detectedIntent,
+          tool: executedTool?.tool ?? null,
+          usedMockFallback: firstDraft.usedMockFallback,
         },
-        source: 'assistant_response',
-        messageId: botMessage.id,
-        dedupeAgainstLast: true,
       });
-    }
+      this.logger.log(`[AI BRAIN] assistant message saved id=${botMessage.id}`);
 
-    if (channel.type === 'whatsapp' && channel.instanceName && contactPhone) {
-      await this.evolutionService.sendMessage({
-        instanceName: channel.instanceName,
-        phone: contactPhone,
-        message: botMessage.content,
-      });
-    } else if (channel.type === 'whatsapp' && !channel.instanceName) {
-      this.logger.warn(`WhatsApp channel ${channel.id} has no instanceName; outbound send skipped.`);
-    }
+      if (configuration.memory.enableShortTermMemory && configuration.memory.usePostgreSql) {
+        await this.memoryService.appendConversationMemory({
+          companyId: params.companyId,
+          contactId: contact.id,
+          conversationId: params.conversationId,
+          role: 'assistant',
+          content: botMessage.content,
+          contentType: 'text',
+          metadataJson: {
+            provider: firstDraft.provider,
+            model: bot.model,
+          },
+          source: 'assistant_response',
+          messageId: botMessage.id,
+          dedupeAgainstLast: true,
+        });
+      }
 
-    if (configuration.memory.summaryEnabled && configuration.memory.usePostgreSql) {
-      await this.memoryService.refreshConversationSummary({
-        companyId: params.companyId,
-        contactId: contact.id,
-        conversationId: params.conversationId,
-        recentWindowSize: memoryWindowSize,
-        summaryRefreshThreshold,
-      });
-    }
+      let outboundTransportMessageId: string | null = null;
+      if (channel.type === 'whatsapp') {
+        if (!contactPhone) {
+          this.logger.warn(
+            `[AI BRAIN] whatsapp send skipped conversationId=${params.conversationId} reason=missing_contact_phone`,
+          );
+        } else {
+          const outboundDispatch = await this.whatsappMessagingService.sendText(
+            params.companyId,
+            {
+              remoteJid: contactPhone,
+              text: botMessage.content,
+            },
+          );
+          const outboundMessageView = this.readRecord(outboundDispatch['message']);
+          outboundTransportMessageId = this.readString(outboundMessageView['id']) || null;
+          this.logger.log(
+            `[AI BRAIN] whatsapp send success conversationId=${params.conversationId} whatsappMessageId=${outboundTransportMessageId ?? 'n/a'}`,
+          );
+        }
+      }
 
-    await this.aiBrainLogsRepository.save(
-      this.aiBrainLogsRepository.create({
+      if (configuration.memory.summaryEnabled && configuration.memory.usePostgreSql) {
+        await this.memoryService.refreshConversationSummary({
+          companyId: params.companyId,
+          contactId: contact.id,
+          conversationId: params.conversationId,
+          recentWindowSize: memoryWindowSize,
+          summaryRefreshThreshold,
+        });
+      }
+
+      await this.persistAiBrainLog({
         companyId: params.companyId,
         conversationId: params.conversationId,
         contactId: contact.id,
@@ -303,19 +414,55 @@ export class AiBrainService {
         status: 'processed',
         detectedIntent,
         provider: firstDraft.provider,
-        model: firstDraft.model,
+        model: bot.model,
         latencyMs: Date.now() - startedAt,
         metadata: {
           messageId: params.messageId,
           outboundMessageId: botMessage.id,
+          outboundTransportMessageId,
+          promptApproxTokens: approximatePromptTokens,
+          summaryLoaded: assembledMemory.summary != null,
+          keyFactsCount: assembledMemory.keyFacts.length,
+          operationalCount: assembledMemory.operationalState.length,
+          recentWindowCount: assembledMemory.recentWindow.length,
           memoryItems: context.memoryItems,
           documentSnippets: context.documentSnippets,
           tool: executedTool,
+          usedMockFallback: firstDraft.usedMockFallback,
         },
-      }),
-    );
+      });
 
-    return { ok: true };
+      this.logger.log(
+        `[AI BRAIN] completed conversationId=${params.conversationId} companyId=${params.companyId}`,
+      );
+      return { ok: true };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown';
+      this.logger.error(
+        `[AI BRAIN] failed conversationId=${params.conversationId} companyId=${params.companyId} reason=${reason}`,
+      );
+
+      if (channel && bot && contactId) {
+        await this.persistAiBrainLog({
+          companyId: params.companyId,
+          conversationId: params.conversationId,
+          contactId,
+          botId: bot.id,
+          channelId: channel.id,
+          status: 'failed',
+          detectedIntent,
+          provider: null,
+          model: bot.model,
+          latencyMs: Date.now() - startedAt,
+          metadata: {
+            messageId: params.messageId,
+            reason,
+          },
+        });
+      }
+
+      throw error;
+    }
   }
 
   private async backfillConversationMemoryIfNeeded(
@@ -330,14 +477,12 @@ export class AiBrainService {
       return;
     }
 
-    await this.memoryService.ensureConversationSystemPrompt(
-      {
-        companyId,
-        contactId,
-        conversationId,
-        content: baseSystemPrompt,
-      },
-    );
+    await this.memoryService.ensureConversationSystemPrompt({
+      companyId,
+      contactId,
+      conversationId,
+      content: baseSystemPrompt,
+    });
 
     for (const message of recentMessages) {
       const role = message.sender === 'bot' ? 'assistant' : 'user';
@@ -368,6 +513,120 @@ export class AiBrainService {
     return tools.filter((tool) => tool.active && (!tool.botId || tool.botId === botId));
   }
 
+  private async resolveActiveBot(companyId: string, channel: ChannelEntity): Promise<BotEntity> {
+    const configuredBotId = this.readString(channel.config['botId']);
+    if (configuredBotId) {
+      try {
+        return await this.botsService.get(companyId, configuredBotId);
+      } catch (error) {
+        this.logger.warn(
+          `[AI BRAIN] configured bot not found for channelId=${channel.id} botId=${configuredBotId}; falling back to default active bot`,
+        );
+      }
+    }
+
+    return this.botsService.getDefaultActiveBot(companyId);
+  }
+
+  private shouldRespondToInbound(params: {
+    configuration: BotConfigurationBundle;
+    bot: BotEntity;
+    channel: ChannelEntity;
+    userMessage: string;
+  }): { ok: boolean; reason: string } {
+    if (!params.configuration.general.isEnabled) {
+      return { ok: false, reason: 'bot_disabled_globally' };
+    }
+    if (!params.configuration.orchestrator.automaticMode) {
+      return { ok: false, reason: 'automatic_mode_disabled' };
+    }
+    if (params.bot.status !== 'active') {
+      return { ok: false, reason: 'bot_inactive' };
+    }
+    if (params.channel.status !== 'active') {
+      return { ok: false, reason: 'channel_inactive' };
+    }
+    if (!params.userMessage.trim()) {
+      return { ok: false, reason: 'empty_inbound_message' };
+    }
+    return { ok: true, reason: 'ready' };
+  }
+
+  private resolvePromptInputs(
+    configuration: BotConfigurationBundle,
+    bot: BotEntity,
+    detectedIntent: string,
+    activePrompts: PromptEntity[],
+  ): {
+    systemInstructions: string;
+    mainBotPrompt: string;
+    businessRules: string[];
+  } {
+    const systemInstructions =
+      activePrompts.find((prompt) => prompt.type === 'system')?.content?.trim() ||
+      configuration.prompts[0]?.content ||
+      configuration.openai.systemPromptPreview;
+    const mainBotPrompt = bot.systemPrompt?.trim() || systemInstructions;
+    const promptTypes = this.resolvePromptTypesForIntent(detectedIntent);
+    const businessRules = activePrompts
+      .filter((prompt) => prompt.type === 'behavior' || promptTypes.includes(prompt.type))
+      .map((prompt) => prompt.content.trim())
+      .filter((value) => value.length > 0);
+
+    return {
+      systemInstructions,
+      mainBotPrompt,
+      businessRules,
+    };
+  }
+
+  private resolvePromptTypesForIntent(detectedIntent: string): string[] {
+    if (detectedIntent === 'support') {
+      return ['support'];
+    }
+    return ['sales'];
+  }
+
+  private buildRecentTranscriptMessages(
+    recentMessages: MessageEntity[],
+  ): OpenAiChatMessage[] {
+    const history = recentMessages.slice(-8);
+    if (history.length === 0) {
+      return [];
+    }
+
+    const currentInboundId =
+      history.filter((message) => message.sender === 'client').slice(-1)[0]?.id ?? null;
+
+    return history
+      .filter((message) => message.id !== currentInboundId)
+      .map((message) => ({
+        role: message.sender === 'bot' ? 'assistant' : 'user',
+        content: message.content,
+      }));
+  }
+
+  private approximateTokenCount(chunks: string[]): number {
+    const totalCharacters = chunks.reduce((sum, item) => sum + item.length, 0);
+    return Math.max(1, Math.ceil(totalCharacters / 4));
+  }
+
+  private async persistAiBrainLog(params: {
+    companyId: string;
+    conversationId: string;
+    contactId: string;
+    botId: string;
+    channelId: string;
+    status: string;
+    detectedIntent: string | null;
+    provider: string | null;
+    model: string | null;
+    latencyMs: number;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    await this.aiBrainLogsRepository.save(this.aiBrainLogsRepository.create(params));
+  }
+
   private detectIntent(message: string): string {
     const normalized = message.toLowerCase();
     if (!normalized) {
@@ -386,5 +645,15 @@ export class AiBrainService {
       return 'company-info';
     }
     return 'general';
+  }
+
+  private readString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private readRecord(value: unknown): Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : {};
   }
 }

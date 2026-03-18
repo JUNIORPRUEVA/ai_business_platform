@@ -7,6 +7,7 @@ import { Roles } from '../../../common/auth/roles.decorator';
 import { RolesGuard } from '../../../common/auth/roles.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { LicenseGuard } from '../../billing/license.guard';
+import { ConversationsService } from '../../conversations/conversations.service';
 import { MessagesService } from '../../messages/messages.service';
 import { PresignBrainDocumentUploadDto } from '../dto/presign-brain-document-upload.dto';
 import { ProcessAiMessageDto } from '../dto/process-ai-message.dto';
@@ -34,6 +35,7 @@ export class AiBrainController {
   constructor(
     private readonly aiBrainService: AiBrainService,
     private readonly aiBrainDocumentService: AiBrainDocumentService,
+    private readonly conversationsService: ConversationsService,
     private readonly messagesService: MessagesService,
   ) {}
 
@@ -88,6 +90,10 @@ export class AiBrainController {
   @Roles('admin', 'operator')
   @Post('process-message')
   async processMessage(@CurrentUser() user: AuthUser, @Body() dto: ProcessAiMessageDto) {
+    const conversation = await this.conversationsService.get(
+      user.companyId,
+      dto.conversationId,
+    );
     const createdMessage = await this.messagesService.create(
       user.companyId,
       dto.conversationId,
@@ -103,7 +109,7 @@ export class AiBrainController {
 
     await this.aiBrainService.processInboundMessage({
       companyId: user.companyId,
-      channelId: dto.channelId,
+      channelId: dto.channelId ?? conversation.channelId,
       conversationId: dto.conversationId,
       contactPhone: dto.contactPhone ?? '',
       messageId: createdMessage.id,

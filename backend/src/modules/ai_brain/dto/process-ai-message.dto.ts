@@ -1,14 +1,12 @@
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class ProcessAiMessageDto {
+  @IsOptional()
   @IsUUID()
-  channelId!: string;
+  channelId?: string;
 
   @IsUUID()
   conversationId!: string;
-
-  @IsUUID()
-  contactId!: string;
 
   @IsOptional()
   @IsString()
