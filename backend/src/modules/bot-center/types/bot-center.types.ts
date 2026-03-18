@@ -75,6 +75,36 @@ export interface BotToolResponse {
   active: boolean;
 }
 
+export interface BotDeliveryDiagnosticsResponse {
+  conversationId: string;
+  companyId: string;
+  remoteJidOriginal: string;
+  stored: {
+    canonicalRemoteJid: string | null;
+    canonicalNumber: string | null;
+    originalRemoteJid: string | null;
+    rawRemoteJid: string | null;
+    sendTarget: string | null;
+    lastInboundJidType: string | null;
+    replyTargetUnresolved: boolean;
+    channelConfigId: string | null;
+  };
+  resolution: {
+    canReply: boolean;
+    reason: string;
+    canonicalJid: string | null;
+    canonicalNumber: string | null;
+    source: string | null;
+  };
+  lastInboundMessage: {
+    id: string | null;
+    createdAt: string | null;
+    evolutionMessageId: string | null;
+    messageType: string | null;
+  };
+  lastInboundPayloadSnapshot: Record<string, unknown> | null;
+}
+
 export interface BotLogResponse {
   id: string;
   timestamp: string;

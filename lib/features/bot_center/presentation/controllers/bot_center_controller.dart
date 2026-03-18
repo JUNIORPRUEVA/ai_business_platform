@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/bot_center_repository_impl.dart';
+import '../../domain/entities/bot_ai_process_result.dart';
 import '../../domain/entities/bot_activity_log.dart';
 import '../../domain/entities/bot_center_overview.dart';
 import '../../domain/entities/bot_contact_context.dart';
@@ -33,7 +34,9 @@ class BotCenterController extends ChangeNotifier {
         promptTitleController = TextEditingController(),
         promptDescriptionController = TextEditingController(),
         promptEditorController = TextEditingController(),
-        messageComposerController = TextEditingController();
+        messageComposerController = TextEditingController() {
+    messageComposerController.addListener(_handleComposerChanged);
+  }
 
   factory BotCenterController.createDefault({
     String? baseUrl,
@@ -81,6 +84,7 @@ class BotCenterController extends ChangeNotifier {
   bool _isSavingPrompt = false;
   bool _isMutatingMemory = false;
   bool _isSendingMessage = false;
+  bool _isProcessingWithAi = false;
   bool _hasLoaded = false;
 
   List<BotConversation> get conversations => List.unmodifiable(_conversations);
@@ -97,10 +101,12 @@ class BotCenterController extends ChangeNotifier {
   bool get isSavingPrompt => _isSavingPrompt;
   bool get isMutatingMemory => _isMutatingMemory;
   bool get isSendingMessage => _isSendingMessage;
+  bool get isProcessingWithAi => _isProcessingWithAi;
   bool get hasLoaded => _hasLoaded;
   String? get errorMessage => _errorMessage;
   String? get conversationErrorMessage => _conversationErrorMessage;
   String? get actionMessage => _actionMessage;
+  bool get hasDraftMessage => messageComposerController.text.trim().isNotEmpty;
 
   List<BotConversation> get filteredConversations {
     final normalizedQuery = _searchQuery.trim().toLowerCase();
@@ -172,6 +178,14 @@ class BotCenterController extends ChangeNotifier {
     }).toList();
     items.sort((left, right) => right.timestamp.compareTo(left.timestamp));
     return items;
+  }
+
+  BotActivityLog? get latestVisibleLog {
+    final logs = visibleLogs;
+    if (logs.isEmpty) {
+      return null;
+    }
+    return logs.first;
   }
 
   BotPromptConfig get promptConfig =>
@@ -506,6 +520,45 @@ class BotCenterController extends ChangeNotifier {
     }
   }
 
+  Future<void> processDraftWithAi() async {
+    final text = messageComposerController.text.trim();
+    if (text.isEmpty || _selectedConversationId.isEmpty) {
+      return;
+    }
+
+    final conversationId = _selectedConversationId;
+    debugPrint(
+      '[BOT_CENTER_UI] processDraftWithAi conversationId=$conversationId length=${text.length}',
+    );
+
+    messageComposerController.clear();
+    _isProcessingWithAi = true;
+    _actionMessage = null;
+    _conversationErrorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await _repository.processAiMessage(
+        conversationId: conversationId,
+        message: text,
+      );
+      await _reloadSelectedConversationOverview(conversationId);
+      _actionMessage = _aiProcessMessage(result);
+      _errorMessage = null;
+    } catch (error) {
+      messageComposerController
+        ..text = text
+        ..selection = TextSelection.collapsed(offset: text.length);
+      _actionMessage = 'No se pudo ejecutar el cerebro IA. ${error.toString()}';
+    } finally {
+      _isProcessingWithAi = false;
+      if (_hasLoaded) {
+        _scheduleNextBackgroundRefresh();
+      }
+      notifyListeners();
+    }
+  }
+
   void _appendOptimisticMessage(BotMessage message) {
     final existing =
         _messagesByConversation[message.conversationId] ?? const <BotMessage>[];
@@ -606,7 +659,8 @@ class BotCenterController extends ChangeNotifier {
     final selectedConversationData = overview.selectedConversationData;
     if (selectedConversationData != null) {
       _selectedConversationId = selectedConversationData.conversation.id;
-      _messagesByConversation[_selectedConversationId] = _mergeOptimisticMessages(
+      _messagesByConversation[_selectedConversationId] =
+          _mergeOptimisticMessages(
         _selectedConversationId,
         selectedConversationData.messages,
       );
@@ -641,6 +695,30 @@ class BotCenterController extends ChangeNotifier {
     } catch (_) {
       // Keep the latest local state if a secondary refresh fails.
     }
+  }
+
+  Future<void> _reloadSelectedConversationOverview(
+      String conversationId) async {
+    final overview =
+        await _repository.getOverview(conversationId: conversationId);
+    _applyOverview(overview);
+    _conversationErrorMessage = null;
+  }
+
+  String _aiProcessMessage(BotAiProcessResult result) {
+    if (!result.ok) {
+      return 'El cerebro IA no pudo completar la ejecución.';
+    }
+
+    if (result.queued) {
+      return 'El mensaje se encoló para el cerebro IA. Id ${result.messageId}.';
+    }
+
+    return 'El cerebro IA procesó el mensaje y actualizó la conversación.';
+  }
+
+  void _handleComposerChanged() {
+    notifyListeners();
   }
 
   Duration get _nextBackgroundRefreshInterval {
@@ -710,7 +788,8 @@ class BotCenterController extends ChangeNotifier {
         _selectedConversationId = nextSelectedConversationId;
         final refreshedMessages = conversationResults[0] as List<BotMessage>;
         _messagesByConversation[nextSelectedConversationId] =
-            _mergeOptimisticMessages(nextSelectedConversationId, refreshedMessages);
+            _mergeOptimisticMessages(
+                nextSelectedConversationId, refreshedMessages);
         _contactsByConversation[nextSelectedConversationId] =
             conversationResults[1] as BotContactContext;
         _memoryByConversation[nextSelectedConversationId] =
@@ -751,7 +830,8 @@ class BotCenterController extends ChangeNotifier {
     String conversationId,
     List<BotMessage> fetched,
   ) {
-    final existing = _messagesByConversation[conversationId] ?? const <BotMessage>[];
+    final existing =
+        _messagesByConversation[conversationId] ?? const <BotMessage>[];
     final fetchedGrowable = List<BotMessage>.of(fetched, growable: true);
     final optimistic = existing
         .where(
@@ -776,8 +856,10 @@ class BotCenterController extends ChangeNotifier {
         if (remoteMessage.body.trim() != optimisticMessage.body.trim()) {
           return false;
         }
-        final deltaSeconds =
-            remoteMessage.timestamp.difference(optimisticMessage.timestamp).inSeconds.abs();
+        final deltaSeconds = remoteMessage.timestamp
+            .difference(optimisticMessage.timestamp)
+            .inSeconds
+            .abs();
         return deltaSeconds <= 120;
       });
 
@@ -793,6 +875,7 @@ class BotCenterController extends ChangeNotifier {
   @override
   void dispose() {
     _backgroundRefreshTimer?.cancel();
+    messageComposerController.removeListener(_handleComposerChanged);
     messageComposerController.dispose();
     promptTitleController.dispose();
     promptDescriptionController.dispose();

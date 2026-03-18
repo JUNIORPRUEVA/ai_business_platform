@@ -1,3 +1,4 @@
+import '../../domain/entities/bot_ai_process_result.dart';
 import '../../domain/entities/bot_activity_log.dart';
 import '../../domain/entities/bot_center_overview.dart';
 import '../../domain/entities/bot_contact_context.dart';
@@ -220,6 +221,25 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
     );
 
     return model.message;
+  }
+
+  @override
+  Future<BotAiProcessResult> processAiMessage({
+    required String conversationId,
+    required String message,
+  }) async {
+    final model = await _resolve(
+      () => _remoteDataSource.processAiMessage(
+        conversationId: conversationId,
+        message: message,
+      ),
+      fallback: () => _seedDataSource!.processAiMessage(
+        conversationId: conversationId,
+        message: message,
+      ),
+    );
+
+    return model.toEntity();
   }
 
   Future<T> _resolve<T>(

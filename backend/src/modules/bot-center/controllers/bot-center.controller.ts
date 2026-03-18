@@ -14,6 +14,7 @@ import {
   BotCenterOverviewResponse,
   BotContactContextResponse,
   BotConversationSummary,
+  BotDeliveryDiagnosticsResponse,
   BotLogResponse,
   BotMemoryItemResponse,
   BotMemoryResponse,
@@ -58,6 +59,14 @@ export class BotCenterController {
     @Param('id') conversationId: string,
   ): Promise<BotContactContextResponse> {
     return this.botCenterService.getConversationContext(user.companyId, conversationId);
+  }
+
+  @Get('conversations/:id/delivery-diagnostics')
+  getDeliveryDiagnostics(
+    @CurrentUser() user: AuthUser,
+    @Param('id') conversationId: string,
+  ): Promise<BotDeliveryDiagnosticsResponse> {
+    return this.botCenterService.getDeliveryDiagnostics(user.companyId, conversationId);
   }
 
   @Get('conversations/:id/memory')

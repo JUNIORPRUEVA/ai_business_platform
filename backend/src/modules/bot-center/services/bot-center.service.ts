@@ -26,6 +26,7 @@ import {
   BotContactContextResponse,
   BotConversationDetailResponse,
   BotConversationSummary,
+  BotDeliveryDiagnosticsResponse,
   BotLogResponse,
   BotLogSeverity,
   BotMemoryItemResponse,
@@ -145,6 +146,63 @@ export class BotCenterService {
           : []),
       ],
       productKnowledge: [],
+    };
+  }
+
+  async getDeliveryDiagnostics(
+    companyId: string,
+    conversationId: string,
+  ): Promise<BotDeliveryDiagnosticsResponse> {
+    const chat = await this.getConversationOrThrow(companyId, conversationId);
+
+    const lastInbound = await this.messagesRepository.findOne({
+      where: { companyId, chatId: conversationId, direction: 'inbound' },
+      order: { createdAt: 'DESC' },
+    });
+
+    let resolution: BotDeliveryDiagnosticsResponse['resolution'];
+    try {
+      const result = await this.whatsappMessagingService.diagnoseRecipientResolution(companyId, chat.remoteJid);
+      resolution = {
+        canReply: result.safeToSend,
+        reason: result.safeToSend ? 'ok' : (result.reason ?? 'canonical_target_not_found'),
+        canonicalJid: result.canonicalJid,
+        canonicalNumber: result.canonicalNumber,
+        source: result.source,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      resolution = {
+        canReply: false,
+        reason: message,
+        canonicalJid: null,
+        canonicalNumber: null,
+        source: null,
+      };
+    }
+
+    return {
+      conversationId,
+      companyId,
+      remoteJidOriginal: chat.remoteJid,
+      stored: {
+        canonicalRemoteJid: chat.canonicalRemoteJid,
+        canonicalNumber: chat.canonicalNumber,
+        originalRemoteJid: chat.originalRemoteJid,
+        rawRemoteJid: chat.rawRemoteJid,
+        sendTarget: chat.sendTarget,
+        lastInboundJidType: chat.lastInboundJidType,
+        replyTargetUnresolved: chat.replyTargetUnresolved,
+        channelConfigId: chat.channelConfigId ?? null,
+      },
+      resolution,
+      lastInboundMessage: {
+        id: lastInbound?.id ?? null,
+        createdAt: lastInbound?.createdAt?.toISOString() ?? null,
+        evolutionMessageId: lastInbound?.evolutionMessageId ?? null,
+        messageType: lastInbound?.messageType ?? null,
+      },
+      lastInboundPayloadSnapshot: lastInbound?.rawPayloadJson ?? null,
     };
   }
 
@@ -438,6 +496,22 @@ export class BotCenterService {
     const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, payload.conversationId);
     const conversation = memoryTarget?.chat ?? await this.getConversationOrThrow(companyId, payload.conversationId);
     const dispatchedAt = new Date().toISOString();
+
+    const resolution = await this.whatsappMessagingService.diagnoseRecipientResolution(
+      companyId,
+      conversation.remoteJid,
+    );
+
+    this.logger.log(
+      `[BOT SEND RESOLUTION] companyId=${companyId} conversationId=${payload.conversationId} remoteJidOriginal=${conversation.remoteJid} canonicalJid=${resolution.canonicalJid ?? '(none)'} canonicalPhone=${resolution.canonicalNumber ?? '(none)'} finalSendTarget=${resolution.canonicalNumber ?? '(none)'} source=${resolution.source ?? 'none'} safeToSend=${resolution.safeToSend} reason=${resolution.reason ?? 'ok'}`,
+    );
+
+    if (!resolution.safeToSend) {
+      throw new BadRequestException(
+        resolution.reason ??
+          `No se encontró destinatario canónico para este chat. remoteJid original=${conversation.remoteJid} companyId=${companyId} conversationId=${payload.conversationId}`,
+      );
+    }
 
     const outboundDispatch = await this.whatsappMessagingService.sendText(companyId, {
       channelConfigId: conversation.channelConfigId,

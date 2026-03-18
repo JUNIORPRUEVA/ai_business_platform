@@ -29,7 +29,12 @@ class ChatWorkspacePanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ConversationHeader(conversation: conversation),
+        _ConversationHeader(
+          conversation: conversation,
+          isProcessingWithAi: controller.isProcessingWithAi,
+        ),
+        const SizedBox(height: 10),
+        _AiExecutionBanner(controller: controller),
         const SizedBox(height: 12),
         Expanded(
           child: Container(
@@ -111,9 +116,13 @@ class _EmptyConversation extends StatelessWidget {
 }
 
 class _ConversationHeader extends StatelessWidget {
-  const _ConversationHeader({required this.conversation});
+  const _ConversationHeader({
+    required this.conversation,
+    required this.isProcessingWithAi,
+  });
 
   final BotConversation conversation;
+  final bool isProcessingWithAi;
 
   @override
   Widget build(BuildContext context) {
@@ -168,6 +177,33 @@ class _ConversationHeader extends StatelessWidget {
               ],
             ),
           ),
+          if (isProcessingWithAi)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0F2FE),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'IA procesando',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: const Color(0xFF075985),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           IconButton(
             tooltip: 'Buscar en conversación',
             onPressed: () {},
@@ -177,6 +213,77 @@ class _ConversationHeader extends StatelessWidget {
             tooltip: 'Opciones',
             onPressed: () {},
             icon: const Icon(Icons.more_horiz_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiExecutionBanner extends StatelessWidget {
+  const _AiExecutionBanner({required this.controller});
+
+  final BotCenterController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final latestLog = controller.latestVisibleLog;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              controller.isProcessingWithAi
+                  ? Icons.memory_rounded
+                  : Icons.bolt_rounded,
+              size: 18,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  controller.isProcessingWithAi
+                      ? 'El cerebro IA esta recorriendo prompt, memoria, herramientas y respuesta.'
+                      : 'Usa IA para simular un mensaje entrante del cliente y validar el flujo completo.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 13,
+                    color: const Color(0xFF0F172A),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  latestLog == null
+                      ? 'Aun no hay una ejecucion IA reciente para este chat.'
+                      : '${latestLog.eventType} · ${latestLog.summary}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -250,8 +357,15 @@ class _FloatingComposer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canSend =
-        controller.hasConversationSelection && !controller.isSendingMessage;
+    final canSend = controller.hasConversationSelection &&
+        controller.hasDraftMessage &&
+        !controller.isSendingMessage &&
+        !controller.isProcessingWithAi;
+    final canProcessWithAi = controller.hasConversationSelection &&
+        controller.hasDraftMessage &&
+        !controller.isProcessingWithAi &&
+        !controller.isSendingMessage;
+
     void sendMessage() {
       if (!canSend) {
         return;
@@ -259,9 +373,15 @@ class _FloatingComposer extends StatelessWidget {
       unawaited(controller.sendDraftMessage());
     }
 
+    void processWithAi() {
+      if (!canProcessWithAi) {
+        return;
+      }
+      unawaited(controller.processDraftWithAi());
+    }
+
     return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -305,6 +425,29 @@ class _FloatingComposer extends StatelessWidget {
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 13,
                   color: const Color(0xFF0F172A),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 40,
+            child: FilledButton.tonal(
+              onPressed: canProcessWithAi ? processWithAi : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE0F2FE),
+                foregroundColor: const Color(0xFF075985),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                controller.isProcessingWithAi ? 'IA...' : 'IA',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF075985),
                 ),
               ),
             ),

@@ -1,3 +1,4 @@
+import '../models/bot_ai_process_result_model.dart';
 import '../models/bot_center_overview_model.dart';
 import '../models/bot_contact_context_model.dart';
 import '../models/bot_conversation_model.dart';
@@ -150,5 +151,17 @@ class BotCenterRemoteDataSource {
     });
 
     return BotTestMessageResultModel.fromJson(json);
+  }
+
+  Future<BotAiProcessResultModel> processAiMessage({
+    required String conversationId,
+    required String message,
+  }) async {
+    final json = await _apiClient.postJson('/ai-brain/process-message', {
+      'conversationId': conversationId,
+      'message': message,
+    });
+
+    return BotAiProcessResultModel.fromJson(json);
   }
 }

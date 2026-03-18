@@ -28,6 +28,45 @@ export class WhatsappMessagingService {
     private readonly storageService: StorageService,
   ) {}
 
+  async diagnoseRecipientResolution(
+    companyId: string,
+    remoteJid: string,
+  ): Promise<{
+    rawRemoteJid: string;
+    normalizedRemoteJid: string;
+    safeToSend: boolean;
+    reason?: string;
+    canonicalJid: string | null;
+    canonicalNumber: string | null;
+    source: 'remoteJid' | 'chat' | 'last_inbound_payload' | null;
+  }> {
+    const rawRemoteJid = remoteJid;
+    const normalizedRemoteJid = this.normalizeRemoteJid(rawRemoteJid);
+
+    try {
+      const resolved = await this.resolveCanonicalRecipientWithSource(companyId, normalizedRemoteJid);
+      return {
+        rawRemoteJid,
+        normalizedRemoteJid,
+        safeToSend: true,
+        canonicalJid: resolved.jid,
+        canonicalNumber: resolved.number,
+        source: resolved.source,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'canonical_target_not_found';
+      return {
+        rawRemoteJid,
+        normalizedRemoteJid,
+        safeToSend: false,
+        reason: message,
+        canonicalJid: null,
+        canonicalNumber: null,
+        source: null,
+      };
+    }
+  }
+
   async sendText(companyId: string, payload: SendWhatsappTextDto): Promise<Record<string, unknown>> {
     const rawRemoteJid = payload.remoteJid;
     const normalizedJid = this.normalizeRemoteJid(rawRemoteJid);
@@ -37,7 +76,22 @@ export class WhatsappMessagingService {
       payload.channelConfigId,
     );
 
-    const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
+    const resolution = await this.diagnoseRecipientResolution(companyId, normalizedJid);
+    if (!resolution.safeToSend || !resolution.canonicalNumber || !resolution.canonicalJid) {
+      this.logger.warn(
+        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=(none) canonicalPhone=(none) finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
+      );
+      throw new BadRequestException(
+        resolution.reason ??
+          `No se encontró destinatario canónico para este chat. remoteJid original=${rawRemoteJid}`,
+      );
+    }
+
+    const recipient = { jid: resolution.canonicalJid, number: resolution.canonicalNumber };
+
+    this.logger.log(
+      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.jid} canonicalPhone=${recipient.number} finalSendTarget=${recipient.number} source=${resolution.source} safeToSend=true`,
+    );
     const evolutionPayload: Record<string, unknown> = {
       number: recipient.number,
       text: payload.text.trim(),
@@ -91,7 +145,22 @@ export class WhatsappMessagingService {
     const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.mediaUrl);
 
-    const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
+    const resolution = await this.diagnoseRecipientResolution(companyId, normalizedJid);
+    if (!resolution.safeToSend || !resolution.canonicalNumber || !resolution.canonicalJid) {
+      this.logger.warn(
+        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=(none) canonicalPhone=(none) finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
+      );
+      throw new BadRequestException(
+        resolution.reason ??
+          `No se encontró destinatario canónico para este chat. remoteJid original=${payload.remoteJid}`,
+      );
+    }
+
+    const recipient = { jid: resolution.canonicalJid, number: resolution.canonicalNumber };
+
+    this.logger.log(
+      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.jid} canonicalPhone=${recipient.number} finalSendTarget=${recipient.number} source=${resolution.source} safeToSend=true`,
+    );
 
     const evolutionPayload: Record<string, unknown> = {
       number: recipient.number,
@@ -154,7 +223,22 @@ export class WhatsappMessagingService {
     const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.audioUrl);
 
-    const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
+    const resolution = await this.diagnoseRecipientResolution(companyId, normalizedJid);
+    if (!resolution.safeToSend || !resolution.canonicalNumber || !resolution.canonicalJid) {
+      this.logger.warn(
+        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=(none) canonicalPhone=(none) finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
+      );
+      throw new BadRequestException(
+        resolution.reason ??
+          `No se encontró destinatario canónico para este chat. remoteJid original=${payload.remoteJid}`,
+      );
+    }
+
+    const recipient = { jid: resolution.canonicalJid, number: resolution.canonicalNumber };
+
+    this.logger.log(
+      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.jid} canonicalPhone=${recipient.number} finalSendTarget=${recipient.number} source=${resolution.source} safeToSend=true`,
+    );
 
     const evolutionPayload: Record<string, unknown> = {
       number: recipient.number,
@@ -271,6 +355,9 @@ export class WhatsappMessagingService {
     remoteJid: string,
     pushName?: string | null,
     canonicalRemoteJid?: string | null,
+    rawRemoteJid?: string | null,
+    lastInboundJidType?: string | null,
+    replyTargetUnresolved?: boolean,
   ): Promise<WhatsappChatEntity> {
     const existing = await this.chatsRepository.findOne({
       where: { companyId: config.companyId, remoteJid },
@@ -285,21 +372,48 @@ export class WhatsappMessagingService {
       if (normalizedCanonical && existing.canonicalRemoteJid !== normalizedCanonical) {
         existing.canonicalRemoteJid = normalizedCanonical;
         existing.canonicalNumber = this.normalizeOutboundNumber(this.jidToNumber(normalizedCanonical));
+        existing.sendTarget = existing.canonicalNumber;
+        existing.replyTargetUnresolved = false;
       }
+
+      if (rawRemoteJid && (!existing.rawRemoteJid || existing.rawRemoteJid !== rawRemoteJid)) {
+        existing.rawRemoteJid = rawRemoteJid;
+      }
+      if (!existing.originalRemoteJid) {
+        existing.originalRemoteJid = remoteJid;
+      }
+      if (lastInboundJidType) {
+        existing.lastInboundJidType = lastInboundJidType;
+      }
+      if (replyTargetUnresolved !== undefined) {
+        existing.replyTargetUnresolved = replyTargetUnresolved;
+      }
+
+      this.logger.log(
+        `[CHAT TARGET PERSISTENCE] companyId=${config.companyId} chatId=${existing.id} remoteJid=${existing.remoteJid} originalRemoteJid=${existing.originalRemoteJid ?? '(none)'} rawRemoteJid=${existing.rawRemoteJid ?? '(none)'} canonicalJid=${existing.canonicalRemoteJid ?? '(none)'} canonicalNumber=${existing.canonicalNumber ?? '(none)'} sendTarget=${existing.sendTarget ?? '(none)'} lastInboundJidType=${existing.lastInboundJidType ?? '(none)'} replyTargetUnresolved=${existing.replyTargetUnresolved}`,
+      );
 
       return this.chatsRepository.save(existing);
     }
+
+    const normalizedCanonical = this.normalizeCanonicalRemoteJid(canonicalRemoteJid);
+    const canonicalNumber = normalizedCanonical
+      ? this.normalizeOutboundNumber(this.jidToNumber(normalizedCanonical))
+      : (remoteJid.endsWith('@s.whatsapp.net')
+          ? this.normalizeOutboundNumber(this.jidToNumber(remoteJid))
+          : null);
 
     const entity = this.chatsRepository.create({
       companyId: config.companyId,
       channelConfigId: config.id,
       remoteJid,
-      canonicalRemoteJid: this.normalizeCanonicalRemoteJid(canonicalRemoteJid),
-      canonicalNumber: this.normalizeCanonicalRemoteJid(canonicalRemoteJid)
-        ? this.normalizeOutboundNumber(this.jidToNumber(this.normalizeCanonicalRemoteJid(canonicalRemoteJid)!))
-        : (remoteJid.endsWith('@s.whatsapp.net')
-            ? this.normalizeOutboundNumber(this.jidToNumber(remoteJid))
-            : null),
+      originalRemoteJid: remoteJid,
+      rawRemoteJid: rawRemoteJid ?? remoteJid,
+      canonicalRemoteJid: normalizedCanonical,
+      canonicalNumber,
+      sendTarget: canonicalNumber,
+      lastInboundJidType: lastInboundJidType ?? this.detectJidType(remoteJid),
+      replyTargetUnresolved: replyTargetUnresolved ?? (remoteJid.endsWith('@lid') && !normalizedCanonical),
       pushName: pushName ?? null,
       profileName: null,
       profilePictureUrl: null,
@@ -307,7 +421,11 @@ export class WhatsappMessagingService {
       unreadCount: 0,
     });
 
-    return this.chatsRepository.save(entity);
+    const saved = await this.chatsRepository.save(entity);
+    this.logger.log(
+      `[CHAT TARGET PERSISTENCE] companyId=${config.companyId} chatId=${saved.id} remoteJid=${saved.remoteJid} originalRemoteJid=${saved.originalRemoteJid ?? '(none)'} rawRemoteJid=${saved.rawRemoteJid ?? '(none)'} canonicalJid=${saved.canonicalRemoteJid ?? '(none)'} canonicalNumber=${saved.canonicalNumber ?? '(none)'} sendTarget=${saved.sendTarget ?? '(none)'} lastInboundJidType=${saved.lastInboundJidType ?? '(none)'} replyTargetUnresolved=${saved.replyTargetUnresolved}`,
+    );
+    return saved;
   }
 
   async upsertInboundMessage(params: {
@@ -315,6 +433,7 @@ export class WhatsappMessagingService {
     config: WhatsappChannelConfigEntity;
     remoteJid: string;
     canonicalRemoteJid?: string | null;
+    rawRemoteJid?: string | null;
     pushName?: string | null;
     evolutionMessageId: string | null;
     fromMe: boolean;
@@ -344,6 +463,9 @@ export class WhatsappMessagingService {
       params.remoteJid,
       params.pushName,
       params.canonicalRemoteJid,
+      params.rawRemoteJid,
+      this.detectJidType(params.remoteJid),
+      params.remoteJid.endsWith('@lid') && !this.normalizeCanonicalRemoteJid(params.canonicalRemoteJid),
     );
     chat.lastMessageAt = new Date();
     if (!params.fromMe) {
@@ -506,16 +628,16 @@ export class WhatsappMessagingService {
     return jid.replace(/@.+$/, '').replace(/\D/g, '');
   }
 
-  private async resolveCanonicalRecipient(
+  private async resolveCanonicalRecipientWithSource(
     companyId: string,
     remoteJid: string,
-  ): Promise<{ jid: string; number: string }> {
+  ): Promise<{ jid: string; number: string; source: 'remoteJid' | 'chat' | 'last_inbound_payload' }> {
     if (remoteJid.endsWith('@s.whatsapp.net')) {
       const number = this.normalizeOutboundNumber(this.jidToNumber(remoteJid));
       if (!number) {
         throw new BadRequestException('remoteJid no contiene digitos.');
       }
-      return { jid: `${number}@s.whatsapp.net`, number };
+      return { jid: `${number}@s.whatsapp.net`, number, source: 'remoteJid' };
     }
 
     if (remoteJid.endsWith('@lid')) {
@@ -524,7 +646,7 @@ export class WhatsappMessagingService {
       if (canonical) {
         const number = this.normalizeOutboundNumber(this.jidToNumber(canonical));
         if (number) {
-          return { jid: canonical, number };
+          return { jid: canonical, number, source: 'chat' };
         }
       }
 
@@ -544,9 +666,11 @@ export class WhatsappMessagingService {
         if (chat) {
           chat.canonicalRemoteJid = extracted;
           chat.canonicalNumber = number;
+          chat.sendTarget = number;
+          chat.replyTargetUnresolved = false;
           await this.chatsRepository.save(chat);
         }
-        return { jid: extracted, number };
+        return { jid: extracted, number, source: 'last_inbound_payload' };
       }
 
       throw new BadRequestException(
@@ -572,6 +696,43 @@ export class WhatsappMessagingService {
     for (const candidate of candidates) {
       if (candidate.endsWith('@s.whatsapp.net')) {
         return candidate;
+      }
+    }
+
+    const contacts = data['contacts'];
+    if (Array.isArray(contacts)) {
+      for (const item of contacts) {
+        if (typeof item !== 'object' || item == null) continue;
+        const contact = item as Record<string, unknown>;
+        const id = this.readString(contact['id']);
+        if (id.endsWith('@s.whatsapp.net')) {
+          return id;
+        }
+
+        const waId = this.readString(contact['wa_id']);
+        const digits = waId.replace(/\D/g, '');
+        if (digits.length >= 10) {
+          const normalized = digits.length === 10 ? `1${digits}` : digits;
+          return `${normalized}@s.whatsapp.net`;
+        }
+      }
+    }
+
+    const participantPn = this.readString(data['participantPn']);
+    if (participantPn) {
+      const digits = participantPn.replace(/\D/g, '');
+      if (digits.length >= 10) {
+        const normalized = digits.length === 10 ? `1${digits}` : digits;
+        return `${normalized}@s.whatsapp.net`;
+      }
+    }
+
+    const senderPn = this.readString(data['senderPn']);
+    if (senderPn) {
+      const digits = senderPn.replace(/\D/g, '');
+      if (digits.length >= 10) {
+        const normalized = digits.length === 10 ? `1${digits}` : digits;
+        return `${normalized}@s.whatsapp.net`;
       }
     }
 
@@ -662,6 +823,19 @@ export class WhatsappMessagingService {
     }
 
     return digits;
+  }
+
+  private detectJidType(remoteJid: string): string {
+    if (remoteJid.endsWith('@s.whatsapp.net')) {
+      return 's.whatsapp.net';
+    }
+    if (remoteJid.endsWith('@lid')) {
+      return 'lid';
+    }
+    if (remoteJid.endsWith('@g.us')) {
+      return 'group';
+    }
+    return 'unknown';
   }
 
   private safeJsonForLog(value: unknown, maxLen = 2000): string {

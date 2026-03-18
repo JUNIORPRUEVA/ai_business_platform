@@ -92,8 +92,8 @@ class _BotContextColumnState extends State<BotContextColumn> {
                     children: [
                       _ContextBlock(
                         title: 'Contacto',
-                        child:
-                            _ContactBlock(contact: widget.controller.selectedContact),
+                        child: _ContactBlock(
+                            contact: widget.controller.selectedContact),
                       ),
                       const SizedBox(height: 10),
                       _ContextBlock(
@@ -102,14 +102,20 @@ class _BotContextColumnState extends State<BotContextColumn> {
                       ),
                       const SizedBox(height: 10),
                       _ContextBlock(
+                        title: 'Prueba IA',
+                        child: _AiTestingBlock(controller: widget.controller),
+                      ),
+                      const SizedBox(height: 10),
+                      _ContextBlock(
                         title: 'Historial',
-                        child: _HistoryBlock(logs: widget.controller.visibleLogs),
+                        child:
+                            _HistoryBlock(logs: widget.controller.visibleLogs),
                       ),
                       const SizedBox(height: 10),
                       _ContextBlock(
                         title: 'Etiquetas',
-                        child:
-                            _TagsBlock(tags: widget.controller.selectedContact.tags),
+                        child: _TagsBlock(
+                            tags: widget.controller.selectedContact.tags),
                       ),
                     ],
                   ),
@@ -622,6 +628,153 @@ class _HistoryBlock extends StatelessWidget {
           const SizedBox(height: 8),
         ],
       ],
+    );
+  }
+}
+
+class _AiTestingBlock extends StatelessWidget {
+  const _AiTestingBlock({required this.controller});
+
+  final BotCenterController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final latestLog = controller.latestVisibleLog;
+    final statuses = controller.serviceStatuses.take(5).toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'El boton IA del compositor inyecta un mensaje del cliente, ejecuta memoria, prompt, herramientas y guarda la respuesta final.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontSize: 13,
+            color: const Color(0xFF475569),
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: statuses
+              .map((status) => _StatusPill(status: status))
+              .toList(growable: false),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                latestLog?.eventType ?? 'Sin ejecucion reciente',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                latestLog?.summary ??
+                    'Cuando lances una prueba IA aqui veras el ultimo resultado operativo del chat seleccionado.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 12,
+                  color: const Color(0xFF475569),
+                  height: 1.35,
+                ),
+              ),
+              if (latestLog != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  formatRelativeTimestamp(latestLog.timestamp),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonalIcon(
+            onPressed: controller.hasConversationSelection &&
+                    controller.hasDraftMessage &&
+                    !controller.isProcessingWithAi &&
+                    !controller.isSendingMessage
+                ? () => controller.processDraftWithAi()
+                : null,
+            icon: controller.isProcessingWithAi
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.play_arrow_rounded),
+            label: Text(
+              controller.isProcessingWithAi
+                  ? 'Procesando cerebro IA'
+                  : 'Probar IA con el texto actual',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.status});
+
+  final dynamic status;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final background =
+        status.isHealthy ? const Color(0xFFECFDF3) : const Color(0xFFFFF4E5);
+    final foreground =
+        status.isHealthy ? const Color(0xFF027A48) : const Color(0xFFB54708);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foreground.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            status.title,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: foreground,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            status.value,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: foreground,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

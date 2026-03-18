@@ -229,3 +229,62 @@ test('WhatsappInstancesService normaliza payloads inbound con data.messages[] y 
     'wamid-2',
   );
 });
+
+test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_id cuando remoteJid es @lid', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+
+  const service = new WhatsappWebhookService(
+    { add: async () => undefined } as never,
+    configsRepository as never,
+    { getEntity: async () => config } as never,
+    { create: async () => ({}) } as never,
+    {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-1',
+          chatId: 'chat-1',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async () => undefined,
+    } as never,
+    { downloadRemoteToStorage: async () => null } as never,
+  );
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      contacts: [{ wa_id: '8295344286' }],
+      messages: [
+        {
+          key: {
+            remoteJid: '203040820879420@lid',
+            id: 'wamid-3',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          message: { conversation: 'hola' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(savedMessages.length, 1);
+  assert.equal(savedMessages[0]['remoteJid'], '203040820879420@lid');
+  assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
+});

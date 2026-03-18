@@ -16,11 +16,26 @@ export class WhatsappChatEntity extends BaseEntity {
   @Column({ type: 'text', name: 'remote_jid' })
   remoteJid!: string;
 
+  @Column({ type: 'text', name: 'original_remote_jid', nullable: true })
+  originalRemoteJid!: string | null;
+
+  @Column({ type: 'text', name: 'raw_remote_jid', nullable: true })
+  rawRemoteJid!: string | null;
+
   @Column({ type: 'text', name: 'canonical_remote_jid', nullable: true })
   canonicalRemoteJid!: string | null;
 
   @Column({ type: 'text', name: 'canonical_number', nullable: true })
   canonicalNumber!: string | null;
+
+  @Column({ type: 'text', name: 'send_target', nullable: true })
+  sendTarget!: string | null;
+
+  @Column({ type: 'text', name: 'last_inbound_jid_type', nullable: true })
+  lastInboundJidType!: string | null;
+
+  @Column({ type: 'boolean', name: 'reply_target_unresolved', default: false })
+  replyTargetUnresolved!: boolean;
 
   @Column({ type: 'text', name: 'push_name', nullable: true })
   pushName!: string | null;

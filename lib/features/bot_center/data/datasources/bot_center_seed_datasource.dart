@@ -1,3 +1,4 @@
+import '../models/bot_ai_process_result_model.dart';
 import '../models/bot_center_overview_model.dart';
 import '../models/bot_contact_context_model.dart';
 import '../models/bot_conversation_model.dart';
@@ -130,6 +131,63 @@ class BotCenterSeedDataSource {
       'status': 'accepted',
     });
   }
+
+  Future<BotAiProcessResultModel> processAiMessage({
+    required String conversationId,
+    required String message,
+  }) async {
+    final inboundAt = DateTime.now().toUtc();
+    final userMessageId = 'ai-user-${inboundAt.microsecondsSinceEpoch}';
+    final botReply =
+        'Simulacion IA: recibi "$message", consulte memoria y prepare una respuesta lista para WhatsApp.';
+    final assistantAt = inboundAt.add(const Duration(seconds: 2));
+
+    _store.messagesByConversation
+        .putIfAbsent(conversationId, () => <Map<String, dynamic>>[])
+      ..add({
+        'id': userMessageId,
+        'conversationId': conversationId,
+        'author': 'contact',
+        'body': message,
+        'timestamp': inboundAt.toIso8601String(),
+        'state': 'sent',
+      })
+      ..add({
+        'id': 'ai-bot-${assistantAt.microsecondsSinceEpoch}',
+        'conversationId': conversationId,
+        'author': 'bot',
+        'body': botReply,
+        'timestamp': assistantAt.toIso8601String(),
+        'state': 'sent',
+      });
+
+    final conversationIndex =
+        _store.conversations.indexWhere((item) => item['id'] == conversationId);
+    if (conversationIndex != -1) {
+      _store.conversations[conversationIndex] = {
+        ..._store.conversations[conversationIndex],
+        'lastMessagePreview': botReply,
+        'timestamp': assistantAt.toIso8601String(),
+        'unreadCount': 0,
+      };
+    }
+
+    _store.logs.insert(0, {
+      'id': 'log-ai-${assistantAt.microsecondsSinceEpoch}',
+      'timestamp': assistantAt.toIso8601String(),
+      'eventType': 'AI brain processed message',
+      'summary':
+          'La simulacion local ejecuto el flujo IA completo para esta conversación.',
+      'severity': 'info',
+      'conversationId': conversationId,
+    });
+
+    return BotAiProcessResultModel.fromJson({
+      'ok': true,
+      'queued': false,
+      'messageId': userMessageId,
+    });
+  }
 }
 
 class _SeedStore {
@@ -171,7 +229,7 @@ class _SeedStore {
         'contactName': 'Felipe Andrade',
         'phone': '+55 21 99415-8802',
         'lastMessagePreview':
-          'Necesitamos que las reglas de memoria se alineen con las operaciones de franquicia.',
+            'Necesitamos que las reglas de memoria se alineen con las operaciones de franquicia.',
         'unreadCount': 0,
         'stage': 'qualified',
         'timestamp': minutesAgo(18),
@@ -181,7 +239,7 @@ class _SeedStore {
         'contactName': 'Bianca Sales',
         'phone': '+55 31 98654-1107',
         'lastMessagePreview':
-          'Por favor, escala este lead a un operador humano esta tarde.',
+            'Por favor, escala este lead a un operador humano esta tarde.',
         'unreadCount': 1,
         'stage': 'escalated',
         'timestamp': hoursAgo(2),
@@ -191,7 +249,7 @@ class _SeedStore {
         'contactName': 'Rafael Moura',
         'phone': '+55 41 99740-1243',
         'lastMessagePreview':
-          'El flujo de incorporación del cliente fue aprobado por el equipo de operaciones.',
+            'El flujo de incorporación del cliente fue aprobado por el equipo de operaciones.',
         'unreadCount': 0,
         'stage': 'onboarding',
         'timestamp': hoursAgo(7),
@@ -232,7 +290,7 @@ class _SeedStore {
           'id': 'm-003',
           'conversationId': 'conv-001',
           'author': 'contact',
-            'body':
+          'body':
               '¿El bot puede enviar recordatorios de pago fuera del horario laboral?',
           'timestamp': minutesAgo(6),
           'state': 'read',
@@ -252,7 +310,7 @@ class _SeedStore {
           'id': 'm-005',
           'conversationId': 'conv-002',
           'author': 'contact',
-            'body':
+          'body':
               'Necesitamos que las reglas de memoria se alineen con las operaciones de franquicia.',
           'timestamp': minutesAgo(18),
           'state': 'read',
@@ -294,7 +352,7 @@ class _SeedStore {
           'id': 'm-009',
           'conversationId': 'conv-005',
           'author': 'contact',
-            'body':
+          'body':
               '¿Podemos probar un prompt de respaldo para un CPF con formato inválido?',
           'timestamp': daysAgo(1, hours: 1),
           'state': 'read',
@@ -681,7 +739,8 @@ class _SeedStore {
         'aiStatus': {
           'label': 'Estado de IA',
           'value': 'Inferencia lista',
-          'description': 'El gateway principal del LLM responde dentro del SLA.',
+          'description':
+              'El gateway principal del LLM responde dentro del SLA.',
           'state': 'healthy',
         },
         'backendStatus': {
@@ -728,7 +787,7 @@ class _SeedStore {
   Map<String, dynamic> prompt;
 
   Map<String, dynamic> get emptyContext => const {
-      'customerName': 'No disponible',
+        'customerName': 'No disponible',
         'phone': '-',
         'role': '-',
         'businessType': '-',

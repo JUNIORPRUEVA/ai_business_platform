@@ -1,3 +1,4 @@
+import '../entities/bot_ai_process_result.dart';
 import '../entities/bot_activity_log.dart';
 import '../entities/bot_center_overview.dart';
 import '../entities/bot_contact_context.dart';
@@ -54,6 +55,11 @@ abstract interface class BotCenterRepository {
   });
 
   Future<String> sendTestMessage({
+    required String conversationId,
+    required String message,
+  });
+
+  Future<BotAiProcessResult> processAiMessage({
     required String conversationId,
     required String message,
   });

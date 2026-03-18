@@ -46,6 +46,7 @@ export class EvolutionApiClientService {
   }
 
   async sendText(config: WhatsappChannelConfigEntity, body: JsonRecord): Promise<JsonRecord> {
+    this.assertValidSendTarget(body, 'send-text');
     return this.request(
       config,
       `/message/sendText/${encodeURIComponent(config.instanceName)}`,
@@ -55,6 +56,7 @@ export class EvolutionApiClientService {
   }
 
   async sendMedia(config: WhatsappChannelConfigEntity, body: JsonRecord): Promise<JsonRecord> {
+    this.assertValidSendTarget(body, 'send-media');
     return this.request(
       config,
       `/message/sendMedia/${encodeURIComponent(config.instanceName)}`,
@@ -67,12 +69,42 @@ export class EvolutionApiClientService {
     config: WhatsappChannelConfigEntity,
     body: JsonRecord,
   ): Promise<JsonRecord> {
+    this.assertValidSendTarget(body, 'send-whatsapp-audio');
     return this.request(
       config,
       `/message/sendWhatsAppAudio/${encodeURIComponent(config.instanceName)}`,
       { method: 'POST', body: JSON.stringify(body) },
       'send-whatsapp-audio',
     );
+  }
+
+  private assertValidSendTarget(body: JsonRecord, action: string): void {
+    const raw = body['number'];
+    const number = typeof raw === 'string' ? raw.trim() : '';
+    if (!number) {
+      throw new BadRequestException(
+        `[EVOLUTION SEND VALIDATION] missing number for action=${action}`,
+      );
+    }
+
+    if (number.includes('@')) {
+      throw new BadRequestException(
+        `[EVOLUTION SEND VALIDATION] invalid number contains '@' action=${action} number=${number}`,
+      );
+    }
+
+    const digits = number.replace(/\D/g, '');
+    if (digits !== number) {
+      throw new BadRequestException(
+        `[EVOLUTION SEND VALIDATION] invalid number must be digits-only action=${action} number=${number}`,
+      );
+    }
+
+    if (digits.length < 10 || digits.length > 15) {
+      throw new BadRequestException(
+        `[EVOLUTION SEND VALIDATION] invalid number length action=${action} length=${digits.length} number=${number}`,
+      );
+    }
   }
 
   async getInstanceStatus(config: WhatsappChannelConfigEntity): Promise<JsonRecord> {
