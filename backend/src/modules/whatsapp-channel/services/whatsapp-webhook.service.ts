@@ -10,6 +10,7 @@ import { WhatsappAttachmentService } from './whatsapp-attachment.service';
 import { WhatsappChannelConfigService } from './whatsapp-channel-config.service';
 import { WhatsappChannelLogService } from './whatsapp-channel-log.service';
 import { EvolutionApiClientService } from './evolution-api-client.service';
+import { WhatsappJidResolverService } from './whatsapp-jid-resolver.service';
 import { WhatsappMessagingService } from './whatsapp-messaging.service';
 
 export interface WhatsappWebhookJob {
@@ -43,6 +44,7 @@ export class WhatsappWebhookService {
     private readonly messagingService: WhatsappMessagingService,
     private readonly attachmentsService: WhatsappAttachmentService,
     private readonly evolutionApiClient: EvolutionApiClientService,
+    private readonly jidResolver: WhatsappJidResolverService,
   ) {}
 
   async enqueue(companyId: string, payload: Record<string, unknown>): Promise<{ queued: true }> {
@@ -146,7 +148,7 @@ export class WhatsappWebhookService {
     const message = await this.messagingService.upsertInboundMessage({
       companyId,
       config: await this.configService.getEntity(companyId),
-      remoteJid: this.normalizeRemoteJid(this.readString(key['remoteJid'])),
+      remoteJid: this.jidResolver.normalizeRemoteJid(this.readString(key['remoteJid'])),
       pushName: null,
       evolutionMessageId: messageId,
       fromMe: this.readBoolean(key['fromMe']),
@@ -182,7 +184,7 @@ export class WhatsappWebhookService {
     const data = this.readMap(payload['data']);
     const key = this.readMap(data['key']);
     const rawRemoteJid = this.readString(key['remoteJid']);
-    const remoteJid = this.normalizeRemoteJid(rawRemoteJid);
+    const remoteJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid);
     if (!remoteJid) {
       this.logger.warn('[EVOLUTION INBOUND] message ignored reason=missing_remote_jid');
       return null;
@@ -346,7 +348,7 @@ export class WhatsappWebhookService {
     remoteJid: string,
     messageId: string | null,
   ): Promise<string | null> {
-    const localCanonical = this.extractCanonicalRemoteJid(data, key, message, remoteJid);
+    const localCanonical = this.jidResolver.extractCanonicalRemoteJid(data, key, message, remoteJid);
     if (localCanonical) {
       return localCanonical;
     }
@@ -355,7 +357,7 @@ export class WhatsappWebhookService {
       return null;
     }
 
-    const resolvedViaApi = await this.lookupCanonicalRemoteJidFromEvolution(config, remoteJid);
+    const resolvedViaApi = await this.jidResolver.lookupCanonicalRemoteJidFromEvolution(config, remoteJid);
     if (resolvedViaApi) {
       this.logger.log(
         `[EVOLUTION INBOUND] canonical recipient enriched instance=${config.instanceName} companyId=${config.companyId} remoteJid=${remoteJid} canonicalJid=${resolvedViaApi} source=evolution_lookup messageId=${messageId ?? '(none)'}`,

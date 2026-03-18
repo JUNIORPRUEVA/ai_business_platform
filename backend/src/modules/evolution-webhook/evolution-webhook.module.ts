@@ -7,6 +7,7 @@ import { ChannelsModule } from '../channels/channels.module';
 import { ContactsModule } from '../contacts/contacts.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { MessagesModule } from '../messages/messages.module';
+import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { WorkersModule } from '../workers/workers.module';
 import { EvolutionWebhookController } from './controllers/evolution-webhook.controller';
 import { WhatsappWebhookController } from './controllers/whatsapp-webhook.controller';
@@ -20,6 +21,7 @@ import { EvolutionWebhookService } from './services/evolution-webhook.service';
     ContactsModule,
     ConversationsModule,
     MessagesModule,
+    WhatsappChannelModule,
     TypeOrmModule.forFeature([BotConfigurationEntity]),
   ],
   controllers: [EvolutionWebhookController, WhatsappWebhookController],

@@ -67,6 +67,70 @@ const emptyEvolutionApiClient = {
   findChats: async () => ({}),
 };
 
+const jidResolverStub = {
+  normalizeRemoteJid: (value: string) => (value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`),
+  normalizeCanonicalRemoteJid: (value?: string | null) => {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed || !trimmed.endsWith('@s.whatsapp.net')) {
+      return null;
+    }
+    const digits = trimmed.replace(/@.+$/, '').replace(/\D/g, '');
+    const normalized = digits.length === 10 ? `1${digits}` : digits;
+    return normalized ? `${normalized}@s.whatsapp.net` : null;
+  },
+  jidToNumber: (jid: string) => jid.replace(/@.+$/, '').replace(/\D/g, ''),
+  normalizeOutboundNumber: (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    return digits.length === 10 ? `1${digits}` : digits;
+  },
+  detectJidType: (jid: string) =>
+    jid.endsWith('@lid') ? 'lid' : jid.endsWith('@s.whatsapp.net') ? 'pn' : jid.endsWith('@g.us') ? 'group' : 'unknown',
+  extractCanonicalRemoteJid: (
+    data: Record<string, unknown>,
+    key: Record<string, unknown>,
+    _message: Record<string, unknown>,
+    _remoteJid: string,
+  ) => {
+    const directSender = typeof data['sender'] === 'string' ? data['sender'] : '';
+    const source = (data['source'] ?? {}) as Record<string, unknown>;
+    const owner = (source['owner'] ?? {}) as Record<string, unknown>;
+    const sourcePhone = typeof owner['phoneNumber'] === 'string' ? owner['phoneNumber'] : '';
+    const contactWaId = Array.isArray(data['contacts'])
+      ? (((data['contacts'] as Array<unknown>)[0] as Record<string, unknown> | undefined)?.['wa_id'] as string | undefined) ?? ''
+      : '';
+    const candidate = directSender || sourcePhone || contactWaId || (typeof key['senderPn'] === 'string' ? key['senderPn'] : '');
+    const digits = candidate.replace(/\D/g, '');
+    if (digits.length < 10) {
+      return null;
+    }
+    const normalized = digits.length === 10 ? `1${digits}` : digits;
+    return `${normalized}@s.whatsapp.net`;
+  },
+  extractCanonicalRemoteJidFromPayload: (payload: Record<string, unknown>) => {
+    const data = (payload['data'] ?? {}) as Record<string, unknown>;
+    const source = (data['source'] ?? {}) as Record<string, unknown>;
+    const owner = (source['owner'] ?? {}) as Record<string, unknown>;
+    const sender = typeof data['sender'] === 'string' ? data['sender'] : '';
+    const waId = Array.isArray(data['contacts'])
+      ? (((data['contacts'] as Array<unknown>)[0] as Record<string, unknown> | undefined)?.['wa_id'] as string | undefined) ?? ''
+      : '';
+    const phone = typeof owner['phoneNumber'] === 'string' ? owner['phoneNumber'] : sender || waId;
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10) {
+      return null;
+    }
+    const normalized = digits.length === 10 ? `1${digits}` : digits;
+    return `${normalized}@s.whatsapp.net`;
+  },
+  lookupCanonicalRemoteJidFromEvolution: async (_config: unknown, _remoteJid: string) => null,
+};
+
+Object.assign(emptyEvolutionApiClient, {
+  normalizeRemoteJid: jidResolverStub.normalizeRemoteJid,
+  extractCanonicalRemoteJid: jidResolverStub.extractCanonicalRemoteJid,
+  lookupCanonicalRemoteJidFromEvolution: jidResolverStub.lookupCanonicalRemoteJidFromEvolution,
+});
+
 test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guarda en el flujo de la UI', async () => {
   const config = {
     id: 'config-1',
@@ -100,6 +164,7 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
+    jidResolverStub as never,
   );
 
   const payload = {
@@ -270,6 +335,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
+    jidResolverStub as never,
   );
 
   const payload = {
@@ -330,6 +396,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numeric
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
+    jidResolverStub as never,
   );
 
   const payload = {
@@ -398,6 +465,7 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
     {} as never,
     {} as never,
     {} as never,
+    jidResolverStub as never,
   );
 
   const result = await service.diagnoseRecipientResolution('company-1', remoteJid);
@@ -445,6 +513,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
+    jidResolverStub as never,
   );
 
   const payload = {
@@ -520,6 +589,10 @@ test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution
       }),
       findChats: async () => ({}),
     } as never,
+    {
+      ...jidResolverStub,
+      lookupCanonicalRemoteJidFromEvolution: async () => '18295344286@s.whatsapp.net',
+    } as never,
   );
 
   const payload = {
@@ -591,6 +664,7 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
     {} as never,
     {} as never,
     {} as never,
+    jidResolverStub as never,
   );
 
   const result = await service.diagnoseRecipientResolution('company-1', remoteJid);
@@ -634,6 +708,7 @@ test('EvolutionWebhookService usa el numero canonico para contacts.phone cuando 
     } as never,
     { acquireIdempotency: async () => true, idempotencyKey: () => 'idem-key' } as never,
     { buildEventKey: () => 'event-key' } as never,
+    jidResolverStub as never,
     { add: async (_name: string, payload: Record<string, unknown>) => { queuedJobs.push(payload); return undefined; } } as never,
     {
       findOne: async () => ({ payload: { whatsapp: { deduplicationEnabled: false, persistMediaMetadata: true } } }),

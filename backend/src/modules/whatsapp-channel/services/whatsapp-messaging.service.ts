@@ -12,6 +12,7 @@ import { WhatsappMessageEntity, WhatsappMessageType } from '../entities/whatsapp
 import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappAttachmentService } from './whatsapp-attachment.service';
 import { WhatsappChannelConfigService } from './whatsapp-channel-config.service';
+import { WhatsappJidResolverService } from './whatsapp-jid-resolver.service';
 
 @Injectable()
 export class WhatsappMessagingService {
@@ -26,6 +27,7 @@ export class WhatsappMessagingService {
     private readonly evolutionApiClient: EvolutionApiClientService,
     private readonly attachmentsService: WhatsappAttachmentService,
     private readonly storageService: StorageService,
+    private readonly jidResolver: WhatsappJidResolverService,
   ) {}
 
   async diagnoseRecipientResolution(
@@ -41,7 +43,7 @@ export class WhatsappMessagingService {
     source: 'remoteJid' | 'chat' | 'last_inbound_payload' | null;
   }> {
     const rawRemoteJid = remoteJid;
-    const normalizedRemoteJid = this.normalizeRemoteJid(rawRemoteJid);
+    const normalizedRemoteJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid, { throwOnEmpty: true });
 
     try {
       const resolved = await this.resolveCanonicalRecipientWithSource(companyId, normalizedRemoteJid);
@@ -69,7 +71,7 @@ export class WhatsappMessagingService {
 
   async sendText(companyId: string, payload: SendWhatsappTextDto): Promise<Record<string, unknown>> {
     const rawRemoteJid = payload.remoteJid;
-    const normalizedJid = this.normalizeRemoteJid(rawRemoteJid);
+    const normalizedJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid, { throwOnEmpty: true });
     const config = await this.resolveOutboundConfig(
       companyId,
       normalizedJid,
@@ -141,7 +143,7 @@ export class WhatsappMessagingService {
   }
 
   async sendMedia(companyId: string, payload: SendWhatsappMediaDto): Promise<Record<string, unknown>> {
-    const normalizedJid = this.normalizeRemoteJid(payload.remoteJid);
+    const normalizedJid = this.jidResolver.normalizeRemoteJid(payload.remoteJid, { throwOnEmpty: true });
     const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.mediaUrl);
 
@@ -219,7 +221,7 @@ export class WhatsappMessagingService {
   }
 
   async sendAudio(companyId: string, payload: SendWhatsappAudioDto): Promise<Record<string, unknown>> {
-    const normalizedJid = this.normalizeRemoteJid(payload.remoteJid);
+    const normalizedJid = this.jidResolver.normalizeRemoteJid(payload.remoteJid, { throwOnEmpty: true });
     const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.audioUrl);
 
@@ -311,7 +313,7 @@ export class WhatsappMessagingService {
   }
 
   async listMessages(companyId: string, remoteJid: string): Promise<Record<string, unknown>[]> {
-    const normalizedJid = this.normalizeRemoteJid(remoteJid);
+    const normalizedJid = this.jidResolver.normalizeRemoteJid(remoteJid, { throwOnEmpty: true });
     const chat = await this.chatsRepository.findOne({ where: { companyId, remoteJid: normalizedJid } });
     if (!chat) {
       return [];
@@ -368,10 +370,10 @@ export class WhatsappMessagingService {
         existing.pushName = pushName;
       }
 
-      const normalizedCanonical = this.normalizeCanonicalRemoteJid(canonicalRemoteJid);
+      const normalizedCanonical = this.jidResolver.normalizeCanonicalRemoteJid(canonicalRemoteJid);
       if (normalizedCanonical && existing.canonicalRemoteJid !== normalizedCanonical) {
         existing.canonicalRemoteJid = normalizedCanonical;
-        existing.canonicalNumber = this.normalizeOutboundNumber(this.jidToNumber(normalizedCanonical));
+        existing.canonicalNumber = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(normalizedCanonical));
         existing.sendTarget = existing.canonicalNumber;
         existing.replyTargetUnresolved = false;
       }
@@ -396,11 +398,11 @@ export class WhatsappMessagingService {
       return this.chatsRepository.save(existing);
     }
 
-    const normalizedCanonical = this.normalizeCanonicalRemoteJid(canonicalRemoteJid);
+    const normalizedCanonical = this.jidResolver.normalizeCanonicalRemoteJid(canonicalRemoteJid);
     const canonicalNumber = normalizedCanonical
-      ? this.normalizeOutboundNumber(this.jidToNumber(normalizedCanonical))
+      ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(normalizedCanonical))
       : (remoteJid.endsWith('@s.whatsapp.net')
-          ? this.normalizeOutboundNumber(this.jidToNumber(remoteJid))
+          ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(remoteJid))
           : null);
 
     const entity = this.chatsRepository.create({
@@ -412,7 +414,7 @@ export class WhatsappMessagingService {
       canonicalRemoteJid: normalizedCanonical,
       canonicalNumber,
       sendTarget: canonicalNumber,
-      lastInboundJidType: lastInboundJidType ?? this.detectJidType(remoteJid),
+      lastInboundJidType: lastInboundJidType ?? this.jidResolver.detectJidType(remoteJid),
       replyTargetUnresolved: replyTargetUnresolved ?? (remoteJid.endsWith('@lid') && !normalizedCanonical),
       pushName: pushName ?? null,
       profileName: null,
@@ -464,8 +466,8 @@ export class WhatsappMessagingService {
       params.pushName,
       params.canonicalRemoteJid,
       params.rawRemoteJid,
-      this.detectJidType(params.remoteJid),
-      params.remoteJid.endsWith('@lid') && !this.normalizeCanonicalRemoteJid(params.canonicalRemoteJid),
+      this.jidResolver.detectJidType(params.remoteJid),
+      params.remoteJid.endsWith('@lid') && !this.jidResolver.normalizeCanonicalRemoteJid(params.canonicalRemoteJid),
     );
     chat.lastMessageAt = new Date();
     if (!params.fromMe) {
@@ -633,7 +635,7 @@ export class WhatsappMessagingService {
     remoteJid: string,
   ): Promise<{ jid: string; number: string; source: 'remoteJid' | 'chat' | 'last_inbound_payload' }> {
     if (remoteJid.endsWith('@s.whatsapp.net')) {
-      const number = this.normalizeOutboundNumber(this.jidToNumber(remoteJid));
+      const number = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(remoteJid));
       if (!number) {
         throw new BadRequestException('remoteJid no contiene digitos.');
       }
@@ -642,9 +644,9 @@ export class WhatsappMessagingService {
 
     if (remoteJid.endsWith('@lid')) {
       const chat = await this.chatsRepository.findOne({ where: { companyId, remoteJid } });
-      const canonical = this.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid);
+      const canonical = this.jidResolver.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid);
       if (canonical) {
-        const number = this.normalizeOutboundNumber(this.jidToNumber(canonical));
+        const number = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(canonical));
         if (number) {
           return { jid: canonical, number, source: 'chat' };
         }
@@ -656,13 +658,13 @@ export class WhatsappMessagingService {
       });
 
       const extracted = lastInbound
-        ? this.normalizeCanonicalRemoteJid(
-            this.extractCanonicalRemoteJidFromPayload(lastInbound.rawPayloadJson),
+        ? this.jidResolver.normalizeCanonicalRemoteJid(
+            this.jidResolver.extractCanonicalRemoteJidFromPayload(lastInbound.rawPayloadJson),
           )
         : null;
 
       if (extracted) {
-        const number = this.normalizeOutboundNumber(this.jidToNumber(extracted));
+        const number = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(extracted));
         if (chat) {
           chat.canonicalRemoteJid = extracted;
           chat.canonicalNumber = number;

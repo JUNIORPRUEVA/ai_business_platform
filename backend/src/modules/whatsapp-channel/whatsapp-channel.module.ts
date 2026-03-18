@@ -17,6 +17,7 @@ import { EvolutionApiClientService } from './services/evolution-api-client.servi
 import { WhatsappAttachmentService } from './services/whatsapp-attachment.service';
 import { WhatsappChannelConfigService } from './services/whatsapp-channel-config.service';
 import { WhatsappChannelLogService } from './services/whatsapp-channel-log.service';
+import { WhatsappJidResolverService } from './services/whatsapp-jid-resolver.service';
 import { WhatsappMessagingService } from './services/whatsapp-messaging.service';
 import { WhatsappSecretService } from './services/whatsapp-secret.service';
 import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
@@ -40,6 +41,7 @@ import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
     WhatsappSecretService,
     WhatsappChannelLogService,
     EvolutionApiClientService,
+    WhatsappJidResolverService,
     WhatsappChannelConfigService,
     WhatsappAttachmentService,
     WhatsappMessagingService,
@@ -51,6 +53,7 @@ import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
     WhatsappSecretService,
     WhatsappChannelLogService,
     EvolutionApiClientService,
+    WhatsappJidResolverService,
     WhatsappChannelConfigService,
     WhatsappAttachmentService,
     WhatsappMessagingService,

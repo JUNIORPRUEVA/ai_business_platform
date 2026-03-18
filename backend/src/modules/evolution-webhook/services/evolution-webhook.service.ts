@@ -17,6 +17,7 @@ import { ContactsService } from '../../contacts/contacts.service';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { MessageType } from '../../messages/entities/message.entity';
 import { MessagesService } from '../../messages/messages.service';
+import { WhatsappJidResolverService } from '../../whatsapp-channel/services/whatsapp-jid-resolver.service';
 import { MessageProcessingJob } from '../../workers/processors/message-processing.processor';
 
 @Injectable()
@@ -30,6 +31,7 @@ export class EvolutionWebhookService {
     private readonly messagesService: MessagesService,
     private readonly memoryCacheService: MemoryCacheService,
     private readonly memoryDeduplicationService: MemoryDeduplicationService,
+    private readonly jidResolver: WhatsappJidResolverService,
     @InjectQueue('message-processing')
     private readonly messageProcessingQueue: Queue<MessageProcessingJob>,
     @InjectRepository(BotConfigurationEntity)
@@ -166,9 +168,11 @@ export class EvolutionWebhookService {
     payload: EvolutionMessageWebhookDto,
   ): NormalizedEvolutionMessage {
     const rawRemoteJid = payload.data.key.remoteJid?.trim() ?? '';
-    const canonicalSenderJid = this.extractCanonicalRemoteJid(payload);
+    const canonicalSenderJid = this.jidResolver.extractCanonicalRemoteJidFromPayload(
+      payload as unknown as Record<string, unknown>,
+    );
     const canonicalSenderNumber = canonicalSenderJid
-      ? this.normalizeOutboundNumber(this.jidToNumber(canonicalSenderJid))
+      ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(canonicalSenderJid))
       : '';
     const senderId = canonicalSenderNumber || rawRemoteJid;
     const normalizedContent = this.extractNormalizedContent(payload);
