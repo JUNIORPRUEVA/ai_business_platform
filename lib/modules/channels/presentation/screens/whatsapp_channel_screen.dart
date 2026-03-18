@@ -31,6 +31,8 @@ class WhatsappChannelScreen extends ConsumerStatefulWidget {
 }
 
 class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
+  static const Duration _operationalPollInterval = Duration(seconds: 1);
+
   final _instanceController = TextEditingController();
   final _api = WhatsappInstancesApiClient();
   final _configurationApi = BotConfigurationCenterApiClient();
@@ -151,7 +153,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
 
       setState(() {
         _providerMessageIsError = false;
-        _providerMessage = 'Configuración global de Evolution guardada correctamente.';
+        _providerMessage =
+            'Configuración global de Evolution guardada correctamente.';
       });
     } on BotConfigurationCenterApiException catch (error) {
       if (!mounted) {
@@ -258,7 +261,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       );
 
       final matchesExpected = response['matchesExpected'] == true;
-        final autoConfigured = response['autoConfigured'] == true;
+      final autoConfigured = response['autoConfigured'] == true;
       final isConfigured = response['isConfigured'] == true;
       final remoteWebhookUrl =
           (response['remoteWebhookUrl'] as String? ?? '').trim();
@@ -614,7 +617,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   void _startPolling() {
     _pollTimer?.cancel();
 
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _pollTimer = Timer.periodic(_operationalPollInterval, (_) {
       unawaited(_refreshOperationalState(silent: true));
     });
   }
@@ -1061,20 +1064,23 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                 SizedBox(
                                   width: compact ? double.infinity : 360,
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Wrap(
                                         spacing: 10,
                                         runSpacing: 10,
                                         children: [
                                           badge,
-                                          _buildActivityBadge(theme, activityBadge, activityLabel),
+                                          _buildActivityBadge(theme,
+                                              activityBadge, activityLabel),
                                         ],
                                       ),
                                       const SizedBox(height: 18),
                                       Text(
                                         statusTitle,
-                                        style: theme.textTheme.headlineSmall?.copyWith(
+                                        style: theme.textTheme.headlineSmall
+                                            ?.copyWith(
                                           fontWeight: FontWeight.w900,
                                           height: 1.0,
                                         ),
@@ -1082,8 +1088,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       const SizedBox(height: 10),
                                       Text(
                                         statusDescription,
-                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.74),
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                          color: theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.74),
                                           height: 1.5,
                                         ),
                                       ),
@@ -1092,26 +1100,34 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                         width: double.infinity,
                                         padding: const EdgeInsets.all(16),
                                         decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(20),
-                                          color: Colors.white.withValues(alpha: 0.05),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          color: Colors.white
+                                              .withValues(alpha: 0.05),
                                           border: Border.all(
-                                            color: Colors.white.withValues(alpha: 0.08),
+                                            color: Colors.white
+                                                .withValues(alpha: 0.08),
                                           ),
                                         ),
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               'Indicador operativo',
-                                              style: theme.textTheme.bodySmall?.copyWith(
-                                                color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                color: theme
+                                                    .colorScheme.onSurface
+                                                    .withValues(alpha: 0.66),
                                                 fontWeight: FontWeight.w800,
                                               ),
                                             ),
                                             const SizedBox(height: 6),
                                             Text(
                                               activityLabel,
-                                              style: theme.textTheme.titleMedium?.copyWith(
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
                                                 fontWeight: FontWeight.w900,
                                               ),
                                             ),
@@ -1120,8 +1136,11 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                               healthReady
                                                   ? 'La vinculación y el webhook están listos. Solo necesitas confirmar actividad reciente.'
                                                   : 'Si el canal ya está conectado pero no ves actividad, actualiza el estado o reaplica el webhook.',
-                                              style: theme.textTheme.bodySmall?.copyWith(
-                                                color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                color: theme
+                                                    .colorScheme.onSurface
+                                                    .withValues(alpha: 0.68),
                                               ),
                                             ),
                                           ],
@@ -1131,7 +1150,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   ),
                                 ),
                                 SizedBox(
-                                  width: compact ? double.infinity : constraints.maxWidth - 420,
+                                  width: compact
+                                      ? double.infinity
+                                      : constraints.maxWidth - 420,
                                   child: Wrap(
                                     spacing: 12,
                                     runSpacing: 12,
@@ -1139,19 +1160,24 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       _buildTopMetricCard(
                                         theme: theme,
                                         title: 'Estado general',
-                                        value: healthConnected ? 'Conectado' : 'Pendiente',
+                                        value: healthConnected
+                                            ? 'Conectado'
+                                            : 'Pendiente',
                                         icon: Icons.link_rounded,
                                       ),
                                       _buildTopMetricCard(
                                         theme: theme,
                                         title: 'Webhook',
-                                        value: healthWebhook ? 'Activo' : 'Requiere atención',
+                                        value: healthWebhook
+                                            ? 'Activo'
+                                            : 'Requiere atención',
                                         icon: Icons.verified_user_rounded,
                                       ),
                                       _buildTopMetricCard(
                                         theme: theme,
                                         title: 'Última actividad',
-                                        value: _formatRelativeTimestamp(healthMessageAt),
+                                        value: _formatRelativeTimestamp(
+                                            healthMessageAt),
                                         icon: Icons.schedule_rounded,
                                       ),
                                     ],
@@ -1188,7 +1214,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                 children: [
                                   Text(
                                     'Proveedor Evolution',
-                                    style: theme.textTheme.titleMedium?.copyWith(
+                                    style:
+                                        theme.textTheme.titleMedium?.copyWith(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w900,
                                     ),
@@ -1273,7 +1300,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       ],
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         _buildSectionEyebrow(
                                           theme: theme,
@@ -1283,14 +1311,16 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                         const SizedBox(height: 10),
                                         Text(
                                           'Conexión del proveedor',
-                                          style: theme.textTheme.bodyMedium?.copyWith(
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
                                             fontWeight: FontWeight.w900,
                                           ),
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
                                           'La URL pública del webhook se construye automáticamente desde el backend y los eventos inbound quedan siempre activos.',
-                                          style: theme.textTheme.bodySmall?.copyWith(
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
                                             color: theme.colorScheme.onSurface
                                                 .withValues(alpha: 0.66),
                                           ),
@@ -1316,26 +1346,34 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           width: double.infinity,
                                           padding: const EdgeInsets.all(14),
                                           decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(18),
-                                            color: Colors.white.withValues(alpha: 0.04),
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                            color: Colors.white
+                                                .withValues(alpha: 0.04),
                                             border: Border.all(
-                                              color: Colors.white.withValues(alpha: 0.08),
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.08),
                                             ),
                                           ),
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text(
                                                 'Automatización activa',
-                                                style: theme.textTheme.bodyMedium?.copyWith(
+                                                style: theme
+                                                    .textTheme.bodyMedium
+                                                    ?.copyWith(
                                                   fontWeight: FontWeight.w800,
                                                 ),
                                               ),
                                               const SizedBox(height: 6),
                                               Text(
                                                 'El sistema aplica el webhook automáticamente y deja habilitada la recepción de texto, audio, imágenes, videos y documentos.',
-                                                style: theme.textTheme.bodySmall?.copyWith(
-                                                  color: theme.colorScheme.onSurface
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme.onSurface
                                                       .withValues(alpha: 0.68),
                                                 ),
                                               ),
@@ -1348,10 +1386,11 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           runSpacing: 10,
                                           children: [
                                             FilledButton.icon(
-                                              onPressed: _isSavingProviderSettings ||
-                                                      _loadingProviderSettings
-                                                  ? null
-                                                  : _saveProviderSettings,
+                                              onPressed:
+                                                  _isSavingProviderSettings ||
+                                                          _loadingProviderSettings
+                                                      ? null
+                                                      : _saveProviderSettings,
                                               icon: _isSavingProviderSettings
                                                   ? const SizedBox(
                                                       width: 16,
@@ -1361,20 +1400,25 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                                         strokeWidth: 2,
                                                       ),
                                                     )
-                                                  : const Icon(Icons.save_rounded),
-                                              label: Text(_isSavingProviderSettings
-                                                  ? 'Guardando...'
-                                                  : 'Guardar configuración'),
+                                                  : const Icon(
+                                                      Icons.save_rounded),
+                                              label: Text(
+                                                  _isSavingProviderSettings
+                                                      ? 'Guardando...'
+                                                      : 'Guardar configuración'),
                                             ),
                                             OutlinedButton.icon(
-                                              onPressed: _isTestingProviderConnection ||
-                                                      _loadingProviderSettings
-                                                  ? null
-                                                  : _testEvolutionConnection,
-                                              icon: const Icon(Icons.bolt_rounded),
-                                              label: Text(_isTestingProviderConnection
-                                                  ? 'Probando...'
-                                                  : 'Probar conexión'),
+                                              onPressed:
+                                                  _isTestingProviderConnection ||
+                                                          _loadingProviderSettings
+                                                      ? null
+                                                      : _testEvolutionConnection,
+                                              icon: const Icon(
+                                                  Icons.bolt_rounded),
+                                              label: Text(
+                                                  _isTestingProviderConnection
+                                                      ? 'Probando...'
+                                                      : 'Probar conexión'),
                                             ),
                                           ],
                                         ),
@@ -1399,7 +1443,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                       runSpacing: 14,
                       children: [
                         SizedBox(
-                          width: compact ? constraints.maxWidth : (constraints.maxWidth - 14) * 0.56,
+                          width: compact
+                              ? constraints.maxWidth
+                              : (constraints.maxWidth - 14) * 0.56,
                           child: ExecutiveGlassCard(
                             padding: const EdgeInsets.all(20),
                             child: Column(
@@ -1421,7 +1467,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                 Text(
                                   'Escribe un nombre fácil de reconocer y escanea este código con WhatsApp para completar la conexión.',
                                   style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
+                                    color: theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.68),
                                   ),
                                 ),
                                 const SizedBox(height: 16),
@@ -1433,7 +1480,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                     errorText: _fieldError,
                                     prefixIcon: const Icon(Icons.dns_rounded),
                                   ),
-                                  enabled: _status != WhatsappChannelUiStatus.creating && !_isMutatingInstance,
+                                  enabled: _status !=
+                                          WhatsappChannelUiStatus.creating &&
+                                      !_isMutatingInstance,
                                   onChanged: (_) {
                                     if (_fieldError != null) {
                                       setState(() {
@@ -1449,16 +1498,23 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   runSpacing: 10,
                                   children: [
                                     FilledButton.icon(
-                                      onPressed: (_status == WhatsappChannelUiStatus.creating || _isMutatingInstance)
+                                      onPressed: (_status ==
+                                                  WhatsappChannelUiStatus
+                                                      .creating ||
+                                              _isMutatingInstance)
                                           ? null
                                           : _createInstance,
-                                      icon: const Icon(Icons.play_circle_outline),
+                                      icon:
+                                          const Icon(Icons.play_circle_outline),
                                       label: Text(
-                                        _activeInstanceName == null ? 'Crear instancia' : 'Actualizar instancia',
+                                        _activeInstanceName == null
+                                            ? 'Crear instancia'
+                                            : 'Actualizar instancia',
                                       ),
                                     ),
                                     OutlinedButton.icon(
-                                      onPressed: (_activeInstanceName == null || _isMutatingInstance)
+                                      onPressed: (_activeInstanceName == null ||
+                                              _isMutatingInstance)
                                           ? null
                                           : _renameInstance,
                                       icon: const Icon(Icons.edit_outlined),
@@ -1481,8 +1537,11 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                   child: Column(
                                     children: [
                                       Text(
-                                        qrBytes == null ? 'QR en preparación' : 'Escanea este código con WhatsApp',
-                                        style: theme.textTheme.titleSmall?.copyWith(
+                                        qrBytes == null
+                                            ? 'QR en preparación'
+                                            : 'Escanea este código con WhatsApp',
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
                                           fontWeight: FontWeight.w900,
                                         ),
                                       ),
@@ -1492,8 +1551,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                             ? 'El QR aparecerá aquí cuando la instancia termine de prepararse.'
                                             : 'Abre WhatsApp > Dispositivos vinculados y apunta la cámara a este código.',
                                         textAlign: TextAlign.center,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          color: theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.66),
                                         ),
                                       ),
                                     ],
@@ -1508,13 +1569,18 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       alignment: WrapAlignment.center,
                                       children: [
                                         FilledButton.icon(
-                                          onPressed: () => _showLargeQr(qrBytes),
-                                          icon: const Icon(Icons.zoom_out_map_rounded),
+                                          onPressed: () =>
+                                              _showLargeQr(qrBytes),
+                                          icon: const Icon(
+                                              Icons.zoom_out_map_rounded),
                                           label: const Text('Ver QR grande'),
                                         ),
                                         OutlinedButton.icon(
-                                          onPressed: _isMutatingInstance ? null : _fetchQr,
-                                          icon: const Icon(Icons.refresh_rounded),
+                                          onPressed: _isMutatingInstance
+                                              ? null
+                                              : _fetchQr,
+                                          icon:
+                                              const Icon(Icons.refresh_rounded),
                                           label: const Text('Actualizar QR'),
                                         ),
                                       ],
@@ -1526,7 +1592,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                           ),
                         ),
                         SizedBox(
-                          width: compact ? constraints.maxWidth : (constraints.maxWidth - 14) * 0.44,
+                          width: compact
+                              ? constraints.maxWidth
+                              : (constraints.maxWidth - 14) * 0.44,
                           child: Column(
                             children: [
                               ExecutiveGlassCard(
@@ -1537,46 +1605,77 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                     _buildSectionEyebrow(
                                       theme: theme,
                                       label: 'ESTADO DEL CANAL',
-                                      accent: healthReady ? const Color(0xFF22C55E) : const Color(0xFFF59E0B),
+                                      accent: healthReady
+                                          ? const Color(0xFF22C55E)
+                                          : const Color(0xFFF59E0B),
                                     ),
                                     const SizedBox(height: 10),
                                     Text(
                                       'Resumen operativo',
-                                      style: theme.textTheme.titleMedium?.copyWith(
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
                                         fontWeight: FontWeight.w900,
                                       ),
                                     ),
                                     const SizedBox(height: 14),
-                                    _buildSummaryRow(theme, 'Instancia conectada', healthConnected ? 'Sí' : 'No', healthConnected),
-                                    _buildSummaryRow(theme, 'Webhook activo', healthWebhook ? 'Sí' : 'No', healthWebhook),
-                                    _buildSummaryRow(theme, 'Último evento recibido', _friendlyEventLabel(healthEvent), healthEvent != null),
-                                    _buildSummaryRow(theme, 'Último mensaje recibido', healthMessage ?? 'Sin mensajes detectados', healthMessage != null),
-                                    _buildSummaryRow(theme, 'Último error', healthError ?? 'Sin errores recientes', healthError == null),
+                                    _buildSummaryRow(
+                                        theme,
+                                        'Instancia conectada',
+                                        healthConnected ? 'Sí' : 'No',
+                                        healthConnected),
+                                    _buildSummaryRow(
+                                        theme,
+                                        'Webhook activo',
+                                        healthWebhook ? 'Sí' : 'No',
+                                        healthWebhook),
+                                    _buildSummaryRow(
+                                        theme,
+                                        'Último evento recibido',
+                                        _friendlyEventLabel(healthEvent),
+                                        healthEvent != null),
+                                    _buildSummaryRow(
+                                        theme,
+                                        'Último mensaje recibido',
+                                        healthMessage ??
+                                            'Sin mensajes detectados',
+                                        healthMessage != null),
+                                    _buildSummaryRow(
+                                        theme,
+                                        'Último error',
+                                        healthError ?? 'Sin errores recientes',
+                                        healthError == null),
                                     const SizedBox(height: 16),
                                     Container(
                                       width: double.infinity,
                                       padding: const EdgeInsets.all(16),
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(20),
-                                        color: _activityToneColor(activityBadge).withValues(alpha: 0.12),
+                                        color: _activityToneColor(activityBadge)
+                                            .withValues(alpha: 0.12),
                                         border: Border.all(
-                                          color: _activityToneColor(activityBadge).withValues(alpha: 0.24),
+                                          color:
+                                              _activityToneColor(activityBadge)
+                                                  .withValues(alpha: 0.24),
                                         ),
                                       ),
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             activityLabel,
-                                            style: theme.textTheme.bodyMedium?.copyWith(
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
                                               fontWeight: FontWeight.w900,
                                             ),
                                           ),
                                           const SizedBox(height: 6),
                                           Text(
                                             'Último evento: ${_formatRelativeTimestamp(healthEventAt)} · Último mensaje: ${_formatRelativeTimestamp(healthMessageAt)}',
-                                            style: theme.textTheme.bodySmall?.copyWith(
-                                              color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                              color: theme.colorScheme.onSurface
+                                                  .withValues(alpha: 0.68),
                                             ),
                                           ),
                                         ],
@@ -1607,31 +1706,46 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           label: const Text('Abrir mensajes'),
                                         ),
                                         OutlinedButton.icon(
-                                          onPressed: (_activeInstanceName == null || _isReapplyingWebhook)
-                                              ? null
-                                              : _reapplyWebhook,
+                                          onPressed:
+                                              (_activeInstanceName == null ||
+                                                      _isReapplyingWebhook)
+                                                  ? null
+                                                  : _reapplyWebhook,
                                           icon: _isReapplyingWebhook
                                               ? const SizedBox(
                                                   width: 16,
                                                   height: 16,
-                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                          strokeWidth: 2),
                                                 )
-                                              : const Icon(Icons.settings_backup_restore_rounded),
-                                          label: const Text('Reaplicar webhook'),
+                                              : const Icon(Icons
+                                                  .settings_backup_restore_rounded),
+                                          label:
+                                              const Text('Reaplicar webhook'),
                                         ),
                                         OutlinedButton.icon(
-                                          onPressed: _activeInstanceName == null ? null : _refreshOperationalState,
+                                          onPressed: _activeInstanceName == null
+                                              ? null
+                                              : _refreshOperationalState,
                                           icon: const Icon(Icons.sync_rounded),
-                                          label: const Text('Actualizar estado'),
+                                          label:
+                                              const Text('Actualizar estado'),
                                         ),
                                         OutlinedButton.icon(
-                                          onPressed: _activeInstanceName == null ? null : _reconnectInstance,
-                                          icon: const Icon(Icons.qr_code_scanner_rounded),
+                                          onPressed: _activeInstanceName == null
+                                              ? null
+                                              : _reconnectInstance,
+                                          icon: const Icon(
+                                              Icons.qr_code_scanner_rounded),
                                           label: const Text('Reconectar'),
                                         ),
                                         OutlinedButton.icon(
-                                          onPressed: _activeInstanceName == null ? null : _deleteInstance,
-                                          icon: const Icon(Icons.delete_outline_rounded),
+                                          onPressed: _activeInstanceName == null
+                                              ? null
+                                              : _deleteInstance,
+                                          icon: const Icon(
+                                              Icons.delete_outline_rounded),
                                           label: const Text('Eliminar canal'),
                                         ),
                                       ],
@@ -1640,12 +1754,15 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                       const SizedBox(height: 14),
                                       _buildWebhookStatusBanner(theme),
                                     ],
-                                    if (healthConnected && healthMessageAt == null) ...[
+                                    if (healthConnected &&
+                                        healthMessageAt == null) ...[
                                       const SizedBox(height: 14),
                                       _buildSoftNotice(
                                         theme,
-                                        title: 'Canal conectado, pero sin mensajes detectados todavía',
-                                        description: 'Esto no es un error. Envía un mensaje de prueba para confirmar la actividad reciente del canal.',
+                                        title:
+                                            'Canal conectado, pero sin mensajes detectados todavía',
+                                        description:
+                                            'Esto no es un error. Envía un mensaje de prueba para confirmar la actividad reciente del canal.',
                                       ),
                                     ],
                                   ],
@@ -1660,7 +1777,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                 ),
               ],
             ),
-        ),
+          ),
         ],
       ),
     );
@@ -1803,7 +1920,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                   Text(
                     label,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.62),
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.62),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -2145,8 +2263,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                           const SizedBox(height: 14),
                           Text(
                             'QR no disponible todavía.',
-                            style:
-                                theme.textTheme.bodyMedium?.copyWith(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                               color: theme.colorScheme.onSurface
                                   .withValues(alpha: 0.70),

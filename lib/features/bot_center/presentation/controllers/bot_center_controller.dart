@@ -24,7 +24,9 @@ enum BotInspectorSection {
 }
 
 class BotCenterController extends ChangeNotifier {
-  static const Duration _backgroundRefreshInterval = Duration(seconds: 4);
+  static const Duration _activeConversationRefreshInterval =
+      Duration(milliseconds: 800);
+  static const Duration _idleBackgroundRefreshInterval = Duration(seconds: 2);
 
   BotCenterController({required BotCenterRepository repository})
       : _repository = repository,
@@ -206,6 +208,9 @@ class BotCenterController extends ChangeNotifier {
           'No se pudieron cargar los datos del Centro del Bot. ${error.toString()}';
     } finally {
       _isInitialLoading = false;
+      if (_hasLoaded) {
+        _scheduleNextBackgroundRefresh();
+      }
       notifyListeners();
     }
   }
@@ -229,6 +234,9 @@ class BotCenterController extends ChangeNotifier {
           'No se pudieron actualizar los datos del Centro del Bot. ${error.toString()}';
     } finally {
       _isRefreshing = false;
+      if (_hasLoaded) {
+        _scheduleNextBackgroundRefresh();
+      }
       notifyListeners();
     }
   }
@@ -264,6 +272,9 @@ class BotCenterController extends ChangeNotifier {
           'No se pudo cargar la conversación seleccionada. ${error.toString()}';
     } finally {
       _isConversationLoading = false;
+      if (_hasLoaded) {
+        _scheduleNextBackgroundRefresh();
+      }
       notifyListeners();
     }
   }
@@ -556,28 +567,107 @@ class BotCenterController extends ChangeNotifier {
     }
   }
 
+  Duration get _nextBackgroundRefreshInterval {
+    return _selectedConversationId.isEmpty
+        ? _idleBackgroundRefreshInterval
+        : _activeConversationRefreshInterval;
+  }
+
   void _ensureBackgroundRefresh() {
-    _backgroundRefreshTimer ??=
-        Timer.periodic(_backgroundRefreshInterval, (_) => _silentRefresh());
+    if (_backgroundRefreshTimer != null) {
+      return;
+    }
+
+    _scheduleNextBackgroundRefresh();
+  }
+
+  void _scheduleNextBackgroundRefresh({Duration? delay}) {
+    _backgroundRefreshTimer?.cancel();
+
+    if (!_hasLoaded) {
+      _backgroundRefreshTimer = null;
+      return;
+    }
+
+    _backgroundRefreshTimer =
+        Timer(delay ?? _nextBackgroundRefreshInterval, () {
+      unawaited(_silentRefresh());
+    });
   }
 
   Future<void> _silentRefresh() async {
-    if (!_hasLoaded || _isInitialLoading || _isRefreshing || _isConversationLoading) {
+    if (!_hasLoaded ||
+        _isInitialLoading ||
+        _isRefreshing ||
+        _isConversationLoading) {
+      _scheduleNextBackgroundRefresh();
       return;
     }
 
     try {
-      final overview = await _repository.getOverview(
-        conversationId:
-            _selectedConversationId.isEmpty ? null : _selectedConversationId,
-      );
-      _applyOverview(overview, preserveDraftMessage: true);
+      final results = await Future.wait<dynamic>([
+        _repository.getConversations(),
+        _repository.getLogs(),
+      ]);
+
+      final refreshedConversations = results[0] as List<BotConversation>;
+      final refreshedLogs = results[1] as List<BotActivityLog>;
+      final nextSelectedConversationId =
+          _resolveBackgroundSelectedConversationId(refreshedConversations);
+
+      _conversations
+        ..clear()
+        ..addAll(refreshedConversations);
+      _activityLogs
+        ..clear()
+        ..addAll(refreshedLogs);
+
+      if (nextSelectedConversationId == null) {
+        _selectedConversationId = '';
+      } else {
+        final conversationResults = await Future.wait<dynamic>([
+          _repository.getMessages(nextSelectedConversationId),
+          _repository.getContactContext(nextSelectedConversationId),
+          _repository.getMemory(nextSelectedConversationId),
+        ]);
+
+        _selectedConversationId = nextSelectedConversationId;
+        _messagesByConversation[nextSelectedConversationId] =
+            conversationResults[0] as List<BotMessage>;
+        _contactsByConversation[nextSelectedConversationId] =
+            conversationResults[1] as BotContactContext;
+        _memoryByConversation[nextSelectedConversationId] =
+            conversationResults[2] as List<BotMemoryItem>;
+      }
+
       _errorMessage = null;
       _conversationErrorMessage = null;
       notifyListeners();
     } catch (_) {
       // Preserve the current UI state if a background sync fails.
+    } finally {
+      _scheduleNextBackgroundRefresh();
     }
+  }
+
+  String? _resolveBackgroundSelectedConversationId(
+    List<BotConversation> conversations,
+  ) {
+    if (conversations.isEmpty) {
+      return null;
+    }
+
+    if (_selectedConversationId.isEmpty) {
+      return conversations.first.id;
+    }
+
+    for (final conversation in conversations) {
+      if (conversation.id == _selectedConversationId) {
+        return _selectedConversationId;
+      }
+    }
+
+    return conversations.first.id;
   }
 
   @override
