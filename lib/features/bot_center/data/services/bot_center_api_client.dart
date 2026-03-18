@@ -24,7 +24,10 @@ class BotCenterApiClient {
   })  : _client = client ?? http.Client(),
         _baseUrl = resolveBackendUrl(
           preferred: baseUrl,
-          fallback: const String.fromEnvironment('BOT_CENTER_API_BASE_URL'),
+          fallback: const String.fromEnvironment(
+            'BOT_CENTER_API_BASE_URL',
+            defaultValue: String.fromEnvironment('APP_BACKEND_URL'),
+          ),
         ),
         _tokenReader = tokenReader,
         _timeout = timeout;
@@ -137,17 +140,19 @@ class BotCenterApiClient {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw BotCenterApiException(
           _extractError(response.body) ??
-              'Bot Center request failed with status ${response.statusCode}.',
+              'Bot Center request failed with status ${response.statusCode}. Backend=$_baseUrl',
           statusCode: response.statusCode,
         );
       }
 
       return response;
     } on TimeoutException {
-      throw const BotCenterApiException('The Bot Center request timed out.');
+      throw BotCenterApiException(
+        'The Bot Center request timed out. Backend=$_baseUrl',
+      );
     } on http.ClientException catch (error) {
       throw BotCenterApiException(
-          'Unable to reach Bot Center backend: ${error.message}');
+          'Unable to reach Bot Center backend: ${error.message}. Backend=$_baseUrl');
     }
   }
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -41,6 +41,7 @@ import {
 
 @Injectable()
 export class BotCenterService {
+  private readonly logger = new Logger(BotCenterService.name);
   private readonly runtimeLogs: Array<BotLogResponse & { companyId: string }> = [];
 
   constructor(
@@ -431,6 +432,9 @@ export class BotCenterService {
     companyId: string,
     payload: SendTestMessageDto,
   ): Promise<SendTestMessageResponse> {
+    this.logger.log(
+      `[BOT CENTER] sendTestMessage companyId=${companyId} conversationId=${payload.conversationId} messageLength=${payload.message?.length ?? 0}`,
+    );
     const memoryTarget = await this.resolveCanonicalMemoryTarget(companyId, payload.conversationId);
     const conversation = memoryTarget?.chat ?? await this.getConversationOrThrow(companyId, payload.conversationId);
     const dispatchedAt = new Date().toISOString();
@@ -445,6 +449,10 @@ export class BotCenterService {
     const persistedOutbound = outboundMessageId
       ? await this.messagesRepository.findOne({ where: { id: outboundMessageId, companyId } })
       : null;
+
+    this.logger.log(
+      `[BOT CENTER] sendTestMessage accepted companyId=${companyId} conversationId=${payload.conversationId} storedMessageId=${persistedOutbound?.id ?? '(none)'}`,
+    );
 
     if (memoryTarget) {
       await this.memoryService.appendConversationMemory({
