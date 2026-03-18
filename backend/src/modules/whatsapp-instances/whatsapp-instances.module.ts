@@ -10,6 +10,7 @@ import { EvolutionWebhookModule } from '../evolution-webhook/evolution-webhook.m
 import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { WhatsappChannelConfigEntity } from '../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../whatsapp-channel/entities/whatsapp-channel-log.entity';
+import { WhatsappChatEntity } from '../whatsapp-channel/entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from '../whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappInstanceEntity } from './entities/whatsapp-instance.entity';
 import { WhatsappInstancesController } from './controllers/whatsapp-instances.controller';
@@ -29,6 +30,7 @@ import { EvolutionInstanceWebhookController } from './controllers/evolution-inst
       BotConfigurationEntity,
       WhatsappChannelConfigEntity,
       WhatsappChannelLogEntity,
+      WhatsappChatEntity,
       WhatsappMessageEntity,
     ]),
   ],

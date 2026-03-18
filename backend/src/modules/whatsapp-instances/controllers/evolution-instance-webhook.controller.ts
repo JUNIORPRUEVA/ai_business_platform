@@ -1,7 +1,6 @@
 import { Body, Controller, ForbiddenException, Headers, Post } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { EvolutionInstanceWebhookDto } from '../dto/evolution-instance-webhook.dto';
 import { WhatsappInstancesService } from '../services/whatsapp-instances.service';
 
 @Controller('webhook/evolution')
@@ -14,7 +13,7 @@ export class EvolutionInstanceWebhookController {
   @Post()
   async handle(
     @Headers('x-webhook-token') webhookToken: string | undefined,
-    @Body() payload: EvolutionInstanceWebhookDto,
+    @Body() payload: Record<string, unknown>,
   ) {
     const expected = (this.configService.get<string>('EVOLUTION_INSTANCE_WEBHOOK_TOKEN') ?? '').trim();
     if (expected && (webhookToken ?? '').trim() !== expected) {

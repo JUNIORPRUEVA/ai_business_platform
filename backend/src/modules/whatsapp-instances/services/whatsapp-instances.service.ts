@@ -15,6 +15,7 @@ import { EVOLUTION_INSTANCE_WEBHOOK_EVENTS, EvolutionService } from '../../evolu
 import { EvolutionWebhookService } from '../../evolution-webhook/services/evolution-webhook.service';
 import { WhatsappChannelConfigEntity } from '../../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsapp-channel-log.entity';
+import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappChannelConfigService } from '../../whatsapp-channel/services/whatsapp-channel-config.service';
 import { WhatsappWebhookService } from '../../whatsapp-channel/services/whatsapp-webhook.service';
@@ -34,6 +35,8 @@ export class WhatsappInstancesService {
     private readonly whatsappChannelConfigRepository: Repository<WhatsappChannelConfigEntity>,
     @InjectRepository(WhatsappChannelLogEntity)
     private readonly whatsappChannelLogRepository: Repository<WhatsappChannelLogEntity>,
+    @InjectRepository(WhatsappChatEntity)
+    private readonly whatsappChatRepository: Repository<WhatsappChatEntity>,
     @InjectRepository(WhatsappMessageEntity)
     private readonly whatsappMessageRepository: Repository<WhatsappMessageEntity>,
     private readonly evolutionService: EvolutionService,
@@ -376,19 +379,105 @@ export class WhatsappInstancesService {
     };
   }
 
-  async applyWebhook(payload: {
-    event?: string;
-    instance?: string;
-    instanceName?: string;
-    data?: Record<string, unknown>;
-  }): Promise<{ updated: boolean; instanceName?: string }> {
-    const event = this.normalizeWebhookEventName(payload.event);
-    const data = payload.data ?? {};
+  async getInboundDebug(tenantId: string, instanceName: string): Promise<Record<string, unknown>> {
+    const entity = await this.getByInstanceName(tenantId, instanceName);
+    const config = await this.whatsappChannelConfigRepository.findOne({
+      where: { companyId: tenantId, provider: 'evolution', instanceName: entity.instanceName },
+    });
+
+    const [latestInboundLog, latestErrorLog, latestMessage, latestChat] = await Promise.all([
+      this.whatsappChannelLogRepository.findOne({
+        where: { companyId: tenantId, instanceName: entity.instanceName, direction: 'incoming_webhook' },
+        order: { createdAt: 'DESC' },
+      }),
+      this.whatsappChannelLogRepository.findOne({
+        where: { companyId: tenantId, instanceName: entity.instanceName, success: false },
+        order: { createdAt: 'DESC' },
+      }),
+      config
+        ? this.whatsappMessageRepository.findOne({
+            where: { companyId: tenantId, channelConfigId: config.id },
+            order: { createdAt: 'DESC' },
+          })
+        : Promise.resolve(null),
+      config
+        ? this.whatsappChatRepository.findOne({
+            where: { companyId: tenantId, channelConfigId: config.id },
+            order: { lastMessageAt: 'DESC', createdAt: 'DESC' },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      instanceName: entity.instanceName,
+      companyId: tenantId,
+      instanceStatus: entity.status,
+      channelConfig: config
+        ? {
+            id: config.id,
+            instanceName: config.instanceName,
+            instanceStatus: config.instanceStatus,
+            webhookUrl: config.webhookUrl,
+            lastSyncAt: config.lastSyncAt?.toISOString() ?? null,
+          }
+        : null,
+      latestInboundLog: latestInboundLog
+        ? {
+            id: latestInboundLog.id,
+            createdAt: latestInboundLog.createdAt.toISOString(),
+            eventName: latestInboundLog.eventName,
+            endpointCalled: latestInboundLog.endpointCalled,
+            success: latestInboundLog.success,
+            errorMessage: latestInboundLog.errorMessage,
+            requestPayloadJson: latestInboundLog.requestPayloadJson,
+            responsePayloadJson: latestInboundLog.responsePayloadJson,
+          }
+        : null,
+      latestErrorLog: latestErrorLog
+        ? {
+            id: latestErrorLog.id,
+            createdAt: latestErrorLog.createdAt.toISOString(),
+            eventName: latestErrorLog.eventName,
+            errorMessage: latestErrorLog.errorMessage,
+          }
+        : null,
+      latestChat: latestChat
+        ? {
+            id: latestChat.id,
+            remoteJid: latestChat.remoteJid,
+            pushName: latestChat.pushName,
+            lastMessageAt: latestChat.lastMessageAt?.toISOString() ?? null,
+            unreadCount: latestChat.unreadCount,
+          }
+        : null,
+      latestMessage: latestMessage
+        ? {
+            id: latestMessage.id,
+            chatId: latestMessage.chatId,
+            remoteJid: latestMessage.remoteJid,
+            messageType: latestMessage.messageType,
+            fromMe: latestMessage.fromMe,
+            status: latestMessage.status,
+            textBody: latestMessage.textBody,
+            caption: latestMessage.caption,
+            createdAt: latestMessage.createdAt.toISOString(),
+          }
+        : null,
+    };
+  }
+
+  async applyWebhook(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const data = this.readMap(payload['data']);
+    const originalEvent = this.readString(payload['event']);
+    const event = this.normalizeWebhookEventName(originalEvent);
     const instanceName = this.resolveWebhookInstanceName(payload, data);
+    const trace = this.describeInboundPayload(payload);
 
     this.logger.log(
-      `[EVOLUTION INSTANCE WEBHOOK] received event=${event || '(empty)'} instanceName=${instanceName || '(missing)'}`,
+      `[EVOLUTION INBOUND] received ts=${new Date().toISOString()} event=${originalEvent || '(empty)'} instance=${instanceName || '(missing)'} remoteJid=${trace.remoteJid} messageId=${trace.messageId} type=${trace.messageType} body=${trace.bodyPreview}`,
     );
+    this.logger.log(`[EVOLUTION INBOUND] payload accepted`);
+    this.logger.log(`[EVOLUTION INBOUND] normalized event=${event || '(empty)'} accepted=${event.length > 0}`);
 
     if (!instanceName) {
       throw new BadRequestException('Missing instance in webhook payload.');
@@ -396,19 +485,29 @@ export class WhatsappInstancesService {
 
     const entity = await this.repo.findOne({ where: { instanceName } });
     if (!entity) {
-      this.logger.warn(`Webhook received for unknown instance: ${instanceName}`);
-      return { updated: false, instanceName };
+      this.logger.warn(`[EVOLUTION INBOUND] instance resolution failed instance=${instanceName} reason=unknown_instance`);
+      return { updated: false, instanceName, ignored: true, reason: 'unknown_instance' };
     }
 
     await this.ensureWhatsappChannelBridge(entity.tenantId, entity.instanceName, entity.status);
+    const config = await this.whatsappChannelConfigRepository.findOne({
+      where: { companyId: entity.tenantId, provider: 'evolution' },
+    });
+
+    this.logger.log(
+      `[EVOLUTION INBOUND] instance resolved instance=${entity.instanceName} companyId=${entity.tenantId}`,
+    );
+    this.logger.log(
+      config
+        ? `[EVOLUTION INBOUND] whatsapp config found id=${config.id} instance=${config.instanceName}`
+        : `[EVOLUTION INBOUND] whatsapp config missing instance=${entity.instanceName}`,
+    );
 
     try {
-      await this.whatsappWebhookService.processNow(entity.tenantId, payload as Record<string, unknown>);
+      await this.whatsappWebhookService.processNow(entity.tenantId, payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown WhatsApp channel webhook error.';
-      this.logger.warn(
-        `[EVOLUTION INSTANCE WEBHOOK] failed to mirror payload into whatsapp channel storage instanceName=${instanceName} error=${message}`,
-      );
+      this.logger.warn(`[EVOLUTION INBOUND] persistence failed instance=${instanceName} error=${message}`);
     }
 
     if (event === 'QRCODE_UPDATED') {
@@ -418,7 +517,7 @@ export class WhatsappInstancesService {
         if (entity.status !== 'connected') entity.status = 'connecting';
       }
       await this.repo.save(entity);
-      return { updated: true, instanceName };
+      return { updated: true, instanceName, event };
     }
 
     if (event === 'CONNECTION_UPDATE') {
@@ -434,36 +533,68 @@ export class WhatsappInstancesService {
       }
 
       await this.repo.save(entity);
-      return { updated: true, instanceName };
+      return { updated: true, instanceName, event };
     }
 
     if (event === 'MESSAGES_UPSERT') {
-      const normalizedMessageType = this.guessInboundMessageType(data);
       const channel = await this.findChannelByInstanceName(entity.instanceName);
+      const expandedPayloads = this.expandInboundPayloads(payload);
+      let mirroredMessages = 0;
+      let botCenterMessages = 0;
 
-      entity.sessionData = {
-        ...(entity.sessionData ?? {}),
-        lastInboundMessage: {
-          receivedAt: new Date().toISOString(),
-          event,
-          inferredType: normalizedMessageType,
-          channelId: channel?.id ?? null,
-        },
-      };
-      await this.repo.save(entity);
+      for (const entryPayload of expandedPayloads) {
+        const entryData = this.readMap(entryPayload['data']);
+        const key = this.readMap(entryData['key']);
+        const remoteJid = this.normalizeRemoteJid(this.readString(key['remoteJid'])) || '(missing)';
+        const messageId = this.readString(key['id']) || '(missing)';
+        const normalizedMessageType = this.guessInboundMessageType(entryData);
+        const bodyPreview = this.summarizeMessageBody(entryData);
 
-      if (channel) {
-        await this.evolutionWebhookService.processIncomingMessage({
-          channelId: channel.id,
-          payload: payload as never,
-        });
+        entity.sessionData = {
+          ...(entity.sessionData ?? {}),
+          lastInboundMessage: {
+            receivedAt: new Date().toISOString(),
+            event,
+            inferredType: normalizedMessageType,
+            bodyPreview,
+            remoteJid,
+            messageId,
+            channelId: channel?.id ?? null,
+          },
+        };
+
+        if (channel && key['fromMe'] !== true) {
+          try {
+            await this.evolutionWebhookService.processIncomingMessage({
+              channelId: channel.id,
+              payload: entryPayload as never,
+            });
+            botCenterMessages += 1;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown Bot Center mirror error.';
+            this.logger.warn(
+              `[EVOLUTION INBOUND] bot center mirror failed instance=${instanceName} remoteJid=${remoteJid} messageId=${messageId} error=${message}`,
+            );
+          }
+        }
+
+        mirroredMessages += 1;
       }
 
+      await this.repo.save(entity);
+
       this.logger.log(
-        `[EVOLUTION INSTANCE WEBHOOK] processed inbound message instanceName=${instanceName} channelId=${channel?.id ?? '(none)'}`,
+        `[EVOLUTION INBOUND] processed event=${event} instance=${instanceName} companyId=${entity.tenantId} mirroredMessages=${mirroredMessages} botCenterMessages=${botCenterMessages} channelId=${channel?.id ?? '(none)'}`,
       );
 
-      return { updated: true, instanceName };
+      return {
+        updated: true,
+        instanceName,
+        event,
+        mirroredMessages,
+        botCenterMessages,
+        channelId: channel?.id ?? null,
+      };
     }
 
     if (event.includes('CALL')) {
@@ -478,11 +609,11 @@ export class WhatsappInstancesService {
         },
       };
       await this.repo.save(entity);
-      return { updated: true, instanceName };
+      return { updated: true, instanceName, event };
     }
 
-    // For other events (e.g., messages.upsert) we currently don't persist.
-    return { updated: false, instanceName };
+    this.logger.warn(`[EVOLUTION INBOUND] ignored event=${event || '(empty)'} instance=${instanceName} reason=unsupported_event`);
+    return { updated: false, instanceName, ignored: true, reason: 'unsupported_event', event };
   }
 
   private normalizeInstanceName(value: string): string {
@@ -644,9 +775,7 @@ export class WhatsappInstancesService {
   }
 
   private guessInboundMessageType(data: Record<string, unknown>): string {
-    const message = typeof data.message === 'object' && data.message !== null
-        ? (data.message as Record<string, unknown>)
-        : data;
+    const message = this.readMessageMap(data);
 
     if (message['audioMessage'] != null) return 'audio';
     if (message['imageMessage'] != null) return 'image';
@@ -657,6 +786,10 @@ export class WhatsappInstancesService {
 
   private readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private readMap(value: unknown): Record<string, unknown> {
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   }
 
   private readBoolean(value: unknown, fallback: boolean): boolean {
@@ -783,19 +916,23 @@ export class WhatsappInstancesService {
   }
 
   private resolveWebhookInstanceName(
-    payload: { instance?: string; instanceName?: string },
+    payload: Record<string, unknown>,
     data: Record<string, unknown>,
   ): string {
-    const direct = this.readString(payload.instance) || this.readString(payload.instanceName);
+    const direct = this.readString(payload['instance']) || this.readString(payload['instanceName']);
     if (direct) {
       return direct;
     }
 
+    const firstMessage = this.readFirstMessageEntry(data);
     const nestedCandidates: Array<unknown> = [
       data['instance'],
       data['instanceName'],
       data['instance_name'],
       data['sender'],
+      firstMessage['instance'],
+      firstMessage['instanceName'],
+      firstMessage['instance_name'],
     ];
 
     for (const candidate of nestedCandidates) {
@@ -839,6 +976,96 @@ export class WhatsappInstancesService {
     }
 
     return null;
+  }
+
+  private readFirstMessageEntry(data: Record<string, unknown>): Record<string, unknown> {
+    const messages = data['messages'];
+    if (!Array.isArray(messages)) {
+      return {};
+    }
+
+    const first = messages.find(
+      (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
+    );
+    return first ?? {};
+  }
+
+  private readMessageMap(data: Record<string, unknown>): Record<string, unknown> {
+    const direct = this.readMap(data['message']);
+    if (Object.keys(direct).length > 0) {
+      return direct;
+    }
+
+    return this.readMap(this.readFirstMessageEntry(data)['message']);
+  }
+
+  private normalizeRemoteJid(value: string): string {
+    if (!value) {
+      return '';
+    }
+    return value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`;
+  }
+
+  private summarizeMessageBody(data: Record<string, unknown>): string {
+    const message = this.readMessageMap(data);
+    const conversation = this.readString(message['conversation']);
+    if (conversation) {
+      return conversation.slice(0, 80);
+    }
+
+    const extended = this.readMap(message['extendedTextMessage']);
+    const extendedText = this.readString(extended['text']);
+    if (extendedText) {
+      return extendedText.slice(0, 80);
+    }
+
+    const type = this.guessInboundMessageType(data);
+    return type === 'text' ? '(sin texto)' : `${type} recibido`;
+  }
+
+  private expandInboundPayloads(payload: Record<string, unknown>): Record<string, unknown>[] {
+    const data = this.readMap(payload['data']);
+    const messages = data['messages'];
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return [payload];
+    }
+
+    const sharedData = { ...data };
+    delete sharedData['messages'];
+
+    return messages
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        ...payload,
+        instance: payload['instance'] ?? data['instance'] ?? item['instance'] ?? item['instanceName'],
+        instanceName:
+          payload['instanceName'] ?? data['instanceName'] ?? data['instance_name'] ?? item['instanceName'],
+        data: {
+          ...sharedData,
+          ...item,
+          key: this.readMap(item['key']),
+          message: this.readMap(item['message']),
+        },
+      }));
+  }
+
+  private describeInboundPayload(payload: Record<string, unknown>): {
+    remoteJid: string;
+    messageId: string;
+    messageType: string;
+    bodyPreview: string;
+  } {
+    const expanded = this.expandInboundPayloads(payload);
+    const firstPayload = expanded[0] ?? payload;
+    const data = this.readMap(firstPayload['data']);
+    const key = this.readMap(data['key']);
+
+    return {
+      remoteJid: this.normalizeRemoteJid(this.readString(key['remoteJid'])) || '(none)',
+      messageId: this.readString(key['id']) || '(none)',
+      messageType: this.guessInboundMessageType(data),
+      bodyPreview: this.summarizeMessageBody(data),
+    };
   }
 
   private stringifyWhatsAppId(value: unknown): string | null {

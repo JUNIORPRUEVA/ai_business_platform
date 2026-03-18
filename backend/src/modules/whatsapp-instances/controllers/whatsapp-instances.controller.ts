@@ -96,4 +96,10 @@ export class WhatsappInstancesController {
   getInstanceHealth(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
     return this.whatsappInstancesService.getInstanceHealth(user.companyId, params.instance);
   }
+
+  @Roles('admin', 'operator', 'viewer')
+  @Get('instances/:instance/inbound-debug')
+  getInboundDebug(@CurrentUser() user: AuthUser, @Param() params: InstanceParam) {
+    return this.whatsappInstancesService.getInboundDebug(user.companyId, params.instance);
+  }
 }

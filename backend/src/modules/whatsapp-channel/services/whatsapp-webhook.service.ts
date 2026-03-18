@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
@@ -16,8 +16,22 @@ export interface WhatsappWebhookJob {
   payload: Record<string, unknown>;
 }
 
+export interface WhatsappWebhookProcessResult {
+  processed: true;
+  configId: string | null;
+  savedMessages: Array<{
+    messageId: string;
+    chatId: string;
+    remoteJid: string;
+    messageType: WhatsappMessageType;
+    fromMe: boolean;
+  }>;
+}
+
 @Injectable()
 export class WhatsappWebhookService {
+  private readonly logger = new Logger(WhatsappWebhookService.name);
+
   constructor(
     @InjectQueue('whatsapp-webhook-processing')
     private readonly webhookQueue: Queue<WhatsappWebhookJob>,
@@ -41,22 +55,34 @@ export class WhatsappWebhookService {
     return { queued: true };
   }
 
-  async processNow(companyId: string, payload: Record<string, unknown>): Promise<{ processed: true }> {
-    const config = await this.configService.getEntity(companyId);
+  async processNow(companyId: string, payload: Record<string, unknown>): Promise<WhatsappWebhookProcessResult> {
+    const config = await this.resolveConfig(companyId, payload);
+    if (!config) {
+      this.logger.warn(
+        `[EVOLUTION INBOUND] persistence skipped companyId=${companyId} reason=missing_config`,
+      );
+      return { processed: true, configId: null, savedMessages: [] };
+    }
+
     await this.recordIncomingWebhook(companyId, config.instanceName, payload);
-    await this.processJob({ companyId, payload });
-    return { processed: true };
+    return this.processJob({ companyId, payload });
   }
 
-  async processJob(job: WhatsappWebhookJob): Promise<void> {
-    const config = await this.configsRepository.findOne({
-      where: { companyId: job.companyId, provider: 'evolution' },
-    });
+  async processJob(job: WhatsappWebhookJob): Promise<WhatsappWebhookProcessResult> {
+    const config = await this.resolveConfig(job.companyId, job.payload);
     if (!config) {
-      return;
+      this.logger.warn('[EVOLUTION INBOUND] whatsapp config resolution failed reason=missing_config');
+      return { processed: true, configId: null, savedMessages: [] };
     }
 
     const eventName = this.normalizeEventName(job.payload['event']);
+    const canonicalPayloads = this.expandPayload(job.payload);
+    const savedMessages: WhatsappWebhookProcessResult['savedMessages'] = [];
+
+    this.logger.log(
+      `[EVOLUTION INBOUND] normalized event=${eventName} accepted=${eventName !== 'UNKNOWN_EVENT'} entries=${canonicalPayloads.length}`,
+    );
+
     switch (eventName) {
       case 'CONNECTION_UPDATE':
         await this.handleConnectionUpdate(config, job.payload);
@@ -75,9 +101,20 @@ export class WhatsappWebhookService {
       case 'MESSAGES_UPSERT':
       case 'SEND_MESSAGE':
       default:
-        await this.handleMessageUpsert(config, job.payload);
+        for (const payload of canonicalPayloads) {
+          const result = await this.handleMessageUpsert(config, payload);
+          if (result) {
+            savedMessages.push(result);
+          }
+        }
         break;
     }
+
+    return {
+      processed: true,
+      configId: config.id,
+      savedMessages,
+    };
   }
 
   private async handleConnectionUpdate(
@@ -99,6 +136,7 @@ export class WhatsappWebhookService {
     const key = this.readMap(data['key']);
     const messageId = this.readString(key['id']);
     if (!messageId) {
+      this.logger.warn('[EVOLUTION INBOUND] status update ignored reason=missing_message_id');
       return;
     }
 
@@ -120,7 +158,9 @@ export class WhatsappWebhookService {
       rawPayloadJson: payload,
       status,
     });
-    void message;
+    this.logger.log(
+      `[EVOLUTION INBOUND] message status saved id=${message.id} chatId=${message.chatId} companyId=${companyId} remoteJid=${message.remoteJid} status=${status}`,
+    );
   }
 
   private async handleMessageDelete(companyId: string, payload: Record<string, unknown>): Promise<void> {
@@ -136,15 +176,24 @@ export class WhatsappWebhookService {
   private async handleMessageUpsert(
     config: WhatsappChannelConfigEntity,
     payload: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<WhatsappWebhookProcessResult['savedMessages'][number] | null> {
     const data = this.readMap(payload['data']);
     const key = this.readMap(data['key']);
     const remoteJid = this.normalizeRemoteJid(this.readString(key['remoteJid']));
+    if (!remoteJid) {
+      this.logger.warn('[EVOLUTION INBOUND] message ignored reason=missing_remote_jid');
+      return null;
+    }
+
     const messageId = this.readString(key['id']) || null;
     const fromMe = this.readBoolean(key['fromMe']);
     const message = this.readMap(data['message']);
     const type = this.detectType(message);
     const content = this.extractContent(type, message);
+
+    this.logger.log(
+      `[EVOLUTION INBOUND] instance=${config.instanceName} companyId=${config.companyId} remoteJid=${remoteJid} messageId=${messageId ?? '(none)'} type=${type} accepted=${type !== 'unknown' || content.textBody != null}`,
+    );
 
     const saved = await this.messagingService.upsertInboundMessage({
       companyId: config.companyId,
@@ -164,6 +213,13 @@ export class WhatsappWebhookService {
       status: fromMe ? 'sent' : 'received',
     });
 
+    this.logger.log(
+      `[EVOLUTION INBOUND] chat resolved id=${saved.chatId} companyId=${config.companyId} remoteJid=${remoteJid}`,
+    );
+    this.logger.log(
+      `[EVOLUTION INBOUND] message saved id=${saved.id} type=${saved.messageType} companyId=${config.companyId} remoteJid=${remoteJid}`,
+    );
+
     if (content.mediaUrl) {
       const attachment = await this.attachmentsService.downloadRemoteToStorage({
         companyId: config.companyId,
@@ -182,6 +238,14 @@ export class WhatsappWebhookService {
         });
       }
     }
+
+    return {
+      messageId: saved.id,
+      chatId: saved.chatId,
+      remoteJid: saved.remoteJid,
+      messageType: saved.messageType,
+      fromMe: saved.fromMe,
+    };
   }
 
   private detectType(message: Record<string, unknown>): WhatsappMessageType {
@@ -262,6 +326,65 @@ export class WhatsappWebhookService {
     return value === true;
   }
 
+  private async resolveConfig(
+    companyId: string,
+    payload: Record<string, unknown>,
+  ): Promise<WhatsappChannelConfigEntity | null> {
+    const instanceName = this.readInstanceName(payload);
+    if (instanceName) {
+      const exact = await this.configsRepository.findOne({
+        where: { companyId, provider: 'evolution', instanceName },
+      });
+      if (exact) {
+        return exact;
+      }
+    }
+
+    return this.configsRepository.findOne({
+      where: { companyId, provider: 'evolution' },
+    });
+  }
+
+  private expandPayload(payload: Record<string, unknown>): Record<string, unknown>[] {
+    const data = this.readMap(payload['data']);
+    const messages = data['messages'];
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return [payload];
+    }
+
+    const sharedData = { ...data };
+    delete sharedData['messages'];
+
+    return messages
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        ...payload,
+        instance:
+          payload['instance'] ??
+          payload['instanceName'] ??
+          data['instance'] ??
+          data['instanceName'] ??
+          data['instance_name'] ??
+          item['instance'] ??
+          item['instanceName'],
+        data: {
+          ...sharedData,
+          ...item,
+          key: this.readMap(item['key']),
+          message: this.readMap(item['message']),
+        },
+      }));
+  }
+
+  private readInstanceName(payload: Record<string, unknown>): string {
+    const data = this.readMap(payload['data']);
+    return this.readString(payload['instance']) ||
+      this.readString(payload['instanceName']) ||
+      this.readString(data['instance']) ||
+      this.readString(data['instanceName']) ||
+      this.readString(data['instance_name']);
+  }
+
   private async recordIncomingWebhook(
     companyId: string,
     instanceName: string,
@@ -272,6 +395,7 @@ export class WhatsappWebhookService {
       instanceName,
       direction: 'incoming_webhook',
       eventName: this.normalizeEventName(payload['event']),
+      endpointCalled: '/webhook/evolution',
       requestPayloadJson: payload,
       responsePayloadJson: {},
       httpStatus: 200,
