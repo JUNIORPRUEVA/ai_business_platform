@@ -25,6 +25,17 @@ export class AiBrainDocumentService {
     });
   }
 
+  listAvailable(companyId: string, botId: string) {
+    return this.documentsRepository
+      .createQueryBuilder('document')
+      .where('document.company_id = :companyId', { companyId })
+      .andWhere('(document.bot_id IS NULL OR document.bot_id = :botId)', {
+        botId,
+      })
+      .orderBy('document.created_at', 'DESC')
+      .getMany();
+  }
+
   async create(companyId: string, dto: RegisterKnowledgeDocumentDto) {
     const entity = this.documentsRepository.create({
       companyId,

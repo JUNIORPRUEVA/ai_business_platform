@@ -13,9 +13,11 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { EvolutionModule } from '../evolution/evolution.module';
 import { MessagesModule } from '../messages/messages.module';
 import { OpenAiModule } from '../openai/openai.module';
+import { PromptsModule } from '../prompts/prompts.module';
 import { StorageModule } from '../storage/storage.module';
 import { ToolEntity } from '../tools/entities/tool.entity';
 import { ToolsModule } from '../tools/tools.module';
+import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { AiBrainController } from './controllers/ai-brain.controller';
 import { AiBrainLogEntity } from './entities/ai-brain-log.entity';
 import { ClientMemoryEntity } from './entities/client-memory.entity';
@@ -48,7 +50,9 @@ import { AiBrainToolRouterService } from './services/ai-brain-tool-router.servic
     ToolsModule,
     EvolutionModule,
     OpenAiModule,
+    PromptsModule,
     StorageModule,
+    WhatsappChannelModule,
   ],
   controllers: [AiBrainController],
   providers: [

@@ -20,6 +20,13 @@ export class PromptsService {
     });
   }
 
+  listActive(companyId: string) {
+    return this.promptsRepository.find({
+      where: { companyId, active: true },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async get(companyId: string, id: string) {
     const prompt = await this.promptsRepository.findOne({ where: { id, companyId } });
     if (!prompt) throw new NotFoundException('Prompt not found.');

@@ -1,7 +1,10 @@
+import { OpenAiChatMessage } from '../../openai/types/openai.types';
+
 export interface AiBrainContext {
   detectedIntent: string;
   prompt: string;
   memoryContext: string;
+  modelMessages: OpenAiChatMessage[];
   memoryItems: Array<{ key: string; value: string; category: string }>;
   documentSnippets: string[];
   activeTools: Array<{ id: string; name: string; type: string }>;

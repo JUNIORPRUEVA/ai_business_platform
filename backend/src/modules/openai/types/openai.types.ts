@@ -1,9 +1,19 @@
+export interface OpenAiChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 export interface OpenAiDraftRequest {
   senderName?: string;
-  message: string;
+  message?: string;
   detectedIntent: string;
-  systemPrompt: string;
-  memoryContext: string;
+  systemPrompt?: string;
+  memoryContext?: string;
+  messages?: OpenAiChatMessage[];
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
 }
 
 export interface OpenAiDraftResponse {
