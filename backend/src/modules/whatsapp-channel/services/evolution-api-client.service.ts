@@ -227,7 +227,84 @@ export class EvolutionApiClientService {
   }
 
   private extractErrorMessage(payload: JsonRecord, fallback: string): string {
-    const message = payload['message'] ?? payload['error'] ?? payload['raw'];
-    return typeof message === 'string' && message.trim() ? message.trim() : fallback.trim();
+    // Evolution error payloads vary; some deployments wrap details under `response.message`.
+    // Prefer the most specific/structured message to avoid surfacing only "Bad Request".
+
+    const response = payload['response'];
+    if (typeof response === 'object' && response !== null) {
+      const responseMessage = (response as Record<string, unknown>)['message'];
+      const detailed = this.stringifyEvolutionMessage(responseMessage);
+      if (detailed) {
+        return detailed;
+      }
+    }
+
+    const topMessage = payload['message'];
+    const topDetailed = this.stringifyEvolutionMessage(topMessage);
+    if (topDetailed) {
+      return topDetailed;
+    }
+
+    const error = payload['error'];
+    if (typeof error === 'string' && error.trim()) {
+      // If we only have a generic string, fall back to the raw text to keep details.
+      const cleanedFallback = fallback.trim();
+      if (cleanedFallback && cleanedFallback.toLowerCase() !== error.trim().toLowerCase()) {
+        return cleanedFallback;
+      }
+      return error.trim();
+    }
+
+    const raw = payload['raw'];
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw.trim();
+    }
+
+    return fallback.trim();
+  }
+
+  private stringifyEvolutionMessage(value: unknown): string {
+    if (!value) {
+      return '';
+    }
+
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+
+    if (Array.isArray(value)) {
+      const items = value
+        .map((item) => {
+          if (typeof item === 'string') {
+            return item.trim();
+          }
+          if (typeof item === 'object' && item !== null) {
+            const r = item as Record<string, unknown>;
+            const exists = r['exists'];
+            const number = typeof r['number'] === 'string' ? r['number'].trim() : '';
+            const jid = typeof r['jid'] === 'string' ? r['jid'].trim() : '';
+            if (exists === false && number) {
+              return `El número ${number} no existe en WhatsApp${jid ? ` (jid: ${jid})` : ''}.`;
+            }
+            return JSON.stringify(item);
+          }
+          return '';
+        })
+        .filter((s) => s);
+
+      const joined = items.join(' | ');
+      return joined.length > 2000 ? `${joined.slice(0, 2000)}…(truncated)` : joined;
+    }
+
+    if (typeof value === 'object') {
+      try {
+        const json = JSON.stringify(value);
+        return json.length > 2000 ? `${json.slice(0, 2000)}…(truncated)` : json;
+      } catch {
+        return '';
+      }
+    }
+
+    return '';
   }
 }

@@ -3,8 +3,6 @@ import 'package:flutter/foundation.dart';
 const String kDefaultHostedBackendUrl =
     'https://ai-business-platform-backend-ia.onqyr1.easypanel.host';
 
-const String kDefaultLocalBackendUrl = 'http://localhost:3000';
-
 String resolveBackendUrl({
   String? preferred,
   String? fallback,
@@ -21,10 +19,6 @@ String resolveBackendUrl({
 
   if (kIsWeb) {
     return kDefaultHostedBackendUrl;
-  }
-
-  if (kDebugMode) {
-    return kDefaultLocalBackendUrl;
   }
 
   return kDefaultHostedBackendUrl;

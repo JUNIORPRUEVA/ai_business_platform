@@ -64,8 +64,26 @@ export class WhatsappMessagingService {
     remoteJid: string,
     params: { text: string; quoted?: { key: { id: string } } },
   ): Promise<Record<string, unknown>> {
+    // Some WhatsApp deployments expose "LID" JIDs (e.g. "...@lid") which are not phone numbers.
+    // Evolution payloads differ by version; best-effort: try sending with the raw jid first,
+    // then fall back to number candidates.
     const candidates = this.buildEvolutionNumberCandidates(remoteJid);
     let lastError: unknown;
+
+    if (
+      remoteJid.includes('@') &&
+      (remoteJid.endsWith('@s.whatsapp.net') || remoteJid.endsWith('@lid'))
+    ) {
+      try {
+        return await this.evolutionApiClient.sendText(config, {
+          number: remoteJid,
+          text: params.text,
+          ...(params.quoted ? { quoted: params.quoted } : {}),
+        });
+      } catch (error) {
+        lastError = error;
+      }
+    }
 
     for (const candidate of candidates) {
       try {
@@ -440,6 +458,7 @@ export class WhatsappMessagingService {
     for (const length of lengthsToTry) {
       if (digits.length > length && length >= 10) {
         candidates.push(digits.substring(0, length));
+        candidates.push(digits.substring(digits.length - length));
       }
     }
 
