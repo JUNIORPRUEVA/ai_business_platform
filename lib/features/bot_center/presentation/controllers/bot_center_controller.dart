@@ -455,27 +455,70 @@ class BotCenterController extends ChangeNotifier {
       return;
     }
 
+    final conversationId = _selectedConversationId;
+    final optimisticMessage = BotMessage(
+      id: 'local-outbound-${DateTime.now().microsecondsSinceEpoch}',
+      conversationId: conversationId,
+      author: BotMessageAuthor.operator,
+      body: text,
+      timestamp: DateTime.now(),
+      state: BotMessageState.queued,
+    );
+
+    messageComposerController.clear();
+    _appendOptimisticMessage(optimisticMessage);
     _isSendingMessage = true;
     _actionMessage = null;
     notifyListeners();
 
     try {
       final responseMessage = await _repository.sendTestMessage(
-        conversationId: _selectedConversationId,
+        conversationId: conversationId,
         message: text,
       );
 
-      messageComposerController.clear();
-      await selectConversation(_selectedConversationId, forceReload: true);
+      await selectConversation(conversationId, forceReload: true);
       await _reloadGlobalLists();
       _actionMessage = responseMessage;
     } catch (error) {
+      _removeMessage(conversationId, optimisticMessage.id);
+      messageComposerController
+        ..text = text
+        ..selection = TextSelection.collapsed(offset: text.length);
       _actionMessage =
           'No se pudo enviar el mensaje de prueba. ${error.toString()}';
     } finally {
       _isSendingMessage = false;
       notifyListeners();
     }
+  }
+
+  void _appendOptimisticMessage(BotMessage message) {
+    final messages = _messagesByConversation.putIfAbsent(
+      message.conversationId,
+      () => <BotMessage>[],
+    );
+    messages.add(message);
+
+    for (var index = 0; index < _conversations.length; index++) {
+      final conversation = _conversations[index];
+      if (conversation.id == message.conversationId) {
+        _conversations[index] = conversation.copyWith(
+          lastMessagePreview: message.body,
+          lastUpdated: message.timestamp,
+        );
+        break;
+      }
+    }
+  }
+
+  void _removeMessage(String conversationId, String messageId) {
+    final messages = _messagesByConversation[conversationId];
+    if (messages == null) {
+      return;
+    }
+
+    messages.removeWhere((message) => message.id == messageId);
   }
 
   void clearActionMessage() {

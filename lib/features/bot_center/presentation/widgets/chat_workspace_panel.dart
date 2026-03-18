@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../domain/entities/bot_conversation.dart';
 import '../../domain/entities/bot_message.dart';
@@ -39,7 +42,8 @@ class ChatWorkspacePanel extends StatelessWidget {
               children: [
                 Positioned.fill(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16 + 56 + 16),
+                    padding:
+                        const EdgeInsets.fromLTRB(16, 16, 16, 16 + 56 + 16),
                     child: _MessageViewport(controller: controller),
                   ),
                 ),
@@ -78,7 +82,8 @@ class _EmptyConversation extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.forum_outlined, size: 34, color: theme.colorScheme.primary),
+            Icon(Icons.forum_outlined,
+                size: 34, color: theme.colorScheme.primary),
             const SizedBox(height: 12),
             Text(
               'Selecciona un chat',
@@ -188,7 +193,10 @@ class _MessageViewport extends StatelessWidget {
   Widget build(BuildContext context) {
     if (controller.isConversationLoading) {
       return const Center(
-        child: SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3)),
+        child: SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 3)),
       );
     }
 
@@ -226,7 +234,14 @@ class _FloatingComposer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canSend = controller.hasConversationSelection && !controller.isSendingMessage;
+    final canSend =
+        controller.hasConversationSelection && !controller.isSendingMessage;
+    void sendMessage() {
+      if (!canSend) {
+        return;
+      }
+      unawaited(controller.sendDraftMessage());
+    }
 
     return Container(
       height: 56,
@@ -251,21 +266,30 @@ class _FloatingComposer extends StatelessWidget {
             icon: const Icon(Icons.add_rounded),
           ),
           Expanded(
-            child: TextField(
-              controller: controller.messageComposerController,
-              decoration: InputDecoration(
-                hintText: 'Escribir mensaje...',
-                hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: 13,
-                  color: const Color(0xFF94A3B8),
+            child: CallbackShortcuts(
+              bindings: <ShortcutActivator, VoidCallback>{
+                const SingleActivator(LogicalKeyboardKey.enter): sendMessage,
+                const SingleActivator(LogicalKeyboardKey.numpadEnter):
+                    sendMessage,
+              },
+              child: TextField(
+                controller: controller.messageComposerController,
+                decoration: InputDecoration(
+                  hintText: 'Escribir mensaje...',
+                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 13,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                  border: InputBorder.none,
                 ),
-                border: InputBorder.none,
-              ),
-              minLines: 1,
-              maxLines: 3,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 13,
-                color: const Color(0xFF0F172A),
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => sendMessage(),
+                minLines: 1,
+                maxLines: 3,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: const Color(0xFF0F172A),
+                ),
               ),
             ),
           ),
@@ -273,11 +297,12 @@ class _FloatingComposer extends StatelessWidget {
           SizedBox(
             height: 40,
             child: FilledButton(
-              onPressed: canSend ? controller.sendDraftMessage : null,
+              onPressed: canSend ? sendMessage : null,
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFF2563EB),
                 padding: const EdgeInsets.symmetric(horizontal: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               child: Text(
                 controller.isSendingMessage ? 'Enviando...' : 'Enviar',
@@ -305,9 +330,8 @@ class _MessageBubble extends StatelessWidget {
     final isUser = message.author == BotMessageAuthor.contact;
     final bubbleColor = isUser ? const Color(0xFF2563EB) : Colors.white;
     final textColor = isUser ? Colors.white : const Color(0xFF0F172A);
-    final metaColor = isUser
-      ? Colors.white.withValues(alpha: 0.78)
-      : const Color(0xFF64748B);
+    final metaColor =
+        isUser ? Colors.white.withValues(alpha: 0.78) : const Color(0xFF64748B);
     final alignment = isUser ? Alignment.centerRight : Alignment.centerLeft;
 
     return LayoutBuilder(
@@ -367,4 +391,3 @@ String _senderLabel(BotMessageAuthor author) {
       return 'Sistema';
   }
 }
-
