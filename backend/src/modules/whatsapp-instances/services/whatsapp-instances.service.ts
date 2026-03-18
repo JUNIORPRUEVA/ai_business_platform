@@ -294,9 +294,17 @@ export class WhatsappInstancesService {
   async applyWebhook(payload: {
     event?: string;
     instance?: string;
+    instanceName?: string;
     data?: Record<string, unknown>;
   }): Promise<{ updated: boolean; instanceName?: string }> {
-    const instanceName = (payload.instance ?? '').trim();
+    const event = this.normalizeWebhookEventName(payload.event);
+    const data = payload.data ?? {};
+    const instanceName = this.resolveWebhookInstanceName(payload, data);
+
+    this.logger.log(
+      `[EVOLUTION INSTANCE WEBHOOK] received event=${event || '(empty)'} instanceName=${instanceName || '(missing)'}`,
+    );
+
     if (!instanceName) {
       throw new BadRequestException('Missing instance in webhook payload.');
     }
@@ -307,10 +315,7 @@ export class WhatsappInstancesService {
       return { updated: false, instanceName };
     }
 
-    const event = (payload.event ?? '').trim();
-    const data = payload.data ?? {};
-
-    if (event === 'qr.updated' || event === 'qrcode.updated') {
+    if (event === 'QRCODE_UPDATED') {
       const qrCode = this.extractQrCode(data);
       if (qrCode) {
         entity.qrCode = qrCode;
@@ -320,7 +325,7 @@ export class WhatsappInstancesService {
       return { updated: true, instanceName };
     }
 
-    if (event === 'connection.update' || event === 'connection.state') {
+    if (event === 'CONNECTION_UPDATE') {
       const next = this.guessStatusFromWebhook(data);
       entity.status = next ?? entity.status;
       entity.sessionData = data;
@@ -336,7 +341,7 @@ export class WhatsappInstancesService {
       return { updated: true, instanceName };
     }
 
-    if (event === 'messages.upsert' || event === 'message.upsert') {
+    if (event === 'MESSAGES_UPSERT') {
       const normalizedMessageType = this.guessInboundMessageType(data);
       const channel = await this.findChannelByInstanceName(entity.instanceName);
 
@@ -358,10 +363,14 @@ export class WhatsappInstancesService {
         });
       }
 
+      this.logger.log(
+        `[EVOLUTION INSTANCE WEBHOOK] processed inbound message instanceName=${instanceName} channelId=${channel?.id ?? '(none)'}`,
+      );
+
       return { updated: true, instanceName };
     }
 
-    if (event.includes('call')) {
+    if (event.includes('CALL')) {
       const whatsappSettings = await this.getWhatsappSettings();
       entity.sessionData = {
         ...(entity.sessionData ?? {}),
@@ -648,6 +657,59 @@ export class WhatsappInstancesService {
       default:
         return normalized;
     }
+  }
+
+  private normalizeWebhookEventName(value?: string): string {
+    const raw = (value ?? '').trim();
+    if (!raw) {
+      return '';
+    }
+
+    const normalized = raw.toUpperCase();
+    switch (normalized) {
+      case 'MESSAGE.UPSERT':
+      case 'MESSAGE_UPSERT':
+      case 'MESSAGES.UPSERT':
+      case 'MESSAGES_UPSERT':
+        return 'MESSAGES_UPSERT';
+      case 'CONNECTION.UPDATE':
+      case 'CONNECTION.STATE':
+      case 'CONNECTION_UPDATE':
+        return 'CONNECTION_UPDATE';
+      case 'QR.UPDATED':
+      case 'QRCODE.UPDATED':
+      case 'QR_UPDATED':
+      case 'QRCODE_UPDATED':
+        return 'QRCODE_UPDATED';
+      default:
+        return normalized;
+    }
+  }
+
+  private resolveWebhookInstanceName(
+    payload: { instance?: string; instanceName?: string },
+    data: Record<string, unknown>,
+  ): string {
+    const direct = this.readString(payload.instance) || this.readString(payload.instanceName);
+    if (direct) {
+      return direct;
+    }
+
+    const nestedCandidates: Array<unknown> = [
+      data['instance'],
+      data['instanceName'],
+      data['instance_name'],
+      data['sender'],
+    ];
+
+    for (const candidate of nestedCandidates) {
+      const resolved = this.readString(candidate);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    return '';
   }
 
   private readStringArrayFromMap(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/bot_center_repository_impl.dart';
@@ -22,6 +24,8 @@ enum BotInspectorSection {
 }
 
 class BotCenterController extends ChangeNotifier {
+  static const Duration _backgroundRefreshInterval = Duration(seconds: 4);
+
   BotCenterController({required BotCenterRepository repository})
       : _repository = repository,
         promptTitleController = TextEditingController(),
@@ -58,6 +62,7 @@ class BotCenterController extends ChangeNotifier {
   final List<BotTool> _tools = <BotTool>[];
   final List<BotActivityLog> _activityLogs = <BotActivityLog>[];
   final List<BotServiceStatus> _serviceStatuses = <BotServiceStatus>[];
+  Timer? _backgroundRefreshTimer;
 
   String _selectedConversationId = '';
   String _searchQuery = '';
@@ -195,6 +200,7 @@ class BotCenterController extends ChangeNotifier {
       _applyOverview(overview);
       _hasLoaded = true;
       _conversationErrorMessage = null;
+      _ensureBackgroundRefresh();
     } catch (error) {
       _errorMessage =
           'No se pudieron cargar los datos del Centro del Bot. ${error.toString()}';
@@ -449,7 +455,7 @@ class BotCenterController extends ChangeNotifier {
       );
 
       messageComposerController.clear();
-      await selectConversation(_selectedConversationId);
+      await selectConversation(_selectedConversationId, forceReload: true);
       await _reloadGlobalLists();
       _actionMessage = responseMessage;
     } catch (error) {
@@ -550,8 +556,33 @@ class BotCenterController extends ChangeNotifier {
     }
   }
 
+  void _ensureBackgroundRefresh() {
+    _backgroundRefreshTimer ??=
+        Timer.periodic(_backgroundRefreshInterval, (_) => _silentRefresh());
+  }
+
+  Future<void> _silentRefresh() async {
+    if (!_hasLoaded || _isInitialLoading || _isRefreshing || _isConversationLoading) {
+      return;
+    }
+
+    try {
+      final overview = await _repository.getOverview(
+        conversationId:
+            _selectedConversationId.isEmpty ? null : _selectedConversationId,
+      );
+      _applyOverview(overview, preserveDraftMessage: true);
+      _errorMessage = null;
+      _conversationErrorMessage = null;
+      notifyListeners();
+    } catch (_) {
+      // Preserve the current UI state if a background sync fails.
+    }
+  }
+
   @override
   void dispose() {
+    _backgroundRefreshTimer?.cancel();
     messageComposerController.dispose();
     promptTitleController.dispose();
     promptDescriptionController.dispose();

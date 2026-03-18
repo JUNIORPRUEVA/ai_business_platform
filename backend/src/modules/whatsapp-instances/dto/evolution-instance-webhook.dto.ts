@@ -10,6 +10,10 @@ export class EvolutionInstanceWebhookDto {
   instance?: string;
 
   @IsOptional()
+  @IsString()
+  instanceName?: string;
+
+  @IsOptional()
   @IsObject()
   data?: Record<string, unknown>;
 }
