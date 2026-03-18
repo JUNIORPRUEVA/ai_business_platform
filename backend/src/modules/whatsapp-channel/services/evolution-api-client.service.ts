@@ -78,6 +78,30 @@ export class EvolutionApiClientService {
     );
   }
 
+  async findContacts(
+    config: WhatsappChannelConfigEntity,
+    body: JsonRecord,
+  ): Promise<JsonRecord> {
+    return this.request(
+      config,
+      `/chat/findContacts/${encodeURIComponent(config.instanceName)}`,
+      { method: 'POST', body: JSON.stringify(body) },
+      'find-contacts',
+    );
+  }
+
+  async findChats(
+    config: WhatsappChannelConfigEntity,
+    body: JsonRecord,
+  ): Promise<JsonRecord> {
+    return this.request(
+      config,
+      `/chat/findChats/${encodeURIComponent(config.instanceName)}`,
+      { method: 'POST', body: JSON.stringify(body) },
+      'find-chats',
+    );
+  }
+
   private assertValidSendTarget(body: JsonRecord, action: string): void {
     const raw = body['number'];
     const number = typeof raw === 'string' ? raw.trim() : '';

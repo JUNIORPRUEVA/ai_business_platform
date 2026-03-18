@@ -9,6 +9,7 @@ import { WhatsappMessageType } from '../entities/whatsapp-message.entity';
 import { WhatsappAttachmentService } from './whatsapp-attachment.service';
 import { WhatsappChannelConfigService } from './whatsapp-channel-config.service';
 import { WhatsappChannelLogService } from './whatsapp-channel-log.service';
+import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappMessagingService } from './whatsapp-messaging.service';
 
 export interface WhatsappWebhookJob {
@@ -41,6 +42,7 @@ export class WhatsappWebhookService {
     private readonly logsService: WhatsappChannelLogService,
     private readonly messagingService: WhatsappMessagingService,
     private readonly attachmentsService: WhatsappAttachmentService,
+    private readonly evolutionApiClient: EvolutionApiClientService,
   ) {}
 
   async enqueue(companyId: string, payload: Record<string, unknown>): Promise<{ queued: true }> {
@@ -192,7 +194,14 @@ export class WhatsappWebhookService {
     const type = this.detectType(message);
     const content = this.extractContent(type, message);
 
-    const canonicalRemoteJid = this.extractCanonicalRemoteJid(data, key, message, remoteJid);
+    const canonicalRemoteJid = await this.resolveCanonicalRemoteJid(
+      config,
+      data,
+      key,
+      message,
+      remoteJid,
+      messageId,
+    );
 
     this.logger.log(
       `[INBOUND JID RESOLUTION] companyId=${config.companyId} instanceName=${config.instanceName} remoteJidOriginal=${rawRemoteJid || '(none)'} remoteJidNormalized=${remoteJid} canonicalJid=${canonicalRemoteJid ?? '(none)'} canReply=${remoteJid.endsWith('@lid') ? canonicalRemoteJid != null : true}`,
@@ -200,7 +209,7 @@ export class WhatsappWebhookService {
 
     if (remoteJid.endsWith('@lid') && !canonicalRemoteJid) {
       this.logger.warn(
-        `[EVOLUTION INBOUND] missing canonical recipient remoteJid=${remoteJid} messageId=${messageId ?? '(none)'} keysPresent=${Object.keys(data).slice(0, 30).join(',')}`,
+        `[EVOLUTION INBOUND] missing canonical recipient remoteJid=${remoteJid} messageId=${messageId ?? '(none)'} keysPresent=${Object.keys(data).slice(0, 30).join(',')} source=${this.stringifyForLog(this.readMap(data['source']))}`,
       );
     }
 
@@ -327,6 +336,34 @@ export class WhatsappWebhookService {
       return '';
     }
     return value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`;
+  }
+
+  private async resolveCanonicalRemoteJid(
+    config: WhatsappChannelConfigEntity,
+    data: Record<string, unknown>,
+    key: Record<string, unknown>,
+    message: Record<string, unknown>,
+    remoteJid: string,
+    messageId: string | null,
+  ): Promise<string | null> {
+    const localCanonical = this.extractCanonicalRemoteJid(data, key, message, remoteJid);
+    if (localCanonical) {
+      return localCanonical;
+    }
+
+    if (!remoteJid.endsWith('@lid')) {
+      return null;
+    }
+
+    const resolvedViaApi = await this.lookupCanonicalRemoteJidFromEvolution(config, remoteJid);
+    if (resolvedViaApi) {
+      this.logger.log(
+        `[EVOLUTION INBOUND] canonical recipient enriched instance=${config.instanceName} companyId=${config.companyId} remoteJid=${remoteJid} canonicalJid=${resolvedViaApi} source=evolution_lookup messageId=${messageId ?? '(none)'}`,
+      );
+      return resolvedViaApi;
+    }
+
+    return null;
   }
 
   private extractCanonicalRemoteJid(
@@ -535,6 +572,134 @@ export class WhatsappWebhookService {
     return null;
   }
 
+  private async lookupCanonicalRemoteJidFromEvolution(
+    config: WhatsappChannelConfigEntity,
+    remoteJid: string,
+  ): Promise<string | null> {
+    const lookups: Array<{
+      source: 'findContacts' | 'findChats';
+      body: Record<string, unknown>;
+    }> = [
+      { source: 'findContacts', body: { where: { id: remoteJid } } },
+      { source: 'findContacts', body: { where: { remoteJid } } },
+      { source: 'findContacts', body: { where: { jid: remoteJid } } },
+      { source: 'findChats', body: { where: { id: remoteJid } } },
+      { source: 'findChats', body: { where: { remoteJid } } },
+      { source: 'findChats', body: { where: { jid: remoteJid } } },
+    ];
+
+    for (const lookup of lookups) {
+      try {
+        const response =
+          lookup.source === 'findContacts'
+            ? await this.evolutionApiClient.findContacts(config, lookup.body)
+            : await this.evolutionApiClient.findChats(config, lookup.body);
+        const canonical = this.extractCanonicalRemoteJidFromLookupResponse(response, remoteJid);
+        if (canonical) {
+          this.logger.log(
+            `[EVOLUTION INBOUND] lookup match instance=${config.instanceName} remoteJid=${remoteJid} canonicalJid=${canonical} source=${lookup.source} query=${this.stringifyForLog(lookup.body)}`,
+          );
+          return canonical;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'lookup_failed';
+        this.logger.warn(
+          `[EVOLUTION INBOUND] lookup failed instance=${config.instanceName} remoteJid=${remoteJid} source=${lookup.source} query=${this.stringifyForLog(lookup.body)} error=${message}`,
+        );
+      }
+    }
+
+    return null;
+  }
+
+  private extractCanonicalRemoteJidFromLookupResponse(
+    response: Record<string, unknown>,
+    remoteJid: string,
+  ): string | null {
+    const disallowedDigits = this.buildDisallowedDigits(remoteJid);
+    const matchedObjects = this.collectLookupMatches(response, remoteJid);
+
+    for (const item of matchedObjects) {
+      const canonical = this.extractCanonicalFromLookupObject(item, disallowedDigits);
+      if (canonical) {
+        return canonical;
+      }
+    }
+
+    return this.extractCanonicalByHeuristicScan(response, disallowedDigits);
+  }
+
+  private collectLookupMatches(value: unknown, remoteJid: string, depth = 0): Record<string, unknown>[] {
+    if (depth > 6 || value == null) {
+      return [];
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => this.collectLookupMatches(item, remoteJid, depth + 1));
+    }
+
+    if (typeof value !== 'object') {
+      return [];
+    }
+
+    const map = value as Record<string, unknown>;
+    const matches: Record<string, unknown>[] = [];
+    const directCandidates = [
+      this.readString(map['id']),
+      this.readString(map['jid']),
+      this.readString(map['remoteJid']),
+      this.readString(map['remote_jid']),
+      this.readString(map['lid']),
+      this.readString(map['userLid']),
+      this.readString(map['user_lid']),
+      this.readString(this.readMap(map['key'])['remoteJid']),
+    ];
+
+    if (directCandidates.some((candidate) => candidate === remoteJid)) {
+      matches.push(map);
+    }
+
+    for (const nested of Object.values(map)) {
+      matches.push(...this.collectLookupMatches(nested, remoteJid, depth + 1));
+    }
+
+    return matches;
+  }
+
+  private extractCanonicalFromLookupObject(
+    value: Record<string, unknown>,
+    disallowedDigits: Set<string>,
+  ): string | null {
+    const candidates = [
+      this.readString(value['canonicalJid']),
+      this.readString(value['canonical_jid']),
+      this.readString(value['jid']),
+      this.readString(value['contactJid']),
+      this.readString(value['contact_jid']),
+      this.readString(value['ownerJid']),
+      this.readString(value['owner_jid']),
+      this.readString(value['participantJid']),
+      this.readString(value['participant_jid']),
+      this.readString(value['phone']),
+      this.readString(value['phoneNumber']),
+      this.readString(value['number']),
+      this.readString(value['wa_id']),
+      this.readString(value['waId']),
+      this.readString(this.readMap(value['contact'])['jid']),
+      this.readString(this.readMap(value['contact'])['phone']),
+      this.readString(this.readMap(value['contact'])['number']),
+    ];
+
+    for (const candidate of candidates) {
+      const canonical = this.resolveCanonicalCandidate(candidate, disallowedDigits);
+      if (canonical) {
+        return canonical;
+      }
+    }
+
+    return this.extractCanonicalByHeuristicScan(value, disallowedDigits);
+  }
+
   private readMap(value: unknown): Record<string, unknown> {
     return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   }
@@ -616,6 +781,18 @@ export class WhatsappWebhookService {
 
   private readBoolean(value: unknown): boolean {
     return value === true;
+  }
+
+  private stringifyForLog(value: unknown): string {
+    try {
+      const json = JSON.stringify(value);
+      if (!json) {
+        return '(empty)';
+      }
+      return json.length > 2000 ? `${json.slice(0, 2000)}...(truncated)` : json;
+    } catch {
+      return '(unserializable)';
+    }
   }
 
   private async resolveConfig(

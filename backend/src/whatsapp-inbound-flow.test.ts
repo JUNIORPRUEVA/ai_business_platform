@@ -62,6 +62,11 @@ class InMemoryRepository<T extends { id?: string; createdAt?: Date; updatedAt?: 
   }
 }
 
+const emptyEvolutionApiClient = {
+  findContacts: async () => ({}),
+  findChats: async () => ({}),
+};
+
 test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guarda en el flujo de la UI', async () => {
   const config = {
     id: 'config-1',
@@ -94,6 +99,7 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
       updateStoredMedia: async () => undefined,
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
+    emptyEvolutionApiClient as never,
   );
 
   const payload = {
@@ -263,6 +269,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
       updateStoredMedia: async () => undefined,
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
+    emptyEvolutionApiClient as never,
   );
 
   const payload = {
@@ -322,6 +329,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numeric
       updateStoredMedia: async () => undefined,
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
+    emptyEvolutionApiClient as never,
   );
 
   const payload = {
@@ -436,6 +444,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
       updateStoredMedia: async () => undefined,
     } as never,
     { downloadRemoteToStorage: async () => null } as never,
+    emptyEvolutionApiClient as never,
   );
 
   const payload = {
@@ -465,6 +474,76 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
 
   assert.equal(savedMessages.length, 1);
   assert.equal(savedMessages[0]['remoteJid'], '234840490270800@lid');
+  assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
+});
+
+test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution cuando el payload solo trae @lid', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+
+  const service = new WhatsappWebhookService(
+    { add: async () => undefined } as never,
+    configsRepository as never,
+    { getEntity: async () => config } as never,
+    { create: async () => ({}) } as never,
+    {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-lookup',
+          chatId: 'chat-lookup',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async () => undefined,
+    } as never,
+    { downloadRemoteToStorage: async () => null } as never,
+    {
+      findContacts: async () => ({
+        data: [
+          {
+            id: '234840490270800@lid',
+            jid: '18295344286@s.whatsapp.net',
+            phone: '18295344286',
+          },
+        ],
+      }),
+      findChats: async () => ({}),
+    } as never,
+  );
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      source: {},
+      messages: [
+        {
+          key: {
+            remoteJid: '234840490270800@lid',
+            id: 'wamid-lookup',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          message: { conversation: 'hola' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(savedMessages.length, 1);
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
 });
 
