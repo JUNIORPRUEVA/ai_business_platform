@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -15,6 +15,8 @@ import { WhatsappChannelConfigService } from './whatsapp-channel-config.service'
 
 @Injectable()
 export class WhatsappMessagingService {
+  private readonly logger = new Logger(WhatsappMessagingService.name);
+
   constructor(
     @InjectRepository(WhatsappChatEntity)
     private readonly chatsRepository: Repository<WhatsappChatEntity>,
@@ -27,18 +29,31 @@ export class WhatsappMessagingService {
   ) {}
 
   async sendText(companyId: string, payload: SendWhatsappTextDto): Promise<Record<string, unknown>> {
-    const normalizedJid = this.normalizeRemoteJid(payload.remoteJid);
+    const rawRemoteJid = payload.remoteJid;
+    const normalizedJid = this.normalizeRemoteJid(rawRemoteJid);
     const config = await this.resolveOutboundConfig(
       companyId,
       normalizedJid,
       payload.channelConfigId,
     );
-    const response = await this.sendTextWithEvolutionFallback(config, normalizedJid, {
+
+    const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
+    const evolutionPayload: Record<string, unknown> = {
+      number: recipient.number,
       text: payload.text.trim(),
       ...(payload.quotedMessageId ? { quoted: { key: { id: payload.quotedMessageId } } } : {}),
-    });
+    };
 
-    const chat = await this.findOrCreateChat(config, normalizedJid);
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} rawRemoteJid=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} messageLength=${payload.text?.trim().length ?? 0}`,
+    );
+    this.logger.log(
+      `[WHATSAPP OUTBOUND] send payload instanceName=${config.instanceName} endpoint=/message/sendText payload=${JSON.stringify(evolutionPayload)}`,
+    );
+
+    const response = await this.evolutionApiClient.sendText(config, evolutionPayload);
+
+    const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
     const message = await this.createOutboundMessage({
       companyId,
       config,
@@ -59,56 +74,15 @@ export class WhatsappMessagingService {
     return { message: this.toMessageView(message), evolution: response };
   }
 
-  private async sendTextWithEvolutionFallback(
-    config: WhatsappChannelConfigEntity,
-    remoteJid: string,
-    params: { text: string; quoted?: { key: { id: string } } },
-  ): Promise<Record<string, unknown>> {
-    // Some WhatsApp deployments expose "LID" JIDs (e.g. "...@lid") which are not phone numbers.
-    // Evolution payloads differ by version; best-effort: try sending with the raw jid first,
-    // then fall back to number candidates.
-    const candidates = this.buildEvolutionNumberCandidates(remoteJid);
-    let lastError: unknown;
-
-    if (
-      remoteJid.includes('@') &&
-      (remoteJid.endsWith('@s.whatsapp.net') || remoteJid.endsWith('@lid'))
-    ) {
-      try {
-        return await this.evolutionApiClient.sendText(config, {
-          number: remoteJid,
-          text: params.text,
-          ...(params.quoted ? { quoted: params.quoted } : {}),
-        });
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    for (const candidate of candidates) {
-      try {
-        return await this.evolutionApiClient.sendText(config, {
-          number: candidate,
-          text: params.text,
-          ...(params.quoted ? { quoted: params.quoted } : {}),
-        });
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    throw lastError instanceof Error
-      ? lastError
-      : new BadRequestException('No se pudo enviar el mensaje por Evolution API.');
-  }
-
   async sendMedia(companyId: string, payload: SendWhatsappMediaDto): Promise<Record<string, unknown>> {
     const normalizedJid = this.normalizeRemoteJid(payload.remoteJid);
     const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.mediaUrl);
 
+    const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
+
     const response = await this.evolutionApiClient.sendMedia(config, {
-      number: this.toEvolutionNumber(normalizedJid),
+      number: recipient.number,
       mediatype: payload.mediaType,
       mimetype: payload.mimeType ?? outboundMedia.mimeType,
       caption: payload.caption ?? '',
@@ -117,7 +91,7 @@ export class WhatsappMessagingService {
       ...(payload.quotedMessageId ? { quoted: { key: { id: payload.quotedMessageId } } } : {}),
     });
 
-    const chat = await this.findOrCreateChat(config, normalizedJid);
+    const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
     const message = await this.createOutboundMessage({
       companyId,
       config,
@@ -147,13 +121,15 @@ export class WhatsappMessagingService {
     const config = await this.resolveOutboundConfig(companyId, normalizedJid);
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.audioUrl);
 
+    const recipient = await this.resolveCanonicalRecipient(companyId, normalizedJid);
+
     const response = await this.evolutionApiClient.sendWhatsAppAudio(config, {
-      number: this.toEvolutionNumber(normalizedJid),
+      number: recipient.number,
       audio: outboundMedia.url,
       ...(payload.quotedMessageId ? { quoted: { key: { id: payload.quotedMessageId } } } : {}),
     });
 
-    const chat = await this.findOrCreateChat(config, normalizedJid);
+    const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
     const message = await this.createOutboundMessage({
       companyId,
       config,
@@ -240,6 +216,7 @@ export class WhatsappMessagingService {
     config: WhatsappChannelConfigEntity,
     remoteJid: string,
     pushName?: string | null,
+    canonicalRemoteJid?: string | null,
   ): Promise<WhatsappChatEntity> {
     const existing = await this.chatsRepository.findOne({
       where: { companyId: config.companyId, remoteJid },
@@ -248,15 +225,25 @@ export class WhatsappMessagingService {
     if (existing) {
       if (pushName && !existing.pushName) {
         existing.pushName = pushName;
-        return this.chatsRepository.save(existing);
       }
-      return existing;
+
+      const normalizedCanonical = this.normalizeCanonicalRemoteJid(canonicalRemoteJid);
+      if (normalizedCanonical && existing.canonicalRemoteJid !== normalizedCanonical) {
+        existing.canonicalRemoteJid = normalizedCanonical;
+        existing.canonicalNumber = this.jidToNumber(normalizedCanonical);
+      }
+
+      return this.chatsRepository.save(existing);
     }
 
     const entity = this.chatsRepository.create({
       companyId: config.companyId,
       channelConfigId: config.id,
       remoteJid,
+      canonicalRemoteJid: this.normalizeCanonicalRemoteJid(canonicalRemoteJid),
+      canonicalNumber: this.normalizeCanonicalRemoteJid(canonicalRemoteJid)
+        ? this.jidToNumber(this.normalizeCanonicalRemoteJid(canonicalRemoteJid)!)
+        : (remoteJid.endsWith('@s.whatsapp.net') ? this.jidToNumber(remoteJid) : null),
       pushName: pushName ?? null,
       profileName: null,
       profilePictureUrl: null,
@@ -271,6 +258,7 @@ export class WhatsappMessagingService {
     companyId: string;
     config: WhatsappChannelConfigEntity;
     remoteJid: string;
+    canonicalRemoteJid?: string | null;
     pushName?: string | null;
     evolutionMessageId: string | null;
     fromMe: boolean;
@@ -295,7 +283,12 @@ export class WhatsappMessagingService {
       }
     }
 
-    const chat = await this.findOrCreateChat(params.config, params.remoteJid, params.pushName);
+    const chat = await this.findOrCreateChat(
+      params.config,
+      params.remoteJid,
+      params.pushName,
+      params.canonicalRemoteJid,
+    );
     chat.lastMessageAt = new Date();
     if (!params.fromMe) {
       chat.unreadCount += 1;
@@ -438,32 +431,106 @@ export class WhatsappMessagingService {
     return trimmed.includes('@') ? trimmed : `${trimmed.replace(/\D/g, '')}@s.whatsapp.net`;
   }
 
-  private toEvolutionNumber(remoteJid: string): string {
-    return remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+  private normalizeCanonicalRemoteJid(value?: string | null): string | null {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed) {
+      return null;
+    }
+    if (!trimmed.endsWith('@s.whatsapp.net')) {
+      return null;
+    }
+    const digits = this.jidToNumber(trimmed);
+    if (!digits) {
+      return null;
+    }
+    return `${digits}@s.whatsapp.net`;
   }
 
-  private buildEvolutionNumberCandidates(remoteJid: string): string[] {
-    const digits = this.toEvolutionNumber(remoteJid);
-    if (!digits) {
-      throw new BadRequestException('remoteJid no contiene digitos.' );
+  private jidToNumber(jid: string): string {
+    return jid.replace(/@.+$/, '').replace(/\D/g, '');
+  }
+
+  private async resolveCanonicalRecipient(
+    companyId: string,
+    remoteJid: string,
+  ): Promise<{ jid: string; number: string }> {
+    if (remoteJid.endsWith('@s.whatsapp.net')) {
+      const number = this.jidToNumber(remoteJid);
+      if (!number) {
+        throw new BadRequestException('remoteJid no contiene digitos.');
+      }
+      return { jid: remoteJid, number };
     }
 
-    if (!remoteJid.endsWith('@lid')) {
-      return [digits];
+    if (remoteJid.endsWith('@lid')) {
+      const chat = await this.chatsRepository.findOne({ where: { companyId, remoteJid } });
+      const canonical = this.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid);
+      if (canonical) {
+        const number = this.jidToNumber(canonical);
+        if (number) {
+          return { jid: canonical, number };
+        }
+      }
+
+      const lastInbound = await this.messagesRepository.findOne({
+        where: { companyId, remoteJid, direction: 'inbound' },
+        order: { createdAt: 'DESC' },
+      });
+
+      const extracted = lastInbound
+        ? this.normalizeCanonicalRemoteJid(
+            this.extractCanonicalRemoteJidFromPayload(lastInbound.rawPayloadJson),
+          )
+        : null;
+
+      if (extracted) {
+        const number = this.jidToNumber(extracted);
+        if (chat) {
+          chat.canonicalRemoteJid = extracted;
+          chat.canonicalNumber = number;
+          await this.chatsRepository.save(chat);
+        }
+        return { jid: extracted, number };
+      }
+
+      throw new BadRequestException(
+        `No se puede responder a este chat (@lid) porque no se encontró un destinatario canónico (@s.whatsapp.net) en los datos recibidos. remoteJid=${remoteJid}`,
+      );
     }
 
-    const candidates: string[] = [];
+    throw new BadRequestException(`remoteJid no soportado para envío: ${remoteJid}`);
+  }
 
-    const lengthsToTry = digits.startsWith('1') ? [11] : [13, 12, 11];
-    for (const length of lengthsToTry) {
-      if (digits.length > length && length >= 10) {
-        candidates.push(digits.substring(0, length));
-        candidates.push(digits.substring(digits.length - length));
+  private extractCanonicalRemoteJidFromPayload(payload: Record<string, unknown>): string | null {
+    // Only accept phone-based JIDs. No scanning/truncation.
+    const data = this.readMap(payload['data']);
+    const key = this.readMap(data['key']);
+    const message = this.readMap(data['message']);
+
+    const candidates = [
+      this.readString(key['participant']),
+      this.readString(data['participant']),
+      this.readString(data['sender']),
+    ].filter((v) => v);
+
+    for (const candidate of candidates) {
+      if (candidate.endsWith('@s.whatsapp.net')) {
+        return candidate;
       }
     }
 
-    candidates.push(digits);
-    return [...new Set(candidates)];
+    const contextInfo = this.readMap(
+      this.readMap(this.readMap(message['extendedTextMessage'])['contextInfo'])['participant']
+        ? this.readMap(message['extendedTextMessage'])['contextInfo']
+        : this.readMap(message['contextInfo']),
+    );
+
+    const participant = this.readString(contextInfo['participant']);
+    if (participant.endsWith('@s.whatsapp.net')) {
+      return participant;
+    }
+
+    return null;
   }
 
   private toMessageView(message: WhatsappMessageEntity): Record<string, unknown> {

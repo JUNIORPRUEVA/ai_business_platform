@@ -191,6 +191,8 @@ export class WhatsappWebhookService {
     const type = this.detectType(message);
     const content = this.extractContent(type, message);
 
+    const canonicalRemoteJid = this.extractCanonicalRemoteJid(data, key, message);
+
     this.logger.log(
       `[EVOLUTION INBOUND] instance=${config.instanceName} companyId=${config.companyId} remoteJid=${remoteJid} messageId=${messageId ?? '(none)'} type=${type} accepted=${type !== 'unknown' || content.textBody != null}`,
     );
@@ -199,6 +201,7 @@ export class WhatsappWebhookService {
       companyId: config.companyId,
       config,
       remoteJid,
+      canonicalRemoteJid,
       pushName: this.readString(data['pushName']) || null,
       evolutionMessageId: messageId,
       fromMe,
@@ -312,6 +315,33 @@ export class WhatsappWebhookService {
       return '';
     }
     return value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`;
+  }
+
+  private extractCanonicalRemoteJid(
+    data: Record<string, unknown>,
+    key: Record<string, unknown>,
+    message: Record<string, unknown>,
+  ): string | null {
+    const candidates = [
+      this.readString(key['participant']),
+      this.readString(data['participant']),
+      this.readString(data['sender']),
+    ].filter((v) => v);
+
+    for (const candidate of candidates) {
+      if (candidate.endsWith('@s.whatsapp.net')) {
+        return candidate;
+      }
+    }
+
+    const extended = this.readMap(message['extendedTextMessage']);
+    const contextInfo = this.readMap(extended['contextInfo'] ?? message['contextInfo']);
+    const participant = this.readString(contextInfo['participant']);
+    if (participant.endsWith('@s.whatsapp.net')) {
+      return participant;
+    }
+
+    return null;
   }
 
   private readMap(value: unknown): Record<string, unknown> {
