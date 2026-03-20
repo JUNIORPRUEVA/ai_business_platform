@@ -507,6 +507,39 @@ export class WhatsappMessagingService {
     return this.messagesRepository.save(entity);
   }
 
+  async applyStatusUpdate(params: {
+    companyId: string;
+    evolutionMessageId: string | null;
+    status?: unknown;
+    fromMe?: boolean | null;
+    rawPayloadJson: Record<string, unknown>;
+  }): Promise<WhatsappMessageEntity | null> {
+    const evolutionMessageId = this.readString(params.evolutionMessageId);
+    if (!evolutionMessageId) {
+      return null;
+    }
+
+    const existing = await this.messagesRepository.findOne({
+      where: { companyId: params.companyId, evolutionMessageId },
+    });
+    if (!existing) {
+      return null;
+    }
+
+    const normalizedStatus = this.normalizeMessageStatus(
+      params.status,
+      existing.fromMe || params.fromMe === true,
+    );
+
+    existing.rawPayloadJson = params.rawPayloadJson;
+    if (normalizedStatus) {
+      existing.status = this.mergeMessageStatus(existing.status, normalizedStatus);
+      this.applyMessageStatusTimestamps(existing, existing.status);
+    }
+
+    return this.messagesRepository.save(existing);
+  }
+
   private async createOutboundMessage(params: {
     companyId: string;
     config: WhatsappChannelConfigEntity;
@@ -986,10 +1019,18 @@ export class WhatsappMessagingService {
     };
   }
 
-  private normalizeMessageStatus(status: string | undefined, fromMe: boolean): string | null {
+  private normalizeMessageStatus(status: unknown, fromMe: boolean): string | null {
+    if (typeof status === 'number') {
+      return this.normalizeNumericAck(status, fromMe);
+    }
+
     const normalized = this.readString(status).trim().toLowerCase();
     if (!normalized) {
       return null;
+    }
+
+    if (/^\d+$/.test(normalized)) {
+      return this.normalizeNumericAck(Number.parseInt(normalized, 10), fromMe);
     }
 
     if (normalized === 'queued' || normalized === 'pending') {
@@ -1028,6 +1069,55 @@ export class WhatsappMessagingService {
     }
 
     return normalized;
+  }
+
+  private normalizeNumericAck(ack: number, fromMe: boolean): string | null {
+    switch (ack) {
+      case 0:
+        return 'queued';
+      case 1:
+        return 'sent';
+      case 2:
+        return fromMe ? 'delivered' : 'received';
+      case 3:
+      case 4:
+        return 'read';
+      default:
+        return null;
+    }
+  }
+
+  private mergeMessageStatus(currentStatus: string, nextStatus: string): string {
+    if (currentStatus === nextStatus) {
+      return currentStatus;
+    }
+
+    const currentRank = this.messageStatusRank(currentStatus);
+    const nextRank = this.messageStatusRank(nextStatus);
+    if (currentRank >= 0 && nextRank >= 0) {
+      return nextRank >= currentRank ? nextStatus : currentStatus;
+    }
+
+    if (currentStatus === 'failed' && nextStatus !== 'delivered' && nextStatus !== 'read') {
+      return currentStatus;
+    }
+
+    return nextStatus;
+  }
+
+  private messageStatusRank(status: string): number {
+    switch (status) {
+      case 'queued':
+        return 0;
+      case 'sent':
+        return 1;
+      case 'delivered':
+        return 2;
+      case 'read':
+        return 3;
+      default:
+        return -1;
+    }
   }
 
   private applyMessageStatusTimestamps(message: WhatsappMessageEntity, status: string): void {

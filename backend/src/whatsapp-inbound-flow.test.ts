@@ -205,6 +205,200 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
   assert.equal(logs[0]['eventName'], 'MESSAGES_UPSERT');
 });
 
+test('WhatsappWebhookService procesa message-receipt sin fromMe y normaliza ack numerico a delivered', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      originalRemoteJid: '5511999999999@s.whatsapp.net',
+      rawRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalNumber: '5511999999999',
+      sendTarget: '5511999999999',
+      lastInboundJidType: 'pn',
+      replyTargetUnresolved: false,
+      pushName: 'Cliente',
+      profileName: null,
+      profilePictureUrl: null,
+      lastMessageAt: new Date(),
+      unreadCount: 0,
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([
+    {
+      id: 'message-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      chatId: 'chat-1',
+      evolutionMessageId: 'wamid-status-webhook-1',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      fromMe: true,
+      direction: 'outbound',
+      messageType: 'text',
+      textBody: 'Hola',
+      caption: null,
+      mimeType: null,
+      mediaUrl: null,
+      mediaStoragePath: null,
+      mediaOriginalName: null,
+      mediaSizeBytes: null,
+      thumbnailUrl: null,
+      rawPayloadJson: {},
+      status: 'sent',
+      sentAt: new Date('2026-03-20T04:00:00.000Z'),
+      deliveredAt: null,
+      readAt: null,
+    },
+  ]);
+
+  const messagingService = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    { getEntity: async () => config } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  const service = new WhatsappWebhookService(
+    { add: async () => undefined } as never,
+    configsRepository as never,
+    { getEntity: async () => config } as never,
+    { create: async (entry: Record<string, unknown>) => entry } as never,
+    messagingService as never,
+    { downloadRemoteToStorage: async () => null } as never,
+    emptyEvolutionApiClient as never,
+    jidResolverStub as never,
+  );
+
+  await service.processNow('company-1', {
+    event: 'message-receipt',
+    instance: 'demo-instance',
+    data: {
+      messageId: 'wamid-status-webhook-1',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      ack: 2,
+    },
+  });
+
+  const updated = await messagesRepository.findOne({
+    where: { id: 'message-1', companyId: 'company-1' },
+  });
+
+  assert.equal(updated?.status, 'delivered');
+  assert.ok(updated?.deliveredAt instanceof Date);
+  assert.equal(updated?.readAt, null);
+});
+
+test('WhatsappWebhookService no regresa de read a delivered cuando llegan updates duplicados', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      originalRemoteJid: '5511999999999@s.whatsapp.net',
+      rawRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalNumber: '5511999999999',
+      sendTarget: '5511999999999',
+      lastInboundJidType: 'pn',
+      replyTargetUnresolved: false,
+      pushName: 'Cliente',
+      profileName: null,
+      profilePictureUrl: null,
+      lastMessageAt: new Date(),
+      unreadCount: 0,
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([
+    {
+      id: 'message-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      chatId: 'chat-1',
+      evolutionMessageId: 'wamid-status-webhook-2',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      fromMe: true,
+      direction: 'outbound',
+      messageType: 'text',
+      textBody: 'Hola',
+      caption: null,
+      mimeType: null,
+      mediaUrl: null,
+      mediaStoragePath: null,
+      mediaOriginalName: null,
+      mediaSizeBytes: null,
+      thumbnailUrl: null,
+      rawPayloadJson: {},
+      status: 'read',
+      sentAt: new Date('2026-03-20T04:00:00.000Z'),
+      deliveredAt: new Date('2026-03-20T04:00:05.000Z'),
+      readAt: new Date('2026-03-20T04:00:10.000Z'),
+    },
+  ]);
+
+  const messagingService = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    { getEntity: async () => config } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  const service = new WhatsappWebhookService(
+    { add: async () => undefined } as never,
+    configsRepository as never,
+    { getEntity: async () => config } as never,
+    { create: async (entry: Record<string, unknown>) => entry } as never,
+    messagingService as never,
+    { downloadRemoteToStorage: async () => null } as never,
+    emptyEvolutionApiClient as never,
+    jidResolverStub as never,
+  );
+
+  await service.processNow('company-1', {
+    event: 'messages.update',
+    instance: 'demo-instance',
+    data: {
+      key: {
+        id: 'wamid-status-webhook-2',
+      },
+      status: 'delivered_ack',
+    },
+  });
+
+  const updated = await messagesRepository.findOne({
+    where: { id: 'message-1', companyId: 'company-1' },
+  });
+
+  assert.equal(updated?.status, 'read');
+  assert.ok(updated?.readAt instanceof Date);
+});
+
 test('WhatsappInstancesService normaliza payloads inbound con data.messages[] y resuelve instancia empresa y Bot Center', async () => {
   const instance = {
     id: 'instance-1',

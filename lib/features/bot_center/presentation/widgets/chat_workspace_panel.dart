@@ -621,7 +621,7 @@ class _MessageBubble extends StatelessWidget {
                                       fontWeight: FontWeight.w600,
                                     ),
                           ),
-                          if (isOutgoing) ...[
+                          if (message.author == BotMessageAuthor.operator) ...[
                             const SizedBox(width: 6),
                             _MessageStateIndicator(state: message.state),
                           ],
@@ -646,6 +646,7 @@ class _MessageStateIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const mutedCheckColor = Color(0xFFE2E8F0);
     final icon = switch (state) {
       BotMessageState.queued => Icons.schedule_rounded,
       BotMessageState.sent => Icons.done_rounded,
@@ -654,9 +655,9 @@ class _MessageStateIndicator extends StatelessWidget {
     };
     final color = switch (state) {
       BotMessageState.read => const Color(0xFF34B7F1),
-      BotMessageState.queued => Colors.white70,
-      BotMessageState.sent => Colors.white70,
-      BotMessageState.delivered => Colors.white70,
+      BotMessageState.queued => mutedCheckColor,
+      BotMessageState.sent => mutedCheckColor,
+      BotMessageState.delivered => mutedCheckColor,
     };
 
     return Icon(icon, size: 16, color: color);

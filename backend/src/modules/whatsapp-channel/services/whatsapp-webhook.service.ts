@@ -97,7 +97,16 @@ export class WhatsappWebhookService {
         await this.configsRepository.save(config);
         break;
       case 'MESSAGES_UPDATE':
-        await this.handleMessageStatusUpdate(job.companyId, job.payload);
+      case 'MESSAGE_RECEIPT':
+      case 'MESSAGE_RECEIPTS':
+      case 'MESSAGE_ACK':
+      case 'MESSAGE_ACKS':
+      case 'ACK':
+      case 'ACK_UPDATE':
+      case 'ACK_UPDATES':
+        for (const payload of canonicalPayloads) {
+          await this.handleMessageStatusUpdate(job.companyId, payload);
+        }
         break;
       case 'MESSAGES_DELETE':
         await this.handleMessageDelete(job.companyId, job.payload);
@@ -136,34 +145,33 @@ export class WhatsappWebhookService {
     companyId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const data = this.readMap(payload['data']);
-    const key = this.readMap(data['key']);
-    const messageId = this.readString(key['id']);
+    const statusUpdate = this.extractStatusUpdate(payload);
+    const messageId = statusUpdate.messageId;
     if (!messageId) {
       this.logger.warn('[EVOLUTION INBOUND] status update ignored reason=missing_message_id');
       return;
     }
 
-    const status = this.readString(data['status']) || this.readString(payload['status']) || 'updated';
-    const message = await this.messagingService.upsertInboundMessage({
+    const message = await this.messagingService.applyStatusUpdate({
       companyId,
-      config: await this.configService.getEntity(companyId),
-      remoteJid: this.jidResolver.normalizeRemoteJid(this.readString(key['remoteJid'])),
-      pushName: null,
       evolutionMessageId: messageId,
-      fromMe: this.readBoolean(key['fromMe']),
-      messageType: 'unknown',
-      textBody: null,
-      caption: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaOriginalName: null,
-      thumbnailUrl: null,
+      fromMe: statusUpdate.fromMe,
       rawPayloadJson: payload,
-      status,
+      status: statusUpdate.status,
     });
+    if (!message) {
+      this.logger.warn(
+        `[EVOLUTION INBOUND] status update ignored reason=message_not_found evolutionMessageId=${messageId}`,
+      );
+      return;
+    }
+
+    const loggedStatus =
+      typeof statusUpdate.status === 'number'
+        ? String(statusUpdate.status)
+        : this.readString(statusUpdate.status) || 'updated';
     this.logger.log(
-      `[EVOLUTION INBOUND] message status saved id=${message.id} chatId=${message.chatId} companyId=${companyId} remoteJid=${message.remoteJid} status=${status}`,
+      `[EVOLUTION INBOUND] message status saved id=${message.id} chatId=${message.chatId} companyId=${companyId} remoteJid=${message.remoteJid} status=${loggedStatus}`,
     );
   }
 
@@ -792,6 +800,23 @@ export class WhatsappWebhookService {
     return value === true;
   }
 
+  private readOptionalBoolean(value: unknown): boolean | null {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      if (value.toLowerCase() === 'true') {
+        return true;
+      }
+      if (value.toLowerCase() === 'false') {
+        return false;
+      }
+    }
+
+    return null;
+  }
+
   private stringifyForLog(value: unknown): string {
     try {
       const json = JSON.stringify(value);
@@ -825,15 +850,20 @@ export class WhatsappWebhookService {
 
   private expandPayload(payload: Record<string, unknown>): Record<string, unknown>[] {
     const data = this.readMap(payload['data']);
-    const messages = data['messages'];
-    if (!Array.isArray(messages) || messages.length === 0) {
+    const collectionKey = ['messages', 'receipts', 'updates', 'statuses', 'acks'].find((key) => {
+      const value = data[key];
+      return Array.isArray(value) && value.length > 0;
+    });
+    if (!collectionKey) {
       return [payload];
     }
 
-    const sharedData = { ...data };
-    delete sharedData['messages'];
+    const items = data[collectionKey] as Array<unknown>;
 
-    return messages
+    const sharedData = { ...data };
+    delete sharedData[collectionKey];
+
+    return items
       .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
       .map((item) => ({
         ...payload,
@@ -848,7 +878,13 @@ export class WhatsappWebhookService {
         data: {
           ...sharedData,
           ...item,
-          key: this.readMap(item['key']),
+          key: {
+            ...this.readMap(item['message_key']),
+            ...this.readMap(item['messageKey']),
+            ...this.readMap(item['receipt']),
+            ...this.readMap(item['update']),
+            ...this.readMap(item['key']),
+          },
           message: this.readMap(item['message']),
         },
       }));
@@ -861,6 +897,49 @@ export class WhatsappWebhookService {
       this.readString(data['instance']) ||
       this.readString(data['instanceName']) ||
       this.readString(data['instance_name']);
+  }
+
+  private extractStatusUpdate(payload: Record<string, unknown>): {
+    messageId: string;
+    status: unknown;
+    fromMe: boolean | null;
+  } {
+    const data = this.readMap(payload['data']);
+    const receipt = this.readMap(data['receipt']);
+    const update = this.readMap(data['update']);
+    const key = this.readMap(data['key']);
+    const messageKey = this.readMap(data['messageKey']);
+    const messageKeySnake = this.readMap(data['message_key']);
+
+    const mergedKey = {
+      ...messageKeySnake,
+      ...messageKey,
+      ...receipt,
+      ...update,
+      ...key,
+    };
+
+    return {
+      messageId:
+        this.readString(mergedKey['id']) ||
+        this.readString(data['messageId']) ||
+        this.readString(data['message_id']) ||
+        this.readString(payload['messageId']) ||
+        this.readString(payload['message_id']),
+      status:
+        data['status'] ??
+        receipt['status'] ??
+        update['status'] ??
+        data['ack'] ??
+        receipt['ack'] ??
+        update['ack'] ??
+        payload['status'] ??
+        payload['ack'],
+      fromMe:
+        this.readOptionalBoolean(mergedKey['fromMe']) ??
+        this.readOptionalBoolean(data['fromMe']) ??
+        this.readOptionalBoolean(payload['fromMe']),
+    };
   }
 
   private async recordIncomingWebhook(

@@ -8,6 +8,7 @@ import { BotConfigurationEntity } from '../bot-configuration/entities/bot-config
 export const EVOLUTION_INSTANCE_WEBHOOK_EVENTS = [
   'messages.upsert',
   'messages.update',
+  'message-receipt',
   'messages.delete',
   'send.message',
   'connection.update',
@@ -17,6 +18,7 @@ export const EVOLUTION_INSTANCE_WEBHOOK_EVENTS = [
 const EVOLUTION_EVENT_TO_API_EVENT: Record<string, string> = {
   'messages.upsert': 'MESSAGES_UPSERT',
   'messages.update': 'MESSAGES_UPDATE',
+  'message-receipt': 'MESSAGE_RECEIPT',
   'messages.delete': 'MESSAGES_DELETE',
   'send.message': 'SEND_MESSAGE',
   'connection.update': 'CONNECTION_UPDATE',

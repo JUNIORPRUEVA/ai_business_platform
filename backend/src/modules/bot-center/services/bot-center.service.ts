@@ -923,9 +923,11 @@ export class BotCenterService {
       case 'delivered':
         return 'delivered';
       case 'read':
-      case 'received':
-      default:
         return 'read';
+      case 'received':
+      case 'failed':
+      default:
+        return 'sent';
     }
   }
 
