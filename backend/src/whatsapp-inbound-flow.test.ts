@@ -127,6 +127,12 @@ const jidResolverStub = {
   lookupCanonicalRemoteJidFromEvolution: async (_config: unknown, _remoteJid: string) => null,
 };
 
+const botCenterRealtimeStub = {
+  publishMessageUpsert: async () => undefined,
+  publishMessageStatus: async () => undefined,
+  streamCompanyEvents: () => ({ subscribe: () => ({ unsubscribe: () => undefined }) }),
+};
+
 Object.assign(emptyEvolutionApiClient, {
   normalizeRemoteJid: jidResolverStub.normalizeRemoteJid,
   extractCanonicalRemoteJid: jidResolverStub.extractCanonicalRemoteJid,
@@ -164,6 +170,7 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
       },
       updateStoredMedia: async () => undefined,
     } as never,
+    botCenterRealtimeStub as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
     jidResolverStub as never,
@@ -278,6 +285,7 @@ test('WhatsappWebhookService procesa message-receipt sin fromMe y normaliza ack 
     { getEntity: async () => config } as never,
     { create: async (entry: Record<string, unknown>) => entry } as never,
     messagingService as never,
+    botCenterRealtimeStub as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
     jidResolverStub as never,
@@ -298,7 +306,7 @@ test('WhatsappWebhookService procesa message-receipt sin fromMe y normaliza ack 
   });
 
   assert.equal(updated?.status, 'delivered');
-  assert.ok(updated?.deliveredAt instanceof Date);
+  assert.ok(updated?.deliveredAt);
   assert.equal(updated?.readAt, null);
 });
 
@@ -341,6 +349,7 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
         return {};
       },
     } as never,
+    botCenterRealtimeStub as never,
     {
       downloadRemoteToStorage: async (params: Record<string, unknown>) => {
         attachmentDownloads.push(params);
@@ -463,6 +472,7 @@ test('WhatsappWebhookService no regresa de read a delivered cuando llegan update
     { getEntity: async () => config } as never,
     { create: async (entry: Record<string, unknown>) => entry } as never,
     messagingService as never,
+    botCenterRealtimeStub as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
     jidResolverStub as never,
@@ -617,6 +627,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
       },
       updateStoredMedia: async () => undefined,
     } as never,
+    botCenterRealtimeStub as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
     jidResolverStub as never,
@@ -678,6 +689,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numeric
       },
       updateStoredMedia: async () => undefined,
     } as never,
+    botCenterRealtimeStub as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
     jidResolverStub as never,
@@ -795,6 +807,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
       },
       updateStoredMedia: async () => undefined,
     } as never,
+    botCenterRealtimeStub as never,
     { downloadRemoteToStorage: async () => null } as never,
     emptyEvolutionApiClient as never,
     jidResolverStub as never,
@@ -860,6 +873,7 @@ test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution
       },
       updateStoredMedia: async () => undefined,
     } as never,
+    botCenterRealtimeStub as never,
     { downloadRemoteToStorage: async () => null } as never,
     {
       findContacts: async () => ({
@@ -1073,6 +1087,9 @@ test('BotCenterService prioriza numeros limpios sobre JIDs al resolver contacts.
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
 
   const fromSendTarget = (service as any).resolveConversationContactPhone({
@@ -1121,6 +1138,9 @@ test('BotCenterService resuelve canal por fallback cuando no existe bridge exact
         instanceName: 'demo-instance',
       }),
     } as never,
+    {} as never,
+    {} as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,

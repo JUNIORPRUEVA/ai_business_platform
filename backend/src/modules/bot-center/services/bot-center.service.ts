@@ -630,7 +630,6 @@ export class BotCenterService {
     const dispatchedAt = new Date().toISOString();
 
     const outboundDispatch = await this.whatsappMessagingService.sendMedia(companyId, {
-      channelConfigId: conversation.channelConfigId,
       remoteJid: conversation.remoteJid,
       attachmentId: payload.attachmentId,
       mediaType: payload.mediaType,

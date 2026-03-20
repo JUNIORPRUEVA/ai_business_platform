@@ -1,6 +1,6 @@
 import { Injectable, MessageEvent } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Observable, Subject, interval, map, filter, merge, of } from 'rxjs';
+import { Observable, Subject, filter, interval, map, merge, of } from 'rxjs';
 import { Repository } from 'typeorm';
 
 import { StorageService } from '../../storage/storage.service';
@@ -13,14 +13,15 @@ import { WhatsappChatEntity } from '../entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from '../entities/whatsapp-message.entity';
 
 type RealtimeEventName = 'message.upsert' | 'message.status';
+type CompanyRealtimeEvent = {
+  companyId: string;
+  event: RealtimeEventName;
+  payload: BotCenterRealtimeEventResponse;
+};
 
 @Injectable()
 export class BotCenterRealtimeService {
-  private readonly events = new Subject<{
-    companyId: string;
-    event: RealtimeEventName;
-    payload: BotCenterRealtimeEventResponse;
-  }>();
+  private readonly events = new Subject<CompanyRealtimeEvent>();
 
   constructor(
     @InjectRepository(WhatsappChatEntity)
@@ -34,16 +35,16 @@ export class BotCenterRealtimeService {
       data: { connectedAt: new Date().toISOString() },
     });
 
-    const heartbeat$ = interval(15000).pipe(
-      map<MessageEvent>(() => ({
+    const heartbeat$: Observable<MessageEvent> = interval(15000).pipe(
+      map((): MessageEvent => ({
         type: 'bot-center.ping',
         data: { timestamp: new Date().toISOString() },
       })),
     );
 
-    const updates$ = this.events.pipe(
-      filter((event) => event.companyId === companyId),
-      map<MessageEvent>(({ event, payload }) => ({
+    const updates$: Observable<MessageEvent> = this.events.pipe(
+      filter((event: CompanyRealtimeEvent) => event.companyId === companyId),
+      map(({ event, payload }: CompanyRealtimeEvent): MessageEvent => ({
         type: event,
         data: payload,
       })),
