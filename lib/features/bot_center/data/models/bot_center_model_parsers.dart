@@ -19,6 +19,14 @@ String parseString(dynamic rawValue, {String fallback = ''}) {
   return fallback;
 }
 
+String? parseNullableString(dynamic rawValue) {
+  if (rawValue is String && rawValue.trim().isNotEmpty) {
+    return rawValue;
+  }
+
+  return null;
+}
+
 int parseInt(dynamic rawValue, {int fallback = 0}) {
   if (rawValue is int) {
     return rawValue;
@@ -94,8 +102,29 @@ BotMessageState parseMessageState(String rawValue) {
       return BotMessageState.delivered;
     case 'read':
       return BotMessageState.read;
+    case 'failed':
+      return BotMessageState.failed;
     default:
       return BotMessageState.sent;
+  }
+}
+
+BotMessageType parseMessageType(String rawValue) {
+  switch (rawValue) {
+    case 'text':
+      return BotMessageType.text;
+    case 'image':
+      return BotMessageType.image;
+    case 'video':
+      return BotMessageType.video;
+    case 'audio':
+      return BotMessageType.audio;
+    case 'document':
+      return BotMessageType.document;
+    case 'system':
+      return BotMessageType.system;
+    default:
+      return BotMessageType.unknown;
   }
 }
 

@@ -38,6 +38,12 @@ export class StorageService {
     return `${companyId}/${folder}/${randomUUID()}-${safeFilename}`;
   }
 
+  assertCompanyKeyOwnership(companyId: string, key: string): void {
+    if (!key.startsWith(`${companyId}/`)) {
+      throw new BadRequestException('Key does not belong to this company.');
+    }
+  }
+
   async presignUpload(params: {
     companyId: string;
     folder: StorageFolder;
@@ -64,9 +70,7 @@ export class StorageService {
     key: string;
     expiresInSeconds?: number;
   }): Promise<{ key: string; url: string; expiresInSeconds: number }> {
-    if (!params.key.startsWith(`${params.companyId}/`)) {
-      throw new BadRequestException('Key does not belong to this company.');
-    }
+    this.assertCompanyKeyOwnership(params.companyId, params.key);
 
     const bucket = this.getBucket();
     const expiresInSeconds = params.expiresInSeconds ?? 900;
@@ -100,5 +104,26 @@ export class StorageService {
     );
 
     return { key };
+  }
+
+  async uploadBufferToKey(params: {
+    companyId: string;
+    key: string;
+    contentType?: string;
+    buffer: Buffer;
+  }): Promise<{ key: string }> {
+    this.assertCompanyKeyOwnership(params.companyId, params.key);
+
+    const bucket = this.getBucket();
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: params.key,
+        Body: params.buffer,
+        ContentType: params.contentType,
+      }),
+    );
+
+    return { key: params.key };
   }
 }

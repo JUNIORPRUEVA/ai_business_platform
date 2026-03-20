@@ -30,6 +30,12 @@ export interface BotMessageResponse {
   conversationId: string;
   author: BotMessageAuthor;
   body: string;
+  type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'system' | 'unknown';
+  caption: string | null;
+  mimeType: string | null;
+  mediaUrl: string | null;
+  thumbnailUrl: string | null;
+  fileName: string | null;
   timestamp: string;
   state: BotMessageState;
 }
@@ -160,6 +166,14 @@ export interface SendTestMessageResponse {
   dispatchedAt: string;
   status: 'accepted';
   outboundMessage?: BotMessageResponse;
+}
+
+export interface SendMediaMessageResponse extends SendTestMessageResponse {}
+
+export interface BotCenterRealtimeEventResponse {
+  event: 'message.upsert' | 'message.status';
+  conversation: BotConversationSummary;
+  message: BotMessageResponse;
 }
 
 export interface BotCenterConversationRecord {

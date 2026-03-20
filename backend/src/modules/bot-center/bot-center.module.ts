@@ -17,6 +17,7 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { ConversationEntity } from '../conversations/entities/conversation.entity';
 import { MessagesModule } from '../messages/messages.module';
 import { MessageEntity } from '../messages/entities/message.entity';
+import { StorageModule } from '../storage/storage.module';
 import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { WhatsappChannelConfigEntity } from '../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../whatsapp-channel/entities/whatsapp-channel-log.entity';
@@ -36,6 +37,7 @@ import { BotCenterService } from './services/bot-center.service';
     ConversationsModule,
     DatabaseModule,
     MessagesModule,
+    StorageModule,
     WhatsappChannelModule,
     TypeOrmModule.forFeature([
       ClientMemoryEntity,

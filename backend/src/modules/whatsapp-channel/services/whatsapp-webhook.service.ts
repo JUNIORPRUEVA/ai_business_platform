@@ -7,6 +7,7 @@ import { Repository } from 'typeorm';
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
 import { WhatsappMessageType } from '../entities/whatsapp-message.entity';
 import { WhatsappAttachmentService } from './whatsapp-attachment.service';
+import { BotCenterRealtimeService } from './bot-center-realtime.service';
 import { WhatsappChannelConfigService } from './whatsapp-channel-config.service';
 import { WhatsappChannelLogService } from './whatsapp-channel-log.service';
 import { EvolutionApiClientService } from './evolution-api-client.service';
@@ -42,6 +43,7 @@ export class WhatsappWebhookService {
     private readonly configService: WhatsappChannelConfigService,
     private readonly logsService: WhatsappChannelLogService,
     private readonly messagingService: WhatsappMessagingService,
+    private readonly botCenterRealtimeService: BotCenterRealtimeService,
     private readonly attachmentsService: WhatsappAttachmentService,
     private readonly evolutionApiClient: EvolutionApiClientService,
     private readonly jidResolver: WhatsappJidResolverService,
@@ -173,6 +175,7 @@ export class WhatsappWebhookService {
     this.logger.log(
       `[EVOLUTION INBOUND] message status saved id=${message.id} chatId=${message.chatId} companyId=${companyId} remoteJid=${message.remoteJid} status=${loggedStatus}`,
     );
+    await this.botCenterRealtimeService.publishMessageStatus(message);
   }
 
   private async handleMessageDelete(companyId: string, payload: Record<string, unknown>): Promise<void> {
@@ -254,22 +257,30 @@ export class WhatsappWebhookService {
     this.logger.log(
       `[EVOLUTION INBOUND] message saved id=${saved.id} type=${saved.messageType} companyId=${config.companyId} remoteJid=${remoteJid}`,
     );
+    await this.botCenterRealtimeService.publishMessageUpsert(saved);
 
     if (content.mediaUrl) {
       const attachment = await this.attachmentsService.downloadRemoteToStorage({
+        config,
         companyId: config.companyId,
+        conversationId: saved.chatId,
         messageId: saved.id,
         fileType: type,
         mimeType: content.mimeType,
         originalName: content.mediaOriginalName ?? `${type}-${saved.id}`,
         sourceUrl: content.mediaUrl,
+        thumbnailSource: content.thumbnailUrl,
+        messagePayload: message,
         metadataJson: { thumbnailUrl: content.thumbnailUrl },
       });
 
       if (attachment) {
+        const thumbnailStoragePath = this.readString(attachment.metadataJson['thumbnailStoragePath']) || null;
         await this.messagingService.updateStoredMedia(config.companyId, saved.id, {
           mediaStoragePath: attachment.storagePath,
           mediaSizeBytes: attachment.sizeBytes,
+          mimeType: attachment.mimeType,
+          thumbnailUrl: thumbnailStoragePath,
         });
       }
     }

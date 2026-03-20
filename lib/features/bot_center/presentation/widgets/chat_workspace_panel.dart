@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../domain/entities/bot_conversation.dart';
 import '../../domain/entities/bot_message.dart';
@@ -387,7 +390,7 @@ class _MessageViewportState extends State<_MessageViewport> {
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
           final message = controller.selectedMessages[index];
-          return _MessageBubble(message: message);
+          return _MessageBubble(controller: controller, message: message);
         },
       ),
     );
@@ -463,7 +466,41 @@ class _FloatingComposer extends StatelessWidget {
         children: [
           IconButton(
             tooltip: 'Adjuntar',
-            onPressed: () {},
+            onPressed: controller.hasConversationSelection &&
+                    !controller.isSendingMessage &&
+                    !controller.isProcessingWithAi
+                ? () async {
+                    final selection =
+                        await showModalBottomSheet<BotMessageType>(
+                      context: context,
+                      builder: (sheetContext) {
+                        return SafeArea(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ListTile(
+                                leading: const Icon(Icons.image_outlined),
+                                title: const Text('Enviar imagen'),
+                                onTap: () => Navigator.of(sheetContext)
+                                    .pop(BotMessageType.image),
+                              ),
+                              ListTile(
+                                leading: const Icon(Icons.videocam_outlined),
+                                title: const Text('Enviar video'),
+                                onTap: () => Navigator.of(sheetContext)
+                                    .pop(BotMessageType.video),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+
+                    if (selection != null) {
+                      unawaited(controller.pickAndSendMedia(selection));
+                    }
+                  }
+                : null,
             icon: const Icon(Icons.add_rounded),
           ),
           Expanded(
@@ -545,8 +582,9 @@ class _FloatingComposer extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.controller, required this.message});
 
+  final BotCenterController controller;
   final BotMessage message;
 
   @override
@@ -565,6 +603,9 @@ class _MessageBubble extends StatelessWidget {
         : const Color(0xFF64748B);
     final alignment = isOutgoing ? Alignment.centerRight : Alignment.centerLeft;
     final timeLabel = formatConversationTimestamp(message.timestamp);
+    final displayText = message.caption?.trim().isNotEmpty == true
+        ? message.caption!
+        : message.body;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -572,7 +613,7 @@ class _MessageBubble extends StatelessWidget {
           alignment: alignment,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: constraints.maxWidth * 0.70,
+              maxWidth: constraints.maxWidth * 0.72,
             ),
             child: Column(
               crossAxisAlignment: isOutgoing
@@ -591,7 +632,7 @@ class _MessageBubble extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(message.hasMedia ? 8 : 12),
                   decoration: BoxDecoration(
                     color: bubbleColor,
                     borderRadius: BorderRadius.circular(16),
@@ -599,19 +640,50 @@ class _MessageBubble extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        message.body,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontSize: 13,
-                              color: textColor,
-                              height: 1.35,
-                            ),
-                      ),
+                      if (message.hasMedia)
+                        _MessageMedia(
+                          controller: controller,
+                          message: message,
+                        ),
+                      if (displayText.trim().isNotEmpty) ...[
+                        if (message.hasMedia) const SizedBox(height: 10),
+                        Text(
+                          displayText,
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontSize: 13,
+                                    color: textColor,
+                                    height: 1.35,
+                                  ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          if (message.canRetry) ...[
+                            IconButton(
+                              tooltip: 'Reintentar envío',
+                              onPressed: () => unawaited(
+                                controller.retryFailedMessage(message),
+                              ),
+                              icon: Icon(
+                                Icons.refresh_rounded,
+                                size: 18,
+                                color: isOutgoing
+                                    ? Colors.white
+                                    : const Color(0xFF2563EB),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 24,
+                                height: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
                           Text(
                             timeLabel,
                             style:
@@ -639,6 +711,101 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
+class _MessageMedia extends StatelessWidget {
+  const _MessageMedia({required this.controller, required this.message});
+
+  final BotCenterController controller;
+  final BotMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageProvider = message.localPreviewBytes != null
+        ? MemoryImage(message.localPreviewBytes!) as ImageProvider<Object>
+        : (message.thumbnailUrl?.isNotEmpty == true
+            ? CachedNetworkImageProvider(message.thumbnailUrl!)
+            : (message.mediaUrl?.isNotEmpty == true && message.isImage
+                ? CachedNetworkImageProvider(message.mediaUrl!)
+                : null));
+
+    return GestureDetector(
+      onTap: () {
+        if (message.isImage &&
+            (message.localPreviewBytes != null || message.mediaUrl != null)) {
+          showDialog<void>(
+            context: context,
+            builder: (_) => _ImagePreviewDialog(message: message),
+          );
+        } else if (message.isVideo && message.mediaUrl != null) {
+          showDialog<void>(
+            context: context,
+            builder: (_) => _VideoPreviewDialog(message: message),
+          );
+        }
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              constraints: const BoxConstraints(
+                minWidth: 180,
+                minHeight: 140,
+                maxWidth: 280,
+                maxHeight: 240,
+              ),
+              color: const Color(0xFF0F172A),
+              child: imageProvider == null
+                  ? const Center(
+                      child: Icon(
+                        Icons.perm_media_outlined,
+                        color: Colors.white70,
+                        size: 40,
+                      ),
+                    )
+                  : Image(
+                      image: imageProvider,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white70,
+                          size: 42,
+                        ),
+                      ),
+                    ),
+            ),
+            if (message.isVideo)
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 34,
+                ),
+              ),
+            if (message.state == BotMessageState.queued)
+              Container(
+                color: Colors.black.withValues(alpha: 0.20),
+                alignment: Alignment.center,
+                child: const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(strokeWidth: 2.8),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageStateIndicator extends StatelessWidget {
   const _MessageStateIndicator({required this.state});
 
@@ -652,15 +819,112 @@ class _MessageStateIndicator extends StatelessWidget {
       BotMessageState.sent => Icons.done_rounded,
       BotMessageState.delivered => Icons.done_all_rounded,
       BotMessageState.read => Icons.done_all_rounded,
+      BotMessageState.failed => Icons.error_outline_rounded,
     };
     final color = switch (state) {
       BotMessageState.read => const Color(0xFF34B7F1),
       BotMessageState.queued => mutedCheckColor,
       BotMessageState.sent => mutedCheckColor,
       BotMessageState.delivered => mutedCheckColor,
+      BotMessageState.failed => const Color(0xFFFCA5A5),
     };
 
     return Icon(icon, size: 16, color: color);
+  }
+}
+
+class _ImagePreviewDialog extends StatelessWidget {
+  const _ImagePreviewDialog({required this.message});
+
+  final BotMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = message.localPreviewBytes != null
+        ? MemoryImage(message.localPreviewBytes!) as ImageProvider<Object>
+        : CachedNetworkImageProvider(message.mediaUrl!);
+
+    return Dialog.fullscreen(
+      backgroundColor: const Color(0xFF020617),
+      child: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              child: Image(
+                image: provider,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.white70,
+                  size: 56,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 18,
+            right: 18,
+            child: IconButton.filledTonal(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideoPreviewDialog extends StatefulWidget {
+  const _VideoPreviewDialog({required this.message});
+
+  final BotMessage message;
+
+  @override
+  State<_VideoPreviewDialog> createState() => _VideoPreviewDialogState();
+}
+
+class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
+  late final Player _player;
+  late final VideoController _videoController;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = Player();
+    _videoController = VideoController(_player);
+    unawaited(_player.open(Media(widget.message.mediaUrl!)));
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: const Color(0xFF020617),
+      child: Stack(
+        children: [
+          Center(
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Video(controller: _videoController),
+            ),
+          ),
+          Positioned(
+            top: 18,
+            right: 18,
+            child: IconButton.filledTonal(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

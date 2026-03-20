@@ -302,6 +302,94 @@ test('WhatsappWebhookService procesa message-receipt sin fromMe y normaliza ack 
   assert.equal(updated?.readAt, null);
 });
 
+test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thumbnail', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+  const storedMediaUpdates: Array<Record<string, unknown>> = [];
+  const attachmentDownloads: Array<Record<string, unknown>> = [];
+
+  const service = new WhatsappWebhookService(
+    { add: async () => undefined } as never,
+    configsRepository as never,
+    { getEntity: async () => config } as never,
+    { create: async () => ({}) } as never,
+    {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-image-1',
+          chatId: 'chat-image-1',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async (
+        companyId: string,
+        messageId: string,
+        params: Record<string, unknown>,
+      ) => {
+        storedMediaUpdates.push({ companyId, messageId, ...params });
+        return {};
+      },
+    } as never,
+    {
+      downloadRemoteToStorage: async (params: Record<string, unknown>) => {
+        attachmentDownloads.push(params);
+        return {
+          id: 'attachment-1',
+          storagePath: 'company-1/chat/chat-image-1/message-image-1.jpg',
+          sizeBytes: '2048',
+          mimeType: 'image/jpeg',
+          metadataJson: {
+            thumbnailStoragePath:
+                'company-1/chat/chat-image-1/message-image-1.jpg',
+          },
+        };
+      },
+    } as never,
+    emptyEvolutionApiClient as never,
+    jidResolverStub as never,
+  );
+
+  await service.processNow('company-1', {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      key: {
+        remoteJid: '5511999999999@s.whatsapp.net',
+        id: 'wamid-image-1',
+        fromMe: false,
+      },
+      pushName: 'Marina',
+      message: {
+        imageMessage: {
+          caption: 'Foto do produto',
+          mimetype: 'image/jpeg',
+          url: 'https://media.example.com/image.jpg',
+          fileName: 'produto.jpg',
+          jpegThumbnail: 'dGh1bWJuYWls',
+        },
+      },
+    },
+  });
+
+  assert.equal(savedMessages[0]['messageType'], 'image');
+  assert.equal(attachmentDownloads.length, 1);
+  assert.equal(attachmentDownloads[0]['conversationId'], 'chat-image-1');
+  assert.equal(storedMediaUpdates.length, 1);
+  assert.equal(storedMediaUpdates[0]['mediaStoragePath'], 'company-1/chat/chat-image-1/message-image-1.jpg');
+  assert.equal(storedMediaUpdates[0]['thumbnailUrl'], 'company-1/chat/chat-image-1/message-image-1.jpg');
+});
+
 test('WhatsappWebhookService no regresa de read a delivered cuando llegan updates duplicados', async () => {
   const config = {
     id: 'config-1',

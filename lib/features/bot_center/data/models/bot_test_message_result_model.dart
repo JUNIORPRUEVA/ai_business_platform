@@ -1,3 +1,4 @@
+import 'bot_message_model.dart';
 import 'bot_center_model_parsers.dart';
 
 class BotTestMessageResultModel {
@@ -6,6 +7,7 @@ class BotTestMessageResultModel {
     required this.message,
     required this.dispatchedAt,
     required this.status,
+    this.outboundMessage,
   });
 
   factory BotTestMessageResultModel.fromJson(Map<String, dynamic> json) {
@@ -14,6 +16,14 @@ class BotTestMessageResultModel {
       message: parseString(json['message']),
       dispatchedAt: parseDateTime(json['dispatchedAt']),
       status: parseString(json['status']),
+      outboundMessage: json['outboundMessage'] is Map<String, dynamic>
+          ? BotMessageModel.fromJson(
+              json['outboundMessage'] as Map<String, dynamic>)
+          : json['outboundMessage'] is Map
+              ? BotMessageModel.fromJson(
+                  Map<String, dynamic>.from(json['outboundMessage'] as Map),
+                )
+              : null,
     );
   }
 
@@ -21,4 +31,5 @@ class BotTestMessageResultModel {
   final String message;
   final DateTime dispatchedAt;
   final String status;
+  final BotMessageModel? outboundMessage;
 }

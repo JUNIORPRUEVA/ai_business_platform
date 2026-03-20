@@ -102,6 +102,87 @@ export class EvolutionApiClientService {
     );
   }
 
+  async downloadMediaUrl(
+    config: WhatsappChannelConfigEntity,
+    sourceUrl: string,
+  ): Promise<{ buffer: Buffer; contentType: string | null; contentLength: string | null } | null> {
+    const apiKey = this.secretService.decrypt(config.evolutionApiKeyEncrypted);
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await fetch(sourceUrl, {
+          method: 'GET',
+          headers: {
+            Accept: '*/*',
+            apikey: apiKey,
+          },
+        });
+
+        if (!response.ok) {
+          throw new ServiceUnavailableException(
+            `Evolution media download failed (${response.status}).`,
+          );
+        }
+
+        return {
+          buffer: Buffer.from(await response.arrayBuffer()),
+          contentType: response.headers.get('content-type'),
+          contentLength: response.headers.get('content-length'),
+        };
+      } catch (error) {
+        lastError = error;
+        if (attempt >= 2) {
+          break;
+        }
+      }
+    }
+
+    this.logger.warn(
+      `[EVOLUTION API] media url download failed instanceName=${config.instanceName} url=${sourceUrl} error=${lastError instanceof Error ? lastError.message : 'unknown'}`,
+    );
+    return null;
+  }
+
+  async downloadMediaMessage(
+    config: WhatsappChannelConfigEntity,
+    messagePayload: JsonRecord,
+  ): Promise<{ buffer: Buffer; contentType: string | null } | null> {
+    const payloadCandidates: JsonRecord[] = [{ message: messagePayload }, messagePayload];
+
+    for (const body of payloadCandidates) {
+      try {
+        const response = await this.request(
+          config,
+          `/chat/getBase64FromMediaMessage/${encodeURIComponent(config.instanceName)}`,
+          { method: 'POST', body: JSON.stringify(body) },
+          'download-media-message',
+        );
+        const base64Payload = this.extractBase64Payload(response);
+        if (!base64Payload) {
+          continue;
+        }
+
+        const normalized = base64Payload.includes(',')
+          ? (base64Payload.split(',').pop() ?? '')
+          : base64Payload;
+        const buffer = Buffer.from(normalized, 'base64');
+        if (!buffer.length) {
+          continue;
+        }
+
+        return {
+          buffer,
+          contentType: this.extractContentType(response, base64Payload),
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
   private assertValidSendTarget(body: JsonRecord, action: string): void {
     const raw = body['number'];
     const number = typeof raw === 'string' ? raw.trim() : '';
@@ -317,6 +398,57 @@ export class EvolutionApiClientService {
     }
 
     return fallback.trim();
+  }
+
+  private extractBase64Payload(value: unknown): string | null {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      if (trimmed.startsWith('data:') || /^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)) {
+        return trimmed;
+      }
+
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const extracted = this.extractBase64Payload(item);
+        if (extracted) {
+          return extracted;
+        }
+      }
+      return null;
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      const record = value as Record<string, unknown>;
+      for (const key of ['base64', 'data', 'media', 'buffer']) {
+        const extracted = this.extractBase64Payload(record[key]);
+        if (extracted) {
+          return extracted;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private extractContentType(payload: JsonRecord, base64Payload: string): string | null {
+    const explicit = payload['mimetype'];
+    if (typeof explicit === 'string' && explicit.trim()) {
+      return explicit.trim();
+    }
+
+    const dataUrlMatch = /^data:([^;]+);base64,/i.exec(base64Payload);
+    if (dataUrlMatch?.[1]) {
+      return dataUrlMatch[1];
+    }
+
+    return null;
   }
 
   private stringifyEvolutionMessage(value: unknown): string {

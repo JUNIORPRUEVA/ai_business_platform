@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 
 import '../../data/repositories/bot_center_repository_impl.dart';
 import '../../domain/entities/bot_ai_process_result.dart';
@@ -12,6 +15,7 @@ import '../../domain/entities/bot_conversation.dart';
 import '../../domain/entities/bot_memory_item.dart';
 import '../../domain/entities/bot_message.dart';
 import '../../domain/entities/bot_prompt_config.dart';
+import '../../domain/entities/bot_realtime_event.dart';
 import '../../domain/entities/bot_service_status.dart';
 import '../../domain/entities/bot_tool.dart';
 import '../../domain/repositories/bot_center_repository.dart';
@@ -26,9 +30,15 @@ enum BotInspectorSection {
 }
 
 class BotCenterController extends ChangeNotifier {
-  static const Duration _activeConversationRefreshInterval =
+  static const Duration _pollingActiveConversationRefreshInterval =
       Duration(milliseconds: 800);
-  static const Duration _idleBackgroundRefreshInterval = Duration(seconds: 2);
+  static const Duration _pollingIdleBackgroundRefreshInterval =
+      Duration(seconds: 2);
+  static const Duration _realtimeActiveFallbackRefreshInterval =
+      Duration(seconds: 8);
+  static const Duration _realtimeIdleFallbackRefreshInterval =
+      Duration(seconds: 15);
+  static const Duration _realtimeReconnectDelay = Duration(seconds: 3);
 
   BotCenterController({required BotCenterRepository repository})
       : _repository = repository,
@@ -68,6 +78,8 @@ class BotCenterController extends ChangeNotifier {
   final List<BotTool> _tools = <BotTool>[];
   final List<BotActivityLog> _activityLogs = <BotActivityLog>[];
   final List<BotServiceStatus> _serviceStatuses = <BotServiceStatus>[];
+  Timer? _realtimeReconnectTimer;
+  StreamSubscription<BotRealtimeEvent>? _realtimeSubscription;
   Timer? _backgroundRefreshTimer;
 
   String _selectedConversationId = '';
@@ -86,6 +98,7 @@ class BotCenterController extends ChangeNotifier {
   bool _isMutatingMemory = false;
   bool _isSendingMessage = false;
   bool _isProcessingWithAi = false;
+  bool _isRealtimeConnected = false;
   bool _hasLoaded = false;
 
   List<BotConversation> get conversations => List.unmodifiable(_conversations);
@@ -104,6 +117,7 @@ class BotCenterController extends ChangeNotifier {
   bool get isSendingMessage => _isSendingMessage;
   bool get isProcessingWithAi => _isProcessingWithAi;
   bool get hasLoaded => _hasLoaded;
+  bool get isRealtimeConnected => _isRealtimeConnected;
   String? get errorMessage => _errorMessage;
   String? get conversationErrorMessage => _conversationErrorMessage;
   String? get actionMessage => _actionMessage;
@@ -217,6 +231,7 @@ class BotCenterController extends ChangeNotifier {
       _applyOverview(overview);
       _hasLoaded = true;
       _conversationErrorMessage = null;
+      _ensureRealtimeConnection();
       _ensureBackgroundRefresh();
     } catch (error) {
       _errorMessage =
@@ -526,6 +541,7 @@ class BotCenterController extends ChangeNotifier {
       conversationId: conversationId,
       author: BotMessageAuthor.operator,
       body: text,
+      type: BotMessageType.text,
       timestamp: DateTime.now(),
       state: BotMessageState.queued,
     );
@@ -638,18 +654,57 @@ class BotCenterController extends ChangeNotifier {
     for (var index = 0; index < updated.length; index++) {
       final message = updated[index];
       if (message.id == messageId) {
-        updated[index] = BotMessage(
-          id: message.id,
-          conversationId: message.conversationId,
-          author: message.author,
-          body: message.body,
-          timestamp: message.timestamp,
-          state: state,
-        );
+        updated[index] = message.copyWith(state: state);
         _messagesByConversation[conversationId] = updated;
         return;
       }
     }
+  }
+
+  Future<void> pickAndSendMedia(BotMessageType type) async {
+    if (_selectedConversationId.isEmpty ||
+        _isSendingMessage ||
+        _isProcessingWithAi ||
+        (type != BotMessageType.image && type != BotMessageType.video)) {
+      return;
+    }
+
+    final picked = await _pickMedia(type);
+    if (picked == null) {
+      return;
+    }
+
+    final caption = messageComposerController.text.trim();
+    if (caption.isNotEmpty) {
+      messageComposerController.clear();
+    }
+
+    await _sendMediaPayload(
+      conversationId: _selectedConversationId,
+      type: type,
+      bytes: picked.bytes,
+      previewBytes: picked.previewBytes,
+      fileName: picked.fileName,
+      mimeType: picked.mimeType,
+      caption: caption,
+    );
+  }
+
+  Future<void> retryFailedMessage(BotMessage message) async {
+    if (!message.canRetry || _isSendingMessage || _isProcessingWithAi) {
+      return;
+    }
+
+    await _sendMediaPayload(
+      conversationId: message.conversationId,
+      type: message.type,
+      bytes: message.localFileBytes!,
+      previewBytes: message.localPreviewBytes,
+      fileName: message.fileName ?? 'archivo',
+      mimeType: message.mimeType ?? 'application/octet-stream',
+      caption: message.caption ?? '',
+      replaceMessageId: message.id,
+    );
   }
 
   void clearActionMessage() {
@@ -768,10 +823,134 @@ class BotCenterController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _ensureRealtimeConnection() {
+    if (!_hasLoaded || _realtimeSubscription != null) {
+      return;
+    }
+
+    _realtimeReconnectTimer?.cancel();
+    _realtimeSubscription = _repository.connectRealtime().listen(
+          _handleRealtimeEvent,
+          onError: (_) => _handleRealtimeDisconnect(),
+          onDone: _handleRealtimeDisconnect,
+          cancelOnError: false,
+        );
+    _isRealtimeConnected = true;
+  }
+
+  void _handleRealtimeDisconnect() {
+    _realtimeSubscription = null;
+    if (_isRealtimeConnected) {
+      _isRealtimeConnected = false;
+      if (_hasLoaded) {
+        _scheduleNextBackgroundRefresh(delay: Duration.zero);
+      }
+      notifyListeners();
+    }
+
+    if (!_hasLoaded) {
+      return;
+    }
+
+    _realtimeReconnectTimer?.cancel();
+    _realtimeReconnectTimer = Timer(_realtimeReconnectDelay, () {
+      _realtimeReconnectTimer = null;
+      _ensureRealtimeConnection();
+    });
+  }
+
+  void _handleRealtimeEvent(BotRealtimeEvent event) {
+    if (!event.hasMessageUpdate ||
+        event.message == null ||
+        event.conversation == null) {
+      return;
+    }
+
+    final conversation = event.conversation!;
+    final message = event.message!;
+    _upsertConversation(conversation);
+    _upsertRealtimeMessage(message);
+
+    if (message.author == BotMessageAuthor.contact &&
+        event.event == 'message.upsert' &&
+        message.conversationId == _selectedConversationId) {
+      unawaited(_playIncomingMessageSound());
+    }
+
+    notifyListeners();
+  }
+
+  void _upsertConversation(BotConversation conversation) {
+    final index =
+        _conversations.indexWhere((item) => item.id == conversation.id);
+    if (index >= 0) {
+      _conversations[index] = conversation;
+    } else {
+      _conversations.insert(0, conversation);
+    }
+
+    _conversations
+        .sort((left, right) => right.lastUpdated.compareTo(left.lastUpdated));
+  }
+
+  void _upsertRealtimeMessage(BotMessage message) {
+    final existing = List<BotMessage>.of(
+      _messagesByConversation[message.conversationId] ?? const <BotMessage>[],
+      growable: true,
+    );
+
+    final exactIndex = existing.indexWhere((item) => item.id == message.id);
+    if (exactIndex >= 0) {
+      existing[exactIndex] = existing[exactIndex].copyWith(
+        author: message.author,
+        body: message.body,
+        type: message.type,
+        timestamp: message.timestamp,
+        state: message.state,
+        caption: message.caption,
+        mediaUrl: message.mediaUrl,
+        thumbnailUrl: message.thumbnailUrl,
+        mimeType: message.mimeType,
+        fileName: message.fileName,
+      );
+    } else {
+      final optimisticIndex = existing.indexWhere((item) {
+        if (item.author != message.author) {
+          return false;
+        }
+        if (item.body.trim() != message.body.trim()) {
+          return false;
+        }
+
+        final delta =
+            item.timestamp.difference(message.timestamp).inSeconds.abs();
+        return delta <= 120 && item.id.startsWith('local-outbound-');
+      });
+
+      if (optimisticIndex >= 0) {
+        existing[optimisticIndex] = message.copyWith(
+          localPreviewBytes: existing[optimisticIndex].localPreviewBytes,
+          localFileBytes: existing[optimisticIndex].localFileBytes,
+        );
+      } else {
+        existing.add(message);
+      }
+    }
+
+    existing.sort((left, right) => left.timestamp.compareTo(right.timestamp));
+    _messagesByConversation[message.conversationId] = existing;
+  }
+
   Duration get _nextBackgroundRefreshInterval {
+    if (_isRealtimeConnected) {
+      return _selectedConversationId.isEmpty
+          ? _realtimeIdleFallbackRefreshInterval
+          : _realtimeActiveFallbackRefreshInterval;
+    }
+
     return _selectedConversationId.isEmpty
-        ? _idleBackgroundRefreshInterval
-        : _activeConversationRefreshInterval;
+        ? _pollingIdleBackgroundRefreshInterval
+        : _pollingActiveConversationRefreshInterval;
   }
 
   void _ensureBackgroundRefresh() {
@@ -958,6 +1137,7 @@ class BotCenterController extends ChangeNotifier {
           (message) =>
               message.author == BotMessageAuthor.operator &&
               (message.state == BotMessageState.queued ||
+                  message.state == BotMessageState.failed ||
                   message.id.startsWith('local-outbound-')),
         )
         .toList(growable: false);
@@ -971,6 +1151,9 @@ class BotCenterController extends ChangeNotifier {
     for (final optimisticMessage in optimistic) {
       final alreadyPresent = fetched.any((remoteMessage) {
         if (remoteMessage.author != BotMessageAuthor.operator) {
+          return false;
+        }
+        if (remoteMessage.type != optimisticMessage.type) {
           return false;
         }
         if (remoteMessage.body.trim() != optimisticMessage.body.trim()) {
@@ -992,9 +1175,218 @@ class BotCenterController extends ChangeNotifier {
     return merged;
   }
 
+  Future<void> _sendMediaPayload({
+    required String conversationId,
+    required BotMessageType type,
+    required Uint8List bytes,
+    required Uint8List? previewBytes,
+    required String fileName,
+    required String mimeType,
+    required String caption,
+    String? replaceMessageId,
+  }) async {
+    final optimisticId = replaceMessageId ??
+        'local-outbound-media-${DateTime.now().microsecondsSinceEpoch}';
+    final optimisticMessage = BotMessage(
+      id: optimisticId,
+      conversationId: conversationId,
+      author: BotMessageAuthor.operator,
+      body: caption.isNotEmpty
+          ? caption
+          : type == BotMessageType.image
+              ? 'Imagen enviada'
+              : 'Video enviado',
+      type: type,
+      timestamp: DateTime.now(),
+      state: BotMessageState.queued,
+      caption: caption.isNotEmpty ? caption : null,
+      mimeType: mimeType,
+      fileName: fileName,
+      localPreviewBytes: previewBytes,
+      localFileBytes: bytes,
+    );
+
+    if (replaceMessageId == null) {
+      _appendOptimisticMessage(optimisticMessage);
+    } else {
+      _replaceMessage(conversationId, optimisticId, optimisticMessage);
+    }
+
+    _isSendingMessage = true;
+    _actionMessage = null;
+    notifyListeners();
+
+    try {
+      final sentMessage = await _repository.sendMediaMessage(
+        conversationId: conversationId,
+        bytes: bytes,
+        fileName: fileName,
+        mimeType: mimeType,
+        mediaType: type,
+        caption: caption.isEmpty ? null : caption,
+      );
+
+      _replaceMessage(
+        conversationId,
+        optimisticId,
+        sentMessage.copyWith(
+          clearLocalFileBytes: true,
+          clearLocalPreviewBytes: true,
+        ),
+      );
+      await selectConversation(conversationId, forceReload: true);
+      await _reloadGlobalLists();
+      _actionMessage =
+          type == BotMessageType.image ? 'Imagen enviada.' : 'Video enviado.';
+    } catch (error) {
+      _replaceMessage(
+        conversationId,
+        optimisticId,
+        optimisticMessage.copyWith(state: BotMessageState.failed),
+      );
+      _actionMessage = 'No se pudo enviar el archivo. ${error.toString()}';
+    } finally {
+      _isSendingMessage = false;
+      notifyListeners();
+    }
+  }
+
+  Future<_PickedMedia?> _pickMedia(BotMessageType type) async {
+    final allowedExtensions = type == BotMessageType.image
+        ? const ['jpg', 'jpeg', 'png', 'webp']
+        : const ['mp4', 'mov', 'm4v', 'webm'];
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions,
+      withData: true,
+    );
+
+    final file = picked?.files.single;
+    final rawBytes = file?.bytes;
+    if (file == null || rawBytes == null || rawBytes.isEmpty) {
+      return null;
+    }
+
+    if (type == BotMessageType.video && rawBytes.length > 20 * 1024 * 1024) {
+      _actionMessage =
+          'El video supera 20 MB. Selecciona un archivo más liviano para evitar fallos de carga.';
+      notifyListeners();
+      return null;
+    }
+
+    if (type == BotMessageType.image) {
+      final compressed = _compressImage(rawBytes, file.name);
+      return _PickedMedia(
+        bytes: compressed.bytes,
+        previewBytes: compressed.previewBytes,
+        fileName: compressed.fileName,
+        mimeType: compressed.mimeType,
+      );
+    }
+
+    return _PickedMedia(
+      bytes: rawBytes,
+      previewBytes: null,
+      fileName: file.name,
+      mimeType: _inferMimeType(file.name, fallback: 'video/mp4'),
+    );
+  }
+
+  _CompressedImage _compressImage(Uint8List rawBytes, String fileName) {
+    final decoded = img.decodeImage(rawBytes);
+    if (decoded == null) {
+      return _CompressedImage(
+        bytes: rawBytes,
+        previewBytes: rawBytes,
+        fileName: fileName,
+        mimeType: _inferMimeType(fileName, fallback: 'image/jpeg'),
+      );
+    }
+
+    final resized = decoded.width > 1600 || decoded.height > 1600
+        ? img.copyResize(
+            decoded,
+            width: decoded.width >= decoded.height ? 1600 : null,
+            height: decoded.height > decoded.width ? 1600 : null,
+          )
+        : decoded;
+
+    final lowerName = fileName.toLowerCase();
+    if (lowerName.endsWith('.png')) {
+      final encoded = Uint8List.fromList(img.encodePng(resized, level: 6));
+      return _CompressedImage(
+        bytes: encoded,
+        previewBytes: encoded,
+        fileName: fileName,
+        mimeType: 'image/png',
+      );
+    }
+
+    final encoded = Uint8List.fromList(img.encodeJpg(resized, quality: 82));
+    final normalizedName =
+        lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')
+            ? fileName
+            : '${fileName.replaceAll(RegExp(r'\.[^.]+$'), '')}.jpg';
+    return _CompressedImage(
+      bytes: encoded,
+      previewBytes: encoded,
+      fileName: normalizedName,
+      mimeType: 'image/jpeg',
+    );
+  }
+
+  String _inferMimeType(String fileName, {required String fallback}) {
+    final normalized = fileName.toLowerCase();
+    if (normalized.endsWith('.png')) {
+      return 'image/png';
+    }
+    if (normalized.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+    if (normalized.endsWith('.mov')) {
+      return 'video/quicktime';
+    }
+    if (normalized.endsWith('.webm')) {
+      return 'video/webm';
+    }
+    if (normalized.endsWith('.mp4') || normalized.endsWith('.m4v')) {
+      return 'video/mp4';
+    }
+    return fallback;
+  }
+
+  void _replaceMessage(
+    String conversationId,
+    String messageId,
+    BotMessage replacement,
+  ) {
+    final existing = _messagesByConversation[conversationId];
+    if (existing == null) {
+      _messagesByConversation[conversationId] = [replacement];
+      return;
+    }
+
+    final updated = List<BotMessage>.of(existing, growable: true);
+    for (var index = 0; index < updated.length; index++) {
+      if (updated[index].id == messageId) {
+        updated[index] = replacement;
+        _messagesByConversation[conversationId] = updated;
+        return;
+      }
+    }
+
+    updated.add(replacement);
+    _messagesByConversation[conversationId] = updated;
+  }
+
   @override
   void dispose() {
     _backgroundRefreshTimer?.cancel();
+    _realtimeReconnectTimer?.cancel();
+    unawaited(_realtimeSubscription?.cancel());
     messageComposerController.removeListener(_handleComposerChanged);
     messageComposerController.dispose();
     promptTitleController.dispose();
@@ -1002,4 +1394,32 @@ class BotCenterController extends ChangeNotifier {
     promptEditorController.dispose();
     super.dispose();
   }
+}
+
+class _PickedMedia {
+  const _PickedMedia({
+    required this.bytes,
+    required this.previewBytes,
+    required this.fileName,
+    required this.mimeType,
+  });
+
+  final Uint8List bytes;
+  final Uint8List? previewBytes;
+  final String fileName;
+  final String mimeType;
+}
+
+class _CompressedImage {
+  const _CompressedImage({
+    required this.bytes,
+    required this.previewBytes,
+    required this.fileName,
+    required this.mimeType,
+  });
+
+  final Uint8List bytes;
+  final Uint8List previewBytes;
+  final String fileName;
+  final String mimeType;
 }

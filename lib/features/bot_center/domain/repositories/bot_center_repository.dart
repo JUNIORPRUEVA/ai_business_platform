@@ -6,6 +6,7 @@ import '../entities/bot_conversation.dart';
 import '../entities/bot_memory_item.dart';
 import '../entities/bot_message.dart';
 import '../entities/bot_prompt_config.dart';
+import '../entities/bot_realtime_event.dart';
 import '../entities/bot_service_status.dart';
 import '../entities/bot_tool.dart';
 
@@ -13,6 +14,8 @@ abstract interface class BotCenterRepository {
   Future<BotCenterOverview> getOverview({String? conversationId});
 
   Future<List<BotConversation>> getConversations();
+
+  Stream<BotRealtimeEvent> connectRealtime();
 
   Future<List<BotMessage>> getMessages(String conversationId);
 
@@ -59,6 +62,15 @@ abstract interface class BotCenterRepository {
   Future<String> sendTestMessage({
     required String conversationId,
     required String message,
+  });
+
+  Future<BotMessage> sendMediaMessage({
+    required String conversationId,
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+    required BotMessageType mediaType,
+    String? caption,
   });
 
   Future<BotAiProcessResult> processAiMessage({

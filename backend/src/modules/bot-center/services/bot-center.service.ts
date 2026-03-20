@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, MessageEvent, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Observable } from 'rxjs';
 import { Repository } from 'typeorm';
 
 import { DatabaseService } from '../../../common/database/database.service';
@@ -17,12 +18,16 @@ import { ConversationsService } from '../../conversations/conversations.service'
 import { ConversationEntity } from '../../conversations/entities/conversation.entity';
 import { MessagesService } from '../../messages/messages.service';
 import { MessageEntity } from '../../messages/entities/message.entity';
+import { StorageService } from '../../storage/storage.service';
 import { WhatsappChannelConfigEntity } from '../../whatsapp-channel/entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsapp-channel-log.entity';
 import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
+import { WhatsappAttachmentService } from '../../whatsapp-channel/services/whatsapp-attachment.service';
+import { BotCenterRealtimeService } from '../../whatsapp-channel/services/bot-center-realtime.service';
 import { WhatsappMessagingService } from '../../whatsapp-channel/services/whatsapp-messaging.service';
 import { CreateMemoryItemDto } from '../dto/create-memory-item.dto';
+import { SendTestMediaDto } from '../dto/send-test-media.dto';
 import { SendTestMessageDto } from '../dto/send-test-message.dto';
 import { UpdateMemoryItemDto } from '../dto/update-memory-item.dto';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
@@ -41,6 +46,7 @@ import {
   BotStatusCardResponse,
   BotStatusResponse,
   BotToolResponse,
+  SendMediaMessageResponse,
   SendTestMessageResponse,
   ServiceHealthState,
 } from '../types/bot-center.types';
@@ -81,8 +87,15 @@ export class BotCenterService {
     private readonly conversationsRepository: Repository<ConversationEntity>,
     @InjectRepository(MessageEntity)
     private readonly appMessagesRepository: Repository<MessageEntity>,
+    private readonly attachmentsService: WhatsappAttachmentService,
+    private readonly botCenterRealtimeService: BotCenterRealtimeService,
     private readonly whatsappMessagingService: WhatsappMessagingService,
+    private readonly storageService: StorageService,
   ) {}
+
+  streamRealtimeEvents(companyId: string): Observable<MessageEvent> {
+    return this.botCenterRealtimeService.streamCompanyEvents(companyId);
+  }
 
   async getOverview(
     companyId: string,
@@ -132,7 +145,7 @@ export class BotCenterService {
       take: 500,
     });
 
-    return messages.map((message) => this.toBotMessage(message));
+    return Promise.all(messages.map((message) => this.toBotMessage(message)));
   }
 
   async getConversationContext(
@@ -567,13 +580,90 @@ export class BotCenterService {
       conversationId: payload.conversationId,
     });
 
+    if (persistedOutbound) {
+      await this.botCenterRealtimeService.publishMessageUpsert(persistedOutbound);
+    }
+
     return {
       success: true,
       conversationId: payload.conversationId,
       message: 'Mensaje enviado correctamente por el canal de WhatsApp.',
       dispatchedAt,
       status: 'accepted',
-      ...(persistedOutbound ? { outboundMessage: this.toBotMessage(persistedOutbound) } : {}),
+      ...(persistedOutbound ? { outboundMessage: await this.toBotMessage(persistedOutbound) } : {}),
+    };
+  }
+
+  async uploadConversationMedia(
+    companyId: string,
+    conversationId: string,
+    params: {
+      buffer: Buffer;
+      originalName: string;
+      mimeType?: string;
+      fileType: string;
+    },
+  ): Promise<{ attachmentId: string; mimeType: string | null; fileName: string | null }> {
+    await this.getConversationOrThrow(companyId, conversationId);
+
+    const attachment = await this.attachmentsService.uploadManual({
+      companyId,
+      conversationId,
+      buffer: params.buffer,
+      originalName: params.originalName,
+      mimeType: params.mimeType,
+      fileType: params.fileType,
+    });
+
+    return {
+      attachmentId: attachment.id,
+      mimeType: attachment.mimeType,
+      fileName: attachment.originalName,
+    };
+  }
+
+  async sendMediaMessage(
+    companyId: string,
+    payload: SendTestMediaDto,
+  ): Promise<SendMediaMessageResponse> {
+    const conversation = await this.getConversationOrThrow(companyId, payload.conversationId);
+    const dispatchedAt = new Date().toISOString();
+
+    const outboundDispatch = await this.whatsappMessagingService.sendMedia(companyId, {
+      channelConfigId: conversation.channelConfigId,
+      remoteJid: conversation.remoteJid,
+      attachmentId: payload.attachmentId,
+      mediaType: payload.mediaType,
+      mimeType: payload.mimeType,
+      fileName: payload.fileName,
+      caption: payload.caption,
+    });
+
+    const outboundMessageId = this.readString(this.readMap(outboundDispatch['message'])['id']);
+    const persistedOutbound = outboundMessageId
+      ? await this.messagesRepository.findOne({ where: { id: outboundMessageId, companyId } })
+      : null;
+
+    this.prependLog(companyId, {
+      id: `log-${Date.now() + 3}`,
+      timestamp: dispatchedAt,
+      eventType: 'Media dispatched',
+      summary: `Se envio un ${payload.mediaType} desde Bot Center a ${this.toPhoneDisplay(conversation.remoteJid)}.`,
+      severity: 'info',
+      conversationId: payload.conversationId,
+    });
+
+    if (persistedOutbound) {
+      await this.botCenterRealtimeService.publishMessageUpsert(persistedOutbound);
+    }
+
+    return {
+      success: true,
+      conversationId: payload.conversationId,
+      message: 'Archivo enviado correctamente por el canal de WhatsApp.',
+      dispatchedAt,
+      status: 'accepted',
+      ...(persistedOutbound ? { outboundMessage: await this.toBotMessage(persistedOutbound) } : {}),
     };
   }
 
@@ -868,12 +958,25 @@ export class BotCenterService {
     };
   }
 
-  private toBotMessage(message: WhatsappMessageEntity): BotMessageResponse {
+  private async toBotMessage(message: WhatsappMessageEntity): Promise<BotMessageResponse> {
+    const mediaUrl = await this.resolveMessageMediaUrl(
+      message.companyId,
+      message.mediaStoragePath,
+      message.mediaUrl,
+    );
+    const thumbnailUrl = await this.resolveMessageThumbnailUrl(message, mediaUrl);
+
     return {
       id: message.id,
       conversationId: message.chatId,
       author: message.fromMe ? 'operator' : 'contact',
       body: this.describeMessage(message),
+      type: message.messageType,
+      caption: message.caption,
+      mimeType: message.mimeType,
+      mediaUrl,
+      thumbnailUrl,
+      fileName: message.mediaOriginalName,
       timestamp: message.createdAt.toISOString(),
       state: this.resolveMessageState(message.status),
     };
@@ -924,8 +1027,9 @@ export class BotCenterService {
         return 'delivered';
       case 'read':
         return 'read';
-      case 'received':
       case 'failed':
+        return 'failed';
+      case 'received':
       default:
         return 'sent';
     }
@@ -979,6 +1083,53 @@ export class BotCenterService {
     }
 
     return `+${digits}`;
+  }
+
+  private async resolveMessageMediaUrl(
+    companyId: string,
+    storagePath: string | null,
+    fallbackUrl: string | null,
+  ): Promise<string | null> {
+    if (storagePath) {
+      try {
+        return (await this.storageService.presignDownload({ companyId, key: storagePath })).url;
+      } catch {
+        // fall through to the fallback URL
+      }
+    }
+
+    return this.resolveStoredUrlCandidate(companyId, fallbackUrl);
+  }
+
+  private async resolveMessageThumbnailUrl(
+    message: WhatsappMessageEntity,
+    mediaUrl: string | null,
+  ): Promise<string | null> {
+    if (message.messageType === 'image') {
+      return mediaUrl;
+    }
+
+    return this.resolveStoredUrlCandidate(message.companyId, message.thumbnailUrl);
+  }
+
+  private async resolveStoredUrlCandidate(
+    companyId: string,
+    candidate: string | null,
+  ): Promise<string | null> {
+    const trimmed = candidate?.trim() ?? '';
+    if (!trimmed) {
+      return null;
+    }
+
+    if (!trimmed.startsWith(`${companyId}/`)) {
+      return trimmed;
+    }
+
+    try {
+      return (await this.storageService.presignDownload({ companyId, key: trimmed })).url;
+    } catch {
+      return null;
+    }
   }
 
   private extractRemoteJidFromLog(log: WhatsappChannelLogEntity): string | null {

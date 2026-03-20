@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../../../../core/config/app_backend_config.dart';
 
@@ -128,6 +129,129 @@ class BotCenterApiClient {
     return _decodeObject(response.body);
   }
 
+  Stream<Map<String, dynamic>> connectJsonEventStream(String path) async* {
+    final headers = await _headers();
+    headers['Accept'] = 'text/event-stream';
+
+    final uri = _buildUri(path);
+    final request = http.Request('GET', uri)..headers.addAll(headers);
+
+    http.StreamedResponse response;
+    try {
+      if (kDebugMode) {
+        debugPrint('[BOT_CENTER_HTTP] sse-connect url=$uri');
+      }
+      response = await _client.send(request).timeout(_timeout);
+    } on TimeoutException {
+      throw BotCenterApiException(
+        'The Bot Center realtime stream timed out. Backend=$_baseUrl',
+      );
+    } on http.ClientException catch (error) {
+      throw BotCenterApiException(
+        'Unable to reach Bot Center realtime stream: ${error.message}. Backend=$_baseUrl',
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final body = await response.stream.bytesToString();
+      throw BotCenterApiException(
+        _extractError(body) ??
+            'Bot Center realtime stream failed with status ${response.statusCode}. Backend=$_baseUrl',
+        statusCode: response.statusCode,
+      );
+    }
+
+    String? eventName;
+    final dataLines = <String>[];
+
+    await for (final line in response.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())) {
+      if (line.isEmpty) {
+        if (dataLines.isNotEmpty) {
+          final rawData = dataLines.join('\n');
+          dynamic decoded;
+          try {
+            decoded = jsonDecode(rawData);
+          } catch (_) {
+            decoded = <String, dynamic>{'raw': rawData};
+          }
+
+          yield <String, dynamic>{
+            'event': eventName ?? 'message',
+            'data': decoded,
+          };
+        }
+
+        eventName = null;
+        dataLines.clear();
+        continue;
+      }
+
+      if (line.startsWith('event:')) {
+        eventName = line.substring(6).trim();
+        continue;
+      }
+
+      if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trimLeft());
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required List<int> bytes,
+    required String fileName,
+    String fieldName = 'file',
+    String? contentType,
+    Map<String, String>? queryParameters,
+  }) async {
+    final headers = await _headers();
+    headers.remove('Content-Type');
+
+    final uri = _buildUri(path, queryParameters);
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll(headers)
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          fieldName,
+          bytes,
+          filename: fileName,
+          contentType:
+              contentType == null ? null : MediaType.parse(contentType),
+        ),
+      );
+
+    try {
+      if (kDebugMode) {
+        debugPrint(
+            '[BOT_CENTER_HTTP] request method=POST url=$uri multipart=true');
+      }
+
+      final streamed = await request.send().timeout(_timeout);
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw BotCenterApiException(
+          _extractError(response.body) ??
+              'Bot Center request failed with status ${response.statusCode}. Backend=$_baseUrl',
+          statusCode: response.statusCode,
+        );
+      }
+
+      return _decodeObject(response.body);
+    } on TimeoutException {
+      throw BotCenterApiException(
+        'The Bot Center request timed out. Backend=$_baseUrl',
+      );
+    } on http.ClientException catch (error) {
+      throw BotCenterApiException(
+        'Unable to reach Bot Center backend: ${error.message}. Backend=$_baseUrl',
+      );
+    }
+  }
+
   Future<Map<String, String>> _headers() async {
     final headers = <String, String>{
       'Accept': 'application/json',
@@ -171,8 +295,11 @@ class BotCenterApiClient {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         if (kDebugMode) {
           final raw = response.body;
-          final compact = raw.length <= 2000 ? raw : '${raw.substring(0, 2000)}…(truncated)';
-          debugPrint('[BOT_CENTER_HTTP] error-body method=$method url=$uri body=$compact');
+          final compact = raw.length <= 2000
+              ? raw
+              : '${raw.substring(0, 2000)}…(truncated)';
+          debugPrint(
+              '[BOT_CENTER_HTTP] error-body method=$method url=$uri body=$compact');
         }
         throw BotCenterApiException(
           _extractError(response.body) ??

@@ -139,7 +139,7 @@ export class WhatsappMessagingService {
       rawPayloadJson: response,
     });
 
-    return { message: this.toMessageView(message), evolution: response };
+    return { message: await this.toMessageView(message), evolution: response };
   }
 
   async sendMedia(companyId: string, payload: SendWhatsappMediaDto): Promise<Record<string, unknown>> {
@@ -209,7 +209,10 @@ export class WhatsappMessagingService {
       mediaStoragePath: outboundMedia.storagePath,
       mediaOriginalName: payload.fileName ?? outboundMedia.fileName,
       mediaSizeBytes: outboundMedia.sizeBytes,
-      thumbnailUrl: null,
+      thumbnailUrl:
+        payload.mediaType === 'image'
+          ? outboundMedia.storagePath
+          : outboundMedia.thumbnailStoragePath,
       rawPayloadJson: response,
     });
 
@@ -217,7 +220,7 @@ export class WhatsappMessagingService {
       await this.attachmentsService.bindToMessage(payload.attachmentId, message.id);
     }
 
-    return { message: this.toMessageView(message), evolution: response };
+    return { message: await this.toMessageView(message), evolution: response };
   }
 
   async sendAudio(companyId: string, payload: SendWhatsappAudioDto): Promise<Record<string, unknown>> {
@@ -291,7 +294,7 @@ export class WhatsappMessagingService {
       await this.attachmentsService.bindToMessage(payload.attachmentId, message.id);
     }
 
-    return { message: this.toMessageView(message), evolution: response };
+    return { message: await this.toMessageView(message), evolution: response };
   }
 
   async listChats(companyId: string): Promise<Record<string, unknown>[]> {
@@ -325,7 +328,7 @@ export class WhatsappMessagingService {
       take: 500,
     });
 
-    return messages.map((message) => this.toMessageView(message));
+    return Promise.all(messages.map((message) => this.toMessageView(message)));
   }
 
   async getMessage(companyId: string, messageId: string): Promise<Record<string, unknown>> {
@@ -340,7 +343,13 @@ export class WhatsappMessagingService {
   async updateStoredMedia(
     companyId: string,
     messageId: string,
-    params: { mediaStoragePath: string; mediaSizeBytes: string | null },
+    params: {
+      mediaStoragePath: string;
+      mediaSizeBytes: string | null;
+      mimeType?: string | null;
+      mediaUrl?: string | null;
+      thumbnailUrl?: string | null;
+    },
   ): Promise<WhatsappMessageEntity> {
     const message = await this.messagesRepository.findOne({ where: { id: messageId, companyId } });
     if (!message) {
@@ -349,6 +358,15 @@ export class WhatsappMessagingService {
 
     message.mediaStoragePath = params.mediaStoragePath;
     message.mediaSizeBytes = params.mediaSizeBytes;
+    if (params.mimeType !== undefined) {
+      message.mimeType = params.mimeType;
+    }
+    if (params.mediaUrl !== undefined) {
+      message.mediaUrl = params.mediaUrl;
+    }
+    if (params.thumbnailUrl !== undefined) {
+      message.thumbnailUrl = params.thumbnailUrl;
+    }
     return this.messagesRepository.save(message);
   }
 
@@ -594,7 +612,14 @@ export class WhatsappMessagingService {
     companyId: string,
     attachmentId?: string,
     directUrl?: string,
-  ): Promise<{ url: string; mimeType: string | null; fileName: string; storagePath: string | null; sizeBytes: string | null }> {
+  ): Promise<{
+    url: string;
+    mimeType: string | null;
+    fileName: string;
+    storagePath: string | null;
+    sizeBytes: string | null;
+    thumbnailStoragePath: string | null;
+  }> {
     if (attachmentId) {
       const attachment = await this.attachmentsService.getById(companyId, attachmentId);
       const signed = await this.storageService.presignDownload({
@@ -608,6 +633,7 @@ export class WhatsappMessagingService {
         fileName: attachment.originalName ?? 'file',
         storagePath: attachment.storagePath,
         sizeBytes: attachment.sizeBytes,
+        thumbnailStoragePath: this.readString(attachment.metadataJson['thumbnailStoragePath']) || null,
       };
     }
 
@@ -618,6 +644,7 @@ export class WhatsappMessagingService {
         fileName: 'remote-file',
         storagePath: null,
         sizeBytes: null,
+        thumbnailStoragePath: null,
       };
     }
 
@@ -993,7 +1020,14 @@ export class WhatsappMessagingService {
       normalized.endsWith('pn');
   }
 
-  private toMessageView(message: WhatsappMessageEntity): Record<string, unknown> {
+  private async toMessageView(message: WhatsappMessageEntity): Promise<Record<string, unknown>> {
+    const mediaUrl = await this.resolveMessageAssetUrl(
+      message.companyId,
+      message.mediaStoragePath,
+      message.mediaUrl,
+    );
+    const thumbnailUrl = await this.resolveMessageThumbnailUrl(message, mediaUrl);
+
     return {
       id: message.id,
       chatId: message.chatId,
@@ -1001,15 +1035,16 @@ export class WhatsappMessagingService {
       remoteJid: message.remoteJid,
       fromMe: message.fromMe,
       direction: message.direction,
+      type: message.messageType,
       messageType: message.messageType,
       textBody: message.textBody,
       caption: message.caption,
       mimeType: message.mimeType,
-      mediaUrl: message.mediaUrl,
+      mediaUrl,
       mediaStoragePath: message.mediaStoragePath,
       mediaOriginalName: message.mediaOriginalName,
       mediaSizeBytes: message.mediaSizeBytes,
-      thumbnailUrl: message.thumbnailUrl,
+      thumbnailUrl,
       status: message.status,
       sentAt: message.sentAt?.toISOString(),
       deliveredAt: message.deliveredAt?.toISOString(),
@@ -1017,6 +1052,53 @@ export class WhatsappMessagingService {
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),
     };
+  }
+
+  private async resolveMessageAssetUrl(
+    companyId: string,
+    storagePath: string | null,
+    fallbackUrl: string | null,
+  ): Promise<string | null> {
+    if (storagePath) {
+      try {
+        return (await this.storageService.presignDownload({ companyId, key: storagePath })).url;
+      } catch {
+        // fall back to existing URL when signing fails
+      }
+    }
+
+    return this.resolveStoredUrlOrFallback(companyId, fallbackUrl);
+  }
+
+  private async resolveMessageThumbnailUrl(
+    message: WhatsappMessageEntity,
+    resolvedMediaUrl: string | null,
+  ): Promise<string | null> {
+    if (message.messageType === 'image') {
+      return resolvedMediaUrl;
+    }
+
+    return this.resolveStoredUrlOrFallback(message.companyId, message.thumbnailUrl);
+  }
+
+  private async resolveStoredUrlOrFallback(
+    companyId: string,
+    candidate: string | null,
+  ): Promise<string | null> {
+    const trimmed = candidate?.trim() ?? '';
+    if (!trimmed) {
+      return null;
+    }
+
+    if (!trimmed.startsWith(`${companyId}/`)) {
+      return trimmed;
+    }
+
+    try {
+      return (await this.storageService.presignDownload({ companyId, key: trimmed })).url;
+    } catch {
+      return null;
+    }
   }
 
   private normalizeMessageStatus(status: unknown, fromMe: boolean): string | null {

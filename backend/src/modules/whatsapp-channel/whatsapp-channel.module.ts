@@ -18,6 +18,7 @@ import { WhatsappAttachmentService } from './services/whatsapp-attachment.servic
 import { WhatsappChannelConfigService } from './services/whatsapp-channel-config.service';
 import { WhatsappChannelLogService } from './services/whatsapp-channel-log.service';
 import { WhatsappJidResolverService } from './services/whatsapp-jid-resolver.service';
+import { BotCenterRealtimeService } from './services/bot-center-realtime.service';
 import { WhatsappMessagingService } from './services/whatsapp-messaging.service';
 import { WhatsappSecretService } from './services/whatsapp-secret.service';
 import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
@@ -44,6 +45,7 @@ import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
     WhatsappJidResolverService,
     WhatsappChannelConfigService,
     WhatsappAttachmentService,
+    BotCenterRealtimeService,
     WhatsappMessagingService,
     WhatsappWebhookService,
     WhatsappWebhookProcessor,
@@ -56,6 +58,7 @@ import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
     WhatsappJidResolverService,
     WhatsappChannelConfigService,
     WhatsappAttachmentService,
+    BotCenterRealtimeService,
     WhatsappMessagingService,
     WhatsappWebhookService,
   ],

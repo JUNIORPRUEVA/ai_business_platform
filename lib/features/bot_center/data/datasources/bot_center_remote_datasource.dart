@@ -2,10 +2,12 @@ import '../models/bot_ai_process_result_model.dart';
 import '../models/bot_center_overview_model.dart';
 import '../models/bot_contact_context_model.dart';
 import '../models/bot_conversation_model.dart';
+import '../models/bot_center_model_parsers.dart';
 import '../models/bot_log_model.dart';
 import '../models/bot_memory_item_model.dart';
 import '../models/bot_message_model.dart';
 import '../models/bot_prompt_config_model.dart';
+import '../models/bot_realtime_event_model.dart';
 import '../models/bot_status_model.dart';
 import '../models/bot_test_message_result_model.dart';
 import '../models/bot_tool_model.dart';
@@ -33,6 +35,12 @@ class BotCenterRemoteDataSource {
         .map((item) =>
             BotConversationModel.fromJson(Map<String, dynamic>.from(item)))
         .toList(growable: false);
+  }
+
+  Stream<BotRealtimeEventModel> connectRealtime() {
+    return _apiClient
+        .connectJsonEventStream('/bot-center/stream')
+        .map(BotRealtimeEventModel.fromEnvelope);
   }
 
   Future<List<BotMessageModel>> getMessages(String conversationId) async {
@@ -155,6 +163,51 @@ class BotCenterRemoteDataSource {
     });
 
     return BotTestMessageResultModel.fromJson(json);
+  }
+
+  Future<BotMessageModel> sendMediaMessage({
+    required String conversationId,
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+    required String mediaType,
+    String? caption,
+  }) async {
+    final upload = await _apiClient.postMultipart(
+      '/bot-center/media-upload/$conversationId',
+      bytes: bytes,
+      fileName: fileName,
+      contentType: mimeType,
+      queryParameters: {'fileType': mediaType},
+    );
+
+    final attachmentId = parseString(upload['attachmentId']);
+    if (attachmentId.isEmpty) {
+      throw const BotCenterApiException(
+          'El backend no devolvió attachmentId para el archivo.');
+    }
+
+    final json = await _apiClient.postJson('/bot-center/media-message', {
+      'conversationId': conversationId,
+      'attachmentId': attachmentId,
+      'mediaType': mediaType,
+      'mimeType': mimeType,
+      'fileName': fileName,
+      if (caption != null && caption.trim().isNotEmpty)
+        'caption': caption.trim(),
+    });
+
+    final outboundMessage = json['outboundMessage'];
+    if (outboundMessage is Map<String, dynamic>) {
+      return BotMessageModel.fromJson(outboundMessage);
+    }
+    if (outboundMessage is Map) {
+      return BotMessageModel.fromJson(
+          Map<String, dynamic>.from(outboundMessage));
+    }
+
+    throw const BotCenterApiException(
+        'El backend no devolvió el mensaje saliente del archivo.');
   }
 
   Future<BotAiProcessResultModel> processAiMessage({

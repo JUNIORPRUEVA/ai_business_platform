@@ -1,10 +1,28 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  MessageEvent,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Sse,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 import { AuthUser } from '../../../common/auth/auth.types';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { Roles } from '../../../common/auth/roles.decorator';
 import { RolesGuard } from '../../../common/auth/roles.guard';
 import { CreateMemoryItemDto } from '../dto/create-memory-item.dto';
+import { SendTestMediaDto } from '../dto/send-test-media.dto';
 import { SendTestMessageDto } from '../dto/send-test-message.dto';
 import { UpdateMemoryItemDto } from '../dto/update-memory-item.dto';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
@@ -22,6 +40,7 @@ import {
   BotPromptConfigResponse,
   BotStatusResponse,
   BotToolResponse,
+  SendMediaMessageResponse,
   SendTestMessageResponse,
 } from '../types/bot-center.types';
 import { BotCenterService } from '../services/bot-center.service';
@@ -43,6 +62,11 @@ export class BotCenterController {
   @Get('conversations')
   getConversations(@CurrentUser() user: AuthUser): Promise<BotConversationSummary[]> {
     return this.botCenterService.listConversations(user.companyId);
+  }
+
+  @Sse('stream')
+  streamRealtime(@CurrentUser() user: AuthUser): Observable<MessageEvent> {
+    return this.botCenterService.streamRealtimeEvents(user.companyId);
   }
 
   @Get('conversations/:id/messages')
@@ -149,6 +173,30 @@ export class BotCenterController {
     @Body() payload: SendTestMessageDto,
   ): Promise<SendTestMessageResponse> {
     return this.botCenterService.sendTestMessage(user.companyId, payload);
+  }
+
+  @Post('media-upload/:conversationId')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadMedia(
+    @CurrentUser() user: AuthUser,
+    @Param('conversationId') conversationId: string,
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string },
+    @Query('fileType') fileType = 'document',
+  ): Promise<{ attachmentId: string; mimeType: string | null; fileName: string | null }> {
+    return this.botCenterService.uploadConversationMedia(user.companyId, conversationId, {
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      fileType,
+    });
+  }
+
+  @Post('media-message')
+  async sendMediaMessage(
+    @CurrentUser() user: AuthUser,
+    @Body() payload: SendTestMediaDto,
+  ): Promise<SendMediaMessageResponse> {
+    return this.botCenterService.sendMediaMessage(user.companyId, payload);
   }
 
   @Post('process-message')

@@ -6,6 +6,7 @@ import '../../domain/entities/bot_conversation.dart';
 import '../../domain/entities/bot_memory_item.dart';
 import '../../domain/entities/bot_message.dart';
 import '../../domain/entities/bot_prompt_config.dart';
+import '../../domain/entities/bot_realtime_event.dart';
 import '../../domain/entities/bot_service_status.dart';
 import '../../domain/entities/bot_tool.dart';
 import '../../domain/repositories/bot_center_repository.dart';
@@ -56,6 +57,15 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
       fallback: _seedDataSource!.getConversations,
     );
     return models.map((item) => item.toEntity()).toList(growable: false);
+  }
+
+  @override
+  Stream<BotRealtimeEvent> connectRealtime() {
+    if (_enableSeedFallback && _seedDataSource != null) {
+      return const Stream<BotRealtimeEvent>.empty();
+    }
+
+    return _remoteDataSource.connectRealtime().map((item) => item.toEntity());
   }
 
   @override
@@ -234,6 +244,32 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
   }
 
   @override
+  Future<BotMessage> sendMediaMessage({
+    required String conversationId,
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+    required BotMessageType mediaType,
+    String? caption,
+  }) async {
+    final model = await _resolve(
+      () => _remoteDataSource.sendMediaMessage(
+        conversationId: conversationId,
+        bytes: bytes,
+        fileName: fileName,
+        mimeType: mimeType,
+        mediaType: _messageTypeToApi(mediaType),
+        caption: caption,
+      ),
+      fallback: () => throw const BotCenterApiException(
+        'El envío de archivos requiere el backend real del Bot Center.',
+      ),
+    );
+
+    return model.toEntity();
+  }
+
+  @override
   Future<BotAiProcessResult> processAiMessage({
     required String conversationId,
     required String message,
@@ -274,6 +310,19 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
         return 'longTerm';
       case BotMemoryType.operational:
         return 'operational';
+    }
+  }
+
+  String _messageTypeToApi(BotMessageType type) {
+    switch (type) {
+      case BotMessageType.image:
+        return 'image';
+      case BotMessageType.video:
+        return 'video';
+      default:
+        throw const BotCenterApiException(
+          'Solo se admiten imágenes y videos en el envío de archivos.',
+        );
     }
   }
 }
