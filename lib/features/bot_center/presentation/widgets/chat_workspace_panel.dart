@@ -344,6 +344,7 @@ class _MessageViewport extends StatefulWidget {
 
 class _MessageViewportState extends State<_MessageViewport> {
   late final ScrollController _scrollController = ScrollController();
+  var _lastRenderedMessageCount = 0;
 
   @override
   void dispose() {
@@ -376,6 +377,8 @@ class _MessageViewportState extends State<_MessageViewport> {
       );
     }
 
+    _scheduleScrollToBottomIfNeeded(controller.selectedMessages.length);
+
     return Scrollbar(
       controller: _scrollController,
       child: ListView.separated(
@@ -388,6 +391,26 @@ class _MessageViewportState extends State<_MessageViewport> {
         },
       ),
     );
+  }
+
+  void _scheduleScrollToBottomIfNeeded(int nextMessageCount) {
+    if (nextMessageCount == _lastRenderedMessageCount) {
+      return;
+    }
+
+    _lastRenderedMessageCount = nextMessageCount;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+
+      final position = _scrollController.position.maxScrollExtent;
+      _scrollController.animateTo(
+        position,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 }
 
@@ -528,12 +551,20 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isUser = message.author == BotMessageAuthor.contact;
-    final bubbleColor = isUser ? const Color(0xFF2563EB) : Colors.white;
-    final textColor = isUser ? Colors.white : const Color(0xFF0F172A);
-    final metaColor =
-        isUser ? Colors.white.withValues(alpha: 0.78) : const Color(0xFF64748B);
-    final alignment = isUser ? Alignment.centerRight : Alignment.centerLeft;
+    final isIncoming = message.isIncoming;
+    final isSystem = message.author == BotMessageAuthor.system;
+    final isOutgoing = !isIncoming && !isSystem;
+    final bubbleColor = isOutgoing
+        ? const Color(0xFF2563EB)
+        : isSystem
+            ? const Color(0xFFE2E8F0)
+            : Colors.white;
+    final textColor = isOutgoing ? Colors.white : const Color(0xFF0F172A);
+    final metaColor = isOutgoing
+        ? Colors.white.withValues(alpha: 0.82)
+        : const Color(0xFF64748B);
+    final alignment = isOutgoing ? Alignment.centerRight : Alignment.centerLeft;
+    final timeLabel = formatConversationTimestamp(message.timestamp);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -544,13 +575,14 @@ class _MessageBubble extends StatelessWidget {
               maxWidth: constraints.maxWidth * 0.70,
             ),
             child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: isOutgoing
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
-                    '${_senderLabel(message.author)} • ${formatConversationTimestamp(message.timestamp)}',
+                    _senderLabel(message.author),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontSize: 11,
                           color: metaColor,
@@ -564,12 +596,39 @@ class _MessageBubble extends StatelessWidget {
                     color: bubbleColor,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Text(message.body,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontSize: 13,
-                            color: textColor,
-                            height: 1.35,
-                          )),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        message.body,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontSize: 13,
+                              color: textColor,
+                              height: 1.35,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            timeLabel,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontSize: 10,
+                                      color: metaColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                          ),
+                          if (isOutgoing) ...[
+                            const SizedBox(width: 6),
+                            _MessageStateIndicator(state: message.state),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -577,6 +636,30 @@ class _MessageBubble extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _MessageStateIndicator extends StatelessWidget {
+  const _MessageStateIndicator({required this.state});
+
+  final BotMessageState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = switch (state) {
+      BotMessageState.queued => Icons.schedule_rounded,
+      BotMessageState.sent => Icons.done_rounded,
+      BotMessageState.delivered => Icons.done_all_rounded,
+      BotMessageState.read => Icons.done_all_rounded,
+    };
+    final color = switch (state) {
+      BotMessageState.read => const Color(0xFF7DD3FC),
+      BotMessageState.queued => Colors.white70,
+      BotMessageState.sent => Colors.white70,
+      BotMessageState.delivered => Colors.white70,
+    };
+
+    return Icon(icon, size: 16, color: color);
   }
 }
 

@@ -809,3 +809,52 @@ test('BotCenterService prioriza numeros limpios sobre JIDs al resolver contacts.
   assert.equal(fromSendTarget, '18295344286');
   assert.equal(fromCanonicalJid, '18295344286');
 });
+
+test('BotCenterService resuelve canal por fallback cuando no existe bridge exacto por instanceName', async () => {
+  const service = new BotCenterService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      getByInstanceNameUnsafe: async () => {
+        throw new Error('channel not found');
+      },
+      list: async () => ([
+        {
+          id: 'channel-1',
+          companyId: 'company-1',
+          type: 'whatsapp',
+          config: { instanceName: 'demo-instance' },
+        },
+      ]),
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      findOne: async () => ({
+        id: 'config-1',
+        companyId: 'company-1',
+        instanceName: 'demo-instance',
+      }),
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const channel = await (service as any).resolveCanonicalChannel('company-1', {
+    channelConfigId: 'config-1',
+  });
+
+  assert.deepEqual(channel, { id: 'channel-1' });
+});

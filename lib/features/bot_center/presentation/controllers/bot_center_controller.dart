@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../data/repositories/bot_center_repository_impl.dart';
 import '../../domain/entities/bot_ai_process_result.dart';
@@ -482,7 +483,8 @@ class BotCenterController extends ChangeNotifier {
       _messagesByConversation.remove(conversationId);
       _contactsByConversation.remove(conversationId);
       _memoryByConversation.remove(conversationId);
-      _conversations.removeWhere((conversation) => conversation.id == conversationId);
+      _conversations
+          .removeWhere((conversation) => conversation.id == conversationId);
       _activityLogs.removeWhere((log) => log.conversationId == conversationId);
 
       final nextConversationId =
@@ -500,8 +502,7 @@ class BotCenterController extends ChangeNotifier {
           'Contacto y conversaciÃ³n eliminados. Se regenerarÃ¡n con el prÃ³ximo mensaje entrante.';
       _errorMessage = null;
     } catch (error) {
-      _actionMessage =
-          'No se pudo eliminar el contacto. ${error.toString()}';
+      _actionMessage = 'No se pudo eliminar el contacto. ${error.toString()}';
     } finally {
       _isRefreshing = false;
       if (_hasLoaded) {
@@ -804,6 +805,17 @@ class BotCenterController extends ChangeNotifier {
       return;
     }
 
+    final previousUnreadCounts = <String, int>{
+      for (final conversation in _conversations)
+        conversation.id: conversation.unreadCount,
+    };
+    final previousSelectedConversationId = _selectedConversationId;
+    final previousSelectedMessages = List<BotMessage>.of(
+      _messagesByConversation[previousSelectedConversationId] ??
+          const <BotMessage>[],
+      growable: false,
+    );
+
     try {
       final results = await Future.wait<dynamic>([
         _repository.getConversations(),
@@ -814,6 +826,10 @@ class BotCenterController extends ChangeNotifier {
       final refreshedLogs = results[1] as List<BotActivityLog>;
       final nextSelectedConversationId =
           _resolveBackgroundSelectedConversationId(refreshedConversations);
+      var shouldPlayIncomingSound = _hasIncomingUnreadDelta(
+        previousUnreadCounts: previousUnreadCounts,
+        refreshedConversations: refreshedConversations,
+      );
 
       _conversations
         ..clear()
@@ -833,6 +849,13 @@ class BotCenterController extends ChangeNotifier {
 
         _selectedConversationId = nextSelectedConversationId;
         final refreshedMessages = conversationResults[0] as List<BotMessage>;
+        shouldPlayIncomingSound = shouldPlayIncomingSound ||
+            _hasIncomingMessageDelta(
+              previousSelectedConversationId: previousSelectedConversationId,
+              nextSelectedConversationId: nextSelectedConversationId,
+              previousSelectedMessages: previousSelectedMessages,
+              refreshedMessages: refreshedMessages,
+            );
         _messagesByConversation[nextSelectedConversationId] =
             _mergeOptimisticMessages(
                 nextSelectedConversationId, refreshedMessages);
@@ -845,10 +868,61 @@ class BotCenterController extends ChangeNotifier {
       _errorMessage = null;
       _conversationErrorMessage = null;
       notifyListeners();
+
+      if (shouldPlayIncomingSound) {
+        unawaited(_playIncomingMessageSound());
+      }
     } catch (_) {
       // Preserve the current UI state if a background sync fails.
     } finally {
       _scheduleNextBackgroundRefresh();
+    }
+  }
+
+  bool _hasIncomingUnreadDelta({
+    required Map<String, int> previousUnreadCounts,
+    required List<BotConversation> refreshedConversations,
+  }) {
+    for (final conversation in refreshedConversations) {
+      final previousUnread = previousUnreadCounts[conversation.id] ?? 0;
+      if (conversation.unreadCount > previousUnread) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool _hasIncomingMessageDelta({
+    required String previousSelectedConversationId,
+    required String nextSelectedConversationId,
+    required List<BotMessage> previousSelectedMessages,
+    required List<BotMessage> refreshedMessages,
+  }) {
+    if (previousSelectedConversationId.isEmpty ||
+        previousSelectedConversationId != nextSelectedConversationId) {
+      return false;
+    }
+
+    final previousIncomingIds = previousSelectedMessages
+        .where((message) => message.isIncoming)
+        .map((message) => message.id)
+        .toSet();
+
+    for (final message in refreshedMessages) {
+      if (message.isIncoming && !previousIncomingIds.contains(message.id)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  Future<void> _playIncomingMessageSound() async {
+    try {
+      await SystemSound.play(SystemSoundType.alert);
+    } catch (_) {
+      // Skip audio feedback if the current platform does not expose system sounds.
     }
   }
 

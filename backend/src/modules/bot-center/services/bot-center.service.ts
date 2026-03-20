@@ -812,6 +812,22 @@ export class BotCenterService {
       }
       return { id: channel.id };
     } catch {
+      const channels = await this.channelsService.list(companyId);
+      const whatsappChannels = channels.filter((channel) => channel.type === 'whatsapp');
+
+      const exactConfigMatch = whatsappChannels.find((channel) => {
+        const configuredInstanceName = this.readString(channel.config['instanceName']);
+        return configuredInstanceName.length > 0 && configuredInstanceName === config.instanceName;
+      });
+      if (exactConfigMatch) {
+        return { id: exactConfigMatch.id };
+      }
+
+      const onlyWhatsappChannel = whatsappChannels.length === 1 ? whatsappChannels[0] : null;
+      if (onlyWhatsappChannel) {
+        return { id: onlyWhatsappChannel.id };
+      }
+
       return null;
     }
   }
