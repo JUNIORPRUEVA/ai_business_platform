@@ -762,11 +762,6 @@ export class BotCenterService {
   }
 
   private resolveConversationContactPhone(chat: WhatsappChatEntity): string {
-    const canonicalRemoteJid = chat.canonicalRemoteJid?.trim();
-    if (canonicalRemoteJid) {
-      return canonicalRemoteJid;
-    }
-
     const sendTarget = chat.sendTarget?.trim();
     if (sendTarget) {
       return sendTarget;
@@ -777,7 +772,23 @@ export class BotCenterService {
       return canonicalNumber;
     }
 
-    return chat.remoteJid;
+    const canonicalRemoteJid = chat.canonicalRemoteJid?.trim();
+    if (canonicalRemoteJid?.endsWith('@s.whatsapp.net')) {
+      const digits = canonicalRemoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+      if (digits) {
+        return digits;
+      }
+    }
+
+    const remoteJid = chat.remoteJid?.trim() ?? '';
+    if (remoteJid.endsWith('@s.whatsapp.net')) {
+      const digits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+      if (digits) {
+        return digits;
+      }
+    }
+
+    return remoteJid;
   }
 
   private async resolveCanonicalChannel(

@@ -201,6 +201,7 @@ export class WhatsappWebhookService {
       data,
       key,
       message,
+      payload,
       remoteJid,
       messageId,
     );
@@ -345,12 +346,18 @@ export class WhatsappWebhookService {
     data: Record<string, unknown>,
     key: Record<string, unknown>,
     message: Record<string, unknown>,
+    payload: Record<string, unknown>,
     remoteJid: string,
     messageId: string | null,
   ): Promise<string | null> {
-    const localCanonical = this.jidResolver.extractCanonicalRemoteJid(data, key, message, remoteJid);
+    const localCanonical = this.jidResolver.extractCanonicalRemoteJidFromPayload(payload);
     if (localCanonical) {
       return localCanonical;
+    }
+
+    const fallbackCanonical = this.jidResolver.extractCanonicalRemoteJid(data, key, message, remoteJid);
+    if (fallbackCanonical) {
+      return fallbackCanonical;
     }
 
     if (!remoteJid.endsWith('@lid')) {

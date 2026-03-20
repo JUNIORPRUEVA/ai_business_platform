@@ -113,6 +113,55 @@ export class WhatsappJidResolverService {
     const key = this.readMap(data['key']);
     const message = this.readMap(data['message']);
     const remoteJid = this.readString(key['remoteJid']);
+    const disallowedDigits = this.buildDisallowedDigits(remoteJid);
+    const rootCandidates = [
+      this.readString(payload['participant']),
+      this.readString(payload['participantJid']),
+      this.readString(payload['participantPn']),
+      this.readString(payload['sender']),
+      this.readString(payload['senderJid']),
+      this.readString(payload['senderPn']),
+      this.readString(payload['senderId']),
+      this.readString(payload['sender_id']),
+      this.readString(payload['author']),
+      this.readString(payload['authorJid']),
+      this.readString(payload['from']),
+      this.readString(payload['fromJid']),
+      this.readString(payload['fromPn']),
+      this.readString(payload['owner']),
+      this.readString(payload['ownerJid']),
+      this.readString(payload['ownerPn']),
+      this.readString(payload['phone']),
+      this.readString(payload['phoneNumber']),
+      this.readString(payload['wa_id']),
+      this.readString(payload['waId']),
+      this.readString(this.readMap(payload['source'])['participant']),
+      this.readString(this.readMap(payload['source'])['participantJid']),
+      this.readString(this.readMap(payload['source'])['participantPn']),
+      this.readString(this.readMap(payload['source'])['sender']),
+      this.readString(this.readMap(payload['source'])['senderJid']),
+      this.readString(this.readMap(payload['source'])['senderPn']),
+      this.readString(this.readMap(payload['source'])['phone']),
+      this.readString(this.readMap(payload['source'])['phoneNumber']),
+      this.readString(this.readMap(payload['source'])['wa_id']),
+      this.readString(this.readMap(payload['source'])['waId']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['id']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['jid']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['user']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['phone']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['phoneNumber']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['number']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['wa_id']),
+      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['waId']),
+    ];
+
+    for (const candidate of rootCandidates) {
+      const canonical = this.resolveCanonicalCandidate(candidate, disallowedDigits);
+      if (canonical) {
+        return canonical;
+      }
+    }
+
     return this.extractCanonicalRemoteJid(data, key, message, remoteJid);
   }
 
@@ -167,6 +216,14 @@ export class WhatsappJidResolverService {
       this.readString(this.readMap(data['source'])['phoneNumber']),
       this.readString(this.readMap(data['source'])['wa_id']),
       this.readString(this.readMap(data['source'])['waId']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['id']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['jid']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['user']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['phone']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['phoneNumber']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['number']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['wa_id']),
+      this.readString(this.readMap(this.readMap(data['source'])['owner'])['waId']),
     ];
 
     for (const candidate of candidates) {

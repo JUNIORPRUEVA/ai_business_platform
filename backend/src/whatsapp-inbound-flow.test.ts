@@ -2,9 +2,11 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { WhatsappMessagingService } from './modules/whatsapp-channel/services/whatsapp-messaging.service';
+import { WhatsappJidResolverService } from './modules/whatsapp-channel/services/whatsapp-jid-resolver.service';
 import { WhatsappWebhookService } from './modules/whatsapp-channel/services/whatsapp-webhook.service';
 import { WhatsappInstancesService } from './modules/whatsapp-instances/services/whatsapp-instances.service';
 import { EvolutionWebhookService } from './modules/evolution-webhook/services/evolution-webhook.service';
+import { BotCenterService } from './modules/bot-center/services/bot-center.service';
 
 class InMemoryRepository<T extends { id?: string; createdAt?: Date; updatedAt?: Date }> {
   constructor(private readonly items: T[] = []) {}
@@ -742,4 +744,68 @@ test('EvolutionWebhookService usa el numero canonico para contacts.phone cuando 
   assert.equal(result.normalizedMessage.senderId, '18295344286');
   assert.equal(capturedContactPhones[0], '18295344286');
   assert.equal(queuedJobs[0]['contactPhone'], '18295344286');
+});
+
+test('WhatsappJidResolverService extrae canonicalRemoteJid desde payload.sender en raiz', () => {
+  const resolver = new WhatsappJidResolverService(emptyEvolutionApiClient as never);
+
+  const canonical = resolver.extractCanonicalRemoteJidFromPayload({
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    sender: '18295344286@s.whatsapp.net',
+    data: {
+      key: {
+        remoteJid: '234840490270800@lid',
+        id: 'wamid-root-sender',
+        fromMe: false,
+      },
+      source: 'android',
+      message: {
+        conversation: 'hola',
+      },
+    },
+  });
+
+  assert.equal(canonical, '18295344286@s.whatsapp.net');
+});
+
+test('BotCenterService prioriza numeros limpios sobre JIDs al resolver contacts.phone', () => {
+  const service = new BotCenterService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const fromSendTarget = (service as any).resolveConversationContactPhone({
+    remoteJid: '234840490270800@lid',
+    canonicalRemoteJid: '18295344286@s.whatsapp.net',
+    canonicalNumber: '18295344286',
+    sendTarget: '18295344286',
+  });
+  const fromCanonicalJid = (service as any).resolveConversationContactPhone({
+    remoteJid: '18295344286@s.whatsapp.net',
+    canonicalRemoteJid: '18295344286@s.whatsapp.net',
+    canonicalNumber: null,
+    sendTarget: null,
+  });
+
+  assert.equal(fromSendTarget, '18295344286');
+  assert.equal(fromCanonicalJid, '18295344286');
 });
