@@ -858,3 +858,163 @@ test('BotCenterService resuelve canal por fallback cuando no existe bridge exact
 
   assert.deepEqual(channel, { id: 'channel-1' });
 });
+
+test('WhatsappMessagingService normaliza delivered para mensajes salientes y marca deliveredAt', async () => {
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      originalRemoteJid: '5511999999999@s.whatsapp.net',
+      rawRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalNumber: '5511999999999',
+      sendTarget: '5511999999999',
+      lastInboundJidType: 'pn',
+      replyTargetUnresolved: false,
+      pushName: 'Cliente',
+      profileName: null,
+      profilePictureUrl: null,
+      lastMessageAt: new Date(),
+      unreadCount: 0,
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([
+    {
+      id: 'message-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      chatId: 'chat-1',
+      evolutionMessageId: 'wamid-status-1',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      fromMe: true,
+      direction: 'outbound',
+      messageType: 'text',
+      textBody: 'Hola',
+      caption: null,
+      mimeType: null,
+      mediaUrl: null,
+      mediaStoragePath: null,
+      mediaOriginalName: null,
+      mediaSizeBytes: null,
+      thumbnailUrl: null,
+      rawPayloadJson: {},
+      status: 'sent',
+      sentAt: new Date('2026-03-20T04:00:00.000Z'),
+      deliveredAt: null,
+      readAt: null,
+    },
+  ]);
+
+  const service = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    { getEntity: async () => ({ id: 'config-1', companyId: 'company-1' }) } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  const message = await service.upsertInboundMessage({
+    companyId: 'company-1',
+    config: { id: 'config-1', companyId: 'company-1' } as never,
+    remoteJid: '5511999999999@s.whatsapp.net',
+    evolutionMessageId: 'wamid-status-1',
+    fromMe: true,
+    messageType: 'unknown',
+    textBody: null,
+    caption: null,
+    mimeType: null,
+    mediaUrl: null,
+    mediaOriginalName: null,
+    thumbnailUrl: null,
+    rawPayloadJson: { status: 'delivered' },
+    status: 'delivered_ack',
+  });
+
+  assert.equal(message.status, 'delivered');
+  assert.ok(message.deliveredAt instanceof Date);
+  assert.equal(message.readAt, null);
+});
+
+test('WhatsappMessagingService normaliza read para mensajes salientes y marca readAt', async () => {
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      originalRemoteJid: '5511999999999@s.whatsapp.net',
+      rawRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalRemoteJid: '5511999999999@s.whatsapp.net',
+      canonicalNumber: '5511999999999',
+      sendTarget: '5511999999999',
+      lastInboundJidType: 'pn',
+      replyTargetUnresolved: false,
+      pushName: 'Cliente',
+      profileName: null,
+      profilePictureUrl: null,
+      lastMessageAt: new Date(),
+      unreadCount: 0,
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([
+    {
+      id: 'message-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      chatId: 'chat-1',
+      evolutionMessageId: 'wamid-status-2',
+      remoteJid: '5511999999999@s.whatsapp.net',
+      fromMe: true,
+      direction: 'outbound',
+      messageType: 'text',
+      textBody: 'Hola',
+      caption: null,
+      mimeType: null,
+      mediaUrl: null,
+      mediaStoragePath: null,
+      mediaOriginalName: null,
+      mediaSizeBytes: null,
+      thumbnailUrl: null,
+      rawPayloadJson: {},
+      status: 'sent',
+      sentAt: new Date('2026-03-20T04:00:00.000Z'),
+      deliveredAt: null,
+      readAt: null,
+    },
+  ]);
+
+  const service = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    { getEntity: async () => ({ id: 'config-1', companyId: 'company-1' }) } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  const message = await service.upsertInboundMessage({
+    companyId: 'company-1',
+    config: { id: 'config-1', companyId: 'company-1' } as never,
+    remoteJid: '5511999999999@s.whatsapp.net',
+    evolutionMessageId: 'wamid-status-2',
+    fromMe: true,
+    messageType: 'unknown',
+    textBody: null,
+    caption: null,
+    mimeType: null,
+    mediaUrl: null,
+    mediaOriginalName: null,
+    thumbnailUrl: null,
+    rawPayloadJson: { status: 'read' },
+    status: 'READ_ACK',
+  });
+
+  assert.equal(message.status, 'read');
+  assert.ok(message.deliveredAt instanceof Date);
+  assert.ok(message.readAt instanceof Date);
+});

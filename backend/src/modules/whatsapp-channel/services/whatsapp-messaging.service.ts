@@ -449,13 +449,16 @@ export class WhatsappMessagingService {
     rawPayloadJson: Record<string, unknown>;
     status?: string;
   }): Promise<WhatsappMessageEntity> {
+    const normalizedStatus = this.normalizeMessageStatus(params.status, params.fromMe);
+
     if (params.evolutionMessageId) {
       const existing = await this.messagesRepository.findOne({
         where: { companyId: params.companyId, evolutionMessageId: params.evolutionMessageId },
       });
       if (existing) {
-        existing.status = params.status ?? existing.status;
+        existing.status = normalizedStatus ?? existing.status;
         existing.rawPayloadJson = params.rawPayloadJson;
+        this.applyMessageStatusTimestamps(existing, existing.status);
         return this.messagesRepository.save(existing);
       }
     }
@@ -493,11 +496,13 @@ export class WhatsappMessagingService {
       mediaSizeBytes: null,
       thumbnailUrl: params.thumbnailUrl,
       rawPayloadJson: params.rawPayloadJson,
-      status: params.status ?? (params.fromMe ? 'sent' : 'received'),
+      status: normalizedStatus ?? (params.fromMe ? 'sent' : 'received'),
       sentAt: params.fromMe ? new Date() : null,
       deliveredAt: null,
       readAt: null,
     });
+
+    this.applyMessageStatusTimestamps(entity, entity.status);
 
     return this.messagesRepository.save(entity);
   }
@@ -522,6 +527,7 @@ export class WhatsappMessagingService {
     await this.chatsRepository.save(params.chat);
 
     const key = this.readMap(params.response['key']);
+    const normalizedStatus = this.normalizeMessageStatus(this.readString(params.response['status']), true);
     const entity = this.messagesRepository.create({
       companyId: params.companyId,
       channelConfigId: params.config.id,
@@ -540,11 +546,13 @@ export class WhatsappMessagingService {
       mediaSizeBytes: params.mediaSizeBytes,
       thumbnailUrl: params.thumbnailUrl,
       rawPayloadJson: params.rawPayloadJson,
-      status: this.readString(params.response['status']) || 'sent',
+      status: normalizedStatus ?? 'sent',
       sentAt: new Date(),
       deliveredAt: null,
       readAt: null,
     });
+
+    this.applyMessageStatusTimestamps(entity, entity.status);
 
     return this.messagesRepository.save(entity);
   }
@@ -976,6 +984,74 @@ export class WhatsappMessagingService {
       createdAt: message.createdAt.toISOString(),
       updatedAt: message.updatedAt.toISOString(),
     };
+  }
+
+  private normalizeMessageStatus(status: string | undefined, fromMe: boolean): string | null {
+    const normalized = this.readString(status).trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+
+    if (normalized === 'queued' || normalized === 'pending') {
+      return 'queued';
+    }
+
+    if (
+      normalized === 'sent' ||
+      normalized === 'server_ack' ||
+      normalized === 'device_sent' ||
+      normalized === 'ack'
+    ) {
+      return 'sent';
+    }
+
+    if (
+      normalized === 'delivered' ||
+      normalized === 'delivery_ack' ||
+      normalized === 'delivered_ack' ||
+      normalized === 'received'
+    ) {
+      return fromMe ? 'delivered' : 'received';
+    }
+
+    if (
+      normalized === 'read' ||
+      normalized === 'read_ack' ||
+      normalized === 'played' ||
+      normalized === 'played_ack'
+    ) {
+      return 'read';
+    }
+
+    if (normalized === 'failed' || normalized === 'error') {
+      return 'failed';
+    }
+
+    return normalized;
+  }
+
+  private applyMessageStatusTimestamps(message: WhatsappMessageEntity, status: string): void {
+    if (!message.fromMe) {
+      return;
+    }
+
+    const now = new Date();
+    if (status === 'sent' && !message.sentAt) {
+      message.sentAt = now;
+      return;
+    }
+
+    if (status === 'delivered') {
+      message.sentAt ??= now;
+      message.deliveredAt ??= now;
+      return;
+    }
+
+    if (status === 'read') {
+      message.sentAt ??= now;
+      message.deliveredAt ??= now;
+      message.readAt ??= now;
+    }
   }
 
   private readMap(value: unknown): Record<string, unknown> {

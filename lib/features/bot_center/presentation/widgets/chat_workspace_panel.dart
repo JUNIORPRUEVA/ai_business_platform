@@ -653,7 +653,7 @@ class _MessageStateIndicator extends StatelessWidget {
       BotMessageState.read => Icons.done_all_rounded,
     };
     final color = switch (state) {
-      BotMessageState.read => const Color(0xFF7DD3FC),
+      BotMessageState.read => const Color(0xFF34B7F1),
       BotMessageState.queued => Colors.white70,
       BotMessageState.sent => Colors.white70,
       BotMessageState.delivered => Colors.white70,
