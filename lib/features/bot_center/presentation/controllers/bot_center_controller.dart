@@ -77,6 +77,7 @@ class BotCenterController extends ChangeNotifier {
   final List<BotTool> _tools = <BotTool>[];
   final List<BotActivityLog> _activityLogs = <BotActivityLog>[];
   final List<BotServiceStatus> _serviceStatuses = <BotServiceStatus>[];
+  final Map<String, Future<void>> _mediaLoads = <String, Future<void>>{};
   Timer? _realtimeReconnectTimer;
   StreamSubscription<BotRealtimeEvent>? _realtimeSubscription;
   Timer? _backgroundRefreshTimer;
@@ -715,6 +716,47 @@ class BotCenterController extends ChangeNotifier {
     notifyListeners();
   }
 
+  BotMessage? findMessageById(String conversationId, String messageId) {
+    final messages = _messagesByConversation[conversationId];
+    if (messages == null) {
+      return null;
+    }
+
+    for (final message in messages) {
+      if (message.id == messageId) {
+        return message;
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> ensureMessagePreviewLoaded(BotMessage message) {
+    if (!message.hasMedia || message.localPreviewBytes != null) {
+      return Future.value();
+    }
+
+    return _enqueueMediaLoad(
+      message,
+      thumbnailOnly: true,
+      assignToPreview: true,
+      assignToFile: false,
+    );
+  }
+
+  Future<void> ensureMessagePlayableLoaded(BotMessage message) {
+    if (!message.hasMedia || message.localFileBytes != null) {
+      return Future.value();
+    }
+
+    return _enqueueMediaLoad(
+      message,
+      thumbnailOnly: false,
+      assignToPreview: message.isImage,
+      assignToFile: true,
+    );
+  }
+
   void _applyOverview(
     BotCenterOverview overview, {
     bool preserveDraftMessage = false,
@@ -900,7 +942,9 @@ class BotCenterController extends ChangeNotifier {
 
     final exactIndex = existing.indexWhere((item) => item.id == message.id);
     if (exactIndex >= 0) {
-      existing[exactIndex] = existing[exactIndex].copyWith(
+      existing[exactIndex] = _mergeMediaPresentation(
+        existing[exactIndex],
+        existing[exactIndex].copyWith(
         author: message.author,
         body: message.body,
         type: message.type,
@@ -911,6 +955,7 @@ class BotCenterController extends ChangeNotifier {
         thumbnailUrl: message.thumbnailUrl,
         mimeType: message.mimeType,
         fileName: message.fileName,
+        ),
       );
     } else {
       final optimisticIndex = existing.indexWhere((item) {
@@ -927,9 +972,12 @@ class BotCenterController extends ChangeNotifier {
       });
 
       if (optimisticIndex >= 0) {
-        existing[optimisticIndex] = message.copyWith(
-          localPreviewBytes: existing[optimisticIndex].localPreviewBytes,
-          localFileBytes: existing[optimisticIndex].localFileBytes,
+        existing[optimisticIndex] = _mergeMediaPresentation(
+          existing[optimisticIndex],
+          message.copyWith(
+            localPreviewBytes: existing[optimisticIndex].localPreviewBytes,
+            localFileBytes: existing[optimisticIndex].localFileBytes,
+          ),
         );
       } else {
         existing.add(message);
@@ -1148,7 +1196,7 @@ class BotCenterController extends ChangeNotifier {
     final merged = <BotMessage>[...fetchedGrowable];
 
     for (final optimisticMessage in optimistic) {
-      final alreadyPresent = fetched.any((remoteMessage) {
+      final matchedIndex = merged.indexWhere((remoteMessage) {
         if (remoteMessage.author != BotMessageAuthor.operator) {
           return false;
         }
@@ -1165,7 +1213,12 @@ class BotCenterController extends ChangeNotifier {
         return deltaSeconds <= 120;
       });
 
-      if (!alreadyPresent) {
+      if (matchedIndex >= 0) {
+        merged[matchedIndex] = _mergeMediaPresentation(
+          optimisticMessage,
+          merged[matchedIndex],
+        );
+      } else {
         merged.add(optimisticMessage);
       }
     }
@@ -1228,9 +1281,11 @@ class BotCenterController extends ChangeNotifier {
       _replaceMessage(
         conversationId,
         optimisticId,
-        sentMessage.copyWith(
-          clearLocalFileBytes: true,
-          clearLocalPreviewBytes: true,
+        _mergeMediaPresentation(
+          optimisticMessage,
+          sentMessage.copyWith(
+            clearLocalFileBytes: true,
+          ),
         ),
       );
       await selectConversation(conversationId, forceReload: true);
@@ -1379,6 +1434,82 @@ class BotCenterController extends ChangeNotifier {
 
     updated.add(replacement);
     _messagesByConversation[conversationId] = updated;
+  }
+
+  Future<void> _enqueueMediaLoad(
+    BotMessage message, {
+    required bool thumbnailOnly,
+    required bool assignToPreview,
+    required bool assignToFile,
+  }) {
+    final key = '${message.id}:${thumbnailOnly ? 'thumb' : 'media'}';
+    final existing = _mediaLoads[key];
+    if (existing != null) {
+      return existing;
+    }
+
+    final future = _loadMediaBytes(
+      message,
+      thumbnailOnly: thumbnailOnly,
+      assignToPreview: assignToPreview,
+      assignToFile: assignToFile,
+    ).whenComplete(() => _mediaLoads.remove(key));
+    _mediaLoads[key] = future;
+    return future;
+  }
+
+  Future<void> _loadMediaBytes(
+    BotMessage message, {
+    required bool thumbnailOnly,
+    required bool assignToPreview,
+    required bool assignToFile,
+  }) async {
+    try {
+      final bytes = await _repository.fetchMessageAssetBytes(
+        conversationId: message.conversationId,
+        messageId: message.id,
+        thumbnailOnly: thumbnailOnly,
+      );
+
+      final current = findMessageById(message.conversationId, message.id);
+      if (current == null) {
+        return;
+      }
+
+      _replaceMessage(
+        current.conversationId,
+        current.id,
+        current.copyWith(
+          localPreviewBytes:
+              assignToPreview ? bytes : current.localPreviewBytes,
+          localFileBytes: assignToFile ? bytes : current.localFileBytes,
+        ),
+      );
+      notifyListeners();
+    } catch (_) {
+      // Keep existing state; widgets can still fall back to remote URLs if available.
+    }
+  }
+
+  BotMessage _mergeMediaPresentation(BotMessage previous, BotMessage next) {
+    final shouldKeepLocalPreview =
+        previous.localPreviewBytes != null &&
+        next.type == BotMessageType.image &&
+        (next.thumbnailUrl?.trim().isEmpty ?? true) &&
+        (next.mediaUrl?.trim().isEmpty ?? true);
+
+    final shouldKeepLocalFile =
+        previous.localFileBytes != null &&
+        next.author == BotMessageAuthor.operator &&
+        next.state == BotMessageState.failed;
+
+    return next.copyWith(
+      localPreviewBytes:
+          shouldKeepLocalPreview ? previous.localPreviewBytes : null,
+      localFileBytes: shouldKeepLocalFile ? previous.localFileBytes : null,
+      clearLocalPreviewBytes: !shouldKeepLocalPreview,
+      clearLocalFileBytes: !shouldKeepLocalFile,
+    );
   }
 
   @override

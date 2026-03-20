@@ -43,6 +43,16 @@ class BotCenterRemoteDataSource {
         .map(BotRealtimeEventModel.fromEnvelope);
   }
 
+  Future<List<int>> fetchMessageAssetBytes({
+    required String conversationId,
+    required String messageId,
+    required bool thumbnailOnly,
+  }) {
+    return _apiClient.getBytes(
+      '/bot-center/conversations/$conversationId/messages/$messageId/${thumbnailOnly ? 'thumbnail' : 'media'}',
+    );
+  }
+
   Future<List<BotMessageModel>> getMessages(String conversationId) async {
     final json = await _apiClient
         .getJsonList('/bot-center/conversations/$conversationId/messages');

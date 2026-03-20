@@ -10,6 +10,7 @@ import '../../domain/entities/bot_realtime_event.dart';
 import '../../domain/entities/bot_service_status.dart';
 import '../../domain/entities/bot_tool.dart';
 import '../../domain/repositories/bot_center_repository.dart';
+import 'dart:typed_data';
 import '../datasources/bot_center_remote_datasource.dart';
 import '../datasources/bot_center_seed_datasource.dart';
 import '../services/bot_center_api_client.dart';
@@ -267,6 +268,26 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
     );
 
     return model.toEntity();
+  }
+
+  @override
+  Future<Uint8List> fetchMessageAssetBytes({
+    required String conversationId,
+    required String messageId,
+    required bool thumbnailOnly,
+  }) async {
+    final bytes = await _resolve(
+      () => _remoteDataSource.fetchMessageAssetBytes(
+        conversationId: conversationId,
+        messageId: messageId,
+        thumbnailOnly: thumbnailOnly,
+      ),
+      fallback: () => throw const BotCenterApiException(
+        'La descarga de multimedia requiere el backend real del Bot Center.',
+      ),
+    );
+
+    return Uint8List.fromList(bytes);
   }
 
   @override

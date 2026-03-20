@@ -9,7 +9,9 @@ import {
   Post,
   Put,
   Query,
+  Res,
   Sse,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -75,6 +77,46 @@ export class BotCenterController {
     @Param('id') conversationId: string,
   ): Promise<BotMessageResponse[]> {
     return this.botCenterService.getConversationMessages(user.companyId, conversationId);
+  }
+
+  @Get('conversations/:conversationId/messages/:messageId/media')
+  async downloadMessageMedia(
+    @CurrentUser() user: AuthUser,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @Res({ passthrough: true }) response: { setHeader(name: string, value: string): void },
+  ): Promise<StreamableFile> {
+    const asset = await this.botCenterService.downloadMessageAsset(
+      user.companyId,
+      conversationId,
+      messageId,
+      'media',
+    );
+
+    response.setHeader('Content-Type', asset.contentType);
+    response.setHeader('Content-Disposition', `inline; filename="${asset.fileName}"`);
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    return new StreamableFile(asset.buffer);
+  }
+
+  @Get('conversations/:conversationId/messages/:messageId/thumbnail')
+  async downloadMessageThumbnail(
+    @CurrentUser() user: AuthUser,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @Res({ passthrough: true }) response: { setHeader(name: string, value: string): void },
+  ): Promise<StreamableFile> {
+    const asset = await this.botCenterService.downloadMessageAsset(
+      user.companyId,
+      conversationId,
+      messageId,
+      'thumbnail',
+    );
+
+    response.setHeader('Content-Type', asset.contentType);
+    response.setHeader('Content-Disposition', `inline; filename="${asset.fileName}"`);
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    return new StreamableFile(asset.buffer);
   }
 
   @Get('conversations/:id/context')

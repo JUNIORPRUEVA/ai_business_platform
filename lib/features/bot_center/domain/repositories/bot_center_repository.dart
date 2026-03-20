@@ -9,6 +9,7 @@ import '../entities/bot_prompt_config.dart';
 import '../entities/bot_realtime_event.dart';
 import '../entities/bot_service_status.dart';
 import '../entities/bot_tool.dart';
+import 'dart:typed_data';
 
 abstract interface class BotCenterRepository {
   Future<BotCenterOverview> getOverview({String? conversationId});
@@ -71,6 +72,12 @@ abstract interface class BotCenterRepository {
     required String mimeType,
     required BotMessageType mediaType,
     String? caption,
+  });
+
+  Future<Uint8List> fetchMessageAssetBytes({
+    required String conversationId,
+    required String messageId,
+    required bool thumbnailOnly,
   });
 
   Future<BotAiProcessResult> processAiMessage({

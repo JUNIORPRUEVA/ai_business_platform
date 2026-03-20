@@ -666,6 +666,33 @@ export class BotCenterService {
     };
   }
 
+  async downloadMessageAsset(
+    companyId: string,
+    conversationId: string,
+    messageId: string,
+    variant: 'media' | 'thumbnail',
+  ): Promise<{ buffer: Buffer; contentType: string; fileName: string }> {
+    await this.getConversationOrThrow(companyId, conversationId);
+
+    const message = await this.messagesRepository.findOne({
+      where: { id: messageId, companyId, chatId: conversationId },
+    });
+    if (!message) {
+      throw new NotFoundException('Mensaje no encontrado.');
+    }
+
+    const asset = await this.resolveMessageAssetBuffer(companyId, message, variant);
+    if (!asset || !asset.buffer.length) {
+      throw new NotFoundException('No se encontró el recurso solicitado para este mensaje.');
+    }
+
+    return {
+      buffer: asset.buffer,
+      contentType: asset.contentType,
+      fileName: asset.fileName,
+    };
+  }
+
   async processDraftWithAi(
     companyId: string,
     payload: SendTestMessageDto,
@@ -1128,6 +1155,104 @@ export class BotCenterService {
       return (await this.storageService.presignDownload({ companyId, key: trimmed })).url;
     } catch {
       return null;
+    }
+  }
+
+  private async resolveMessageAssetBuffer(
+    companyId: string,
+    message: WhatsappMessageEntity,
+    variant: 'media' | 'thumbnail',
+  ): Promise<{ buffer: Buffer; contentType: string; fileName: string } | null> {
+    const storageCandidate =
+      variant === 'thumbnail'
+        ? this.resolveMessageThumbnailStoragePath(message)
+        : message.mediaStoragePath;
+
+    if (storageCandidate) {
+      const stored = await this.storageService.getObjectBuffer({
+        companyId,
+        key: storageCandidate,
+      });
+      return {
+        buffer: stored.buffer,
+        contentType: stored.contentType ?? this.resolveMessageAssetContentType(message, variant),
+        fileName: this.resolveMessageAssetFileName(message, variant),
+      };
+    }
+
+    const externalCandidate =
+      variant === 'thumbnail'
+        ? await this.resolveMessageThumbnailUrl(message, message.mediaUrl)
+        : await this.resolveMessageMediaUrl(companyId, null, message.mediaUrl);
+    if (!externalCandidate) {
+      return null;
+    }
+
+    const response = await fetch(externalCandidate);
+    if (!response.ok) {
+      return null;
+    }
+
+    return {
+      buffer: Buffer.from(await response.arrayBuffer()),
+      contentType:
+        response.headers.get('content-type') ??
+        this.resolveMessageAssetContentType(message, variant),
+      fileName: this.resolveMessageAssetFileName(message, variant),
+    };
+  }
+
+  private resolveMessageThumbnailStoragePath(message: WhatsappMessageEntity): string | null {
+    if (message.messageType === 'image') {
+      return message.mediaStoragePath;
+    }
+
+    const candidate = message.thumbnailUrl?.trim() ?? '';
+    if (!candidate) {
+      return null;
+    }
+
+    return candidate.startsWith(`${message.companyId}/`) ? candidate : null;
+  }
+
+  private resolveMessageAssetContentType(
+    message: WhatsappMessageEntity,
+    variant: 'media' | 'thumbnail',
+  ): string {
+    if (variant === 'thumbnail') {
+      return message.messageType === 'image'
+        ? (message.mimeType ?? 'image/jpeg')
+        : 'image/jpeg';
+    }
+
+    return message.mimeType ?? 'application/octet-stream';
+  }
+
+  private resolveMessageAssetFileName(
+    message: WhatsappMessageEntity,
+    variant: 'media' | 'thumbnail',
+  ): string {
+    if (variant === 'thumbnail') {
+      return `${message.id}-thumbnail.jpg`;
+    }
+
+    return message.mediaOriginalName?.trim() || `${message.id}.${this.resolveMediaExtension(message.mimeType)}`;
+  }
+
+  private resolveMediaExtension(mimeType: string | null): string {
+    switch (mimeType?.toLowerCase()) {
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'video/mp4':
+        return 'mp4';
+      case 'video/webm':
+        return 'webm';
+      case 'video/quicktime':
+        return 'mov';
+      default:
+        return 'jpg';
     }
   }
 

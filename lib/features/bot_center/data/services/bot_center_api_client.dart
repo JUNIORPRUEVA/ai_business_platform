@@ -252,6 +252,18 @@ class BotCenterApiClient {
     }
   }
 
+  Future<Uint8List> getBytes(String path) async {
+    final headers = await _headers();
+    headers.remove('Content-Type');
+    final uri = _buildUri(path);
+    final response = await _send(
+      () => _client.get(uri, headers: headers),
+      method: 'GET',
+      uri: uri,
+    );
+    return response.bodyBytes;
+  }
+
   Future<Map<String, String>> _headers() async {
     final headers = <String, String>{
       'Accept': 'application/json',

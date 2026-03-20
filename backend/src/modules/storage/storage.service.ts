@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PutObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 
 import { StorageFolder } from './dto/presign-upload.dto';
 
@@ -82,6 +83,35 @@ export class StorageService {
 
     const url = await getSignedUrl(this.s3, command, { expiresIn: expiresInSeconds });
     return { key: params.key, url, expiresInSeconds };
+  }
+
+  async getObjectBuffer(params: {
+    companyId: string;
+    key: string;
+  }): Promise<{ key: string; buffer: Buffer; contentType: string | null }> {
+    this.assertCompanyKeyOwnership(params.companyId, params.key);
+
+    const bucket = this.getBucket();
+    const response = await this.s3.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: params.key,
+      }),
+    );
+
+    const chunks: Buffer[] = [];
+    const body = response.Body as Readable | undefined;
+    if (body) {
+      for await (const chunk of body) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+    }
+
+    return {
+      key: params.key,
+      buffer: Buffer.concat(chunks),
+      contentType: response.ContentType ?? null,
+    };
   }
 
   async uploadBuffer(params: {

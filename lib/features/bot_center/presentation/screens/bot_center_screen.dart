@@ -124,7 +124,8 @@ class _BotCenterContentState extends State<BotCenterContent> {
     final baseLightTheme = AppTheme.light();
     final messagesTheme = baseLightTheme.copyWith(
       textTheme: baseLightTheme.textTheme.apply(fontFamily: 'Inter'),
-      primaryTextTheme: baseLightTheme.primaryTextTheme.apply(fontFamily: 'Inter'),
+      primaryTextTheme:
+          baseLightTheme.primaryTextTheme.apply(fontFamily: 'Inter'),
     );
 
     final content = Theme(
@@ -146,26 +147,30 @@ class _BotCenterContentState extends State<BotCenterContent> {
           builder: (context, constraints) {
             final contentPadding = widget.embedded
                 ? EdgeInsets.zero
-                : const EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+                : const EdgeInsets.symmetric(horizontal: 10, vertical: 8);
 
             // Spec: | Chats | Conversación | Contexto |
-            const chatsWidth = 300.0;
-            const contextWidth = 340.0;
-            const contextRailWidth = 44.0;
-            const columnGap = 12.0;
-            const minConversationWidth = 520.0;
+            final isWideDesktop = constraints.maxWidth >= 1320;
+            final chatsWidth = isWideDesktop ? 276.0 : 288.0;
+            final contextWidth = isWideDesktop ? 312.0 : 324.0;
+            const contextRailWidth = 40.0;
+            const columnGap = 10.0;
+            const minConversationWidth = 640.0;
 
             final contextActualWidth =
                 _isContextExpanded ? contextWidth : contextRailWidth;
 
             final fixed = chatsWidth + contextActualWidth + columnGap * 2;
             final availableConversationWidth = constraints.maxWidth - fixed;
-            final needsHorizontalScroll = availableConversationWidth < minConversationWidth;
+            final needsHorizontalScroll =
+                availableConversationWidth < minConversationWidth;
 
             final row = Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(width: chatsWidth, child: BotSidebar(controller: widget.controller)),
+                SizedBox(
+                    width: chatsWidth,
+                    child: BotSidebar(controller: widget.controller)),
                 const SizedBox(width: columnGap),
                 if (needsHorizontalScroll)
                   SizedBox(
@@ -173,7 +178,8 @@ class _BotCenterContentState extends State<BotCenterContent> {
                     child: ChatWorkspacePanel(controller: widget.controller),
                   )
                 else
-                  Expanded(child: ChatWorkspacePanel(controller: widget.controller)),
+                  Expanded(
+                      child: ChatWorkspacePanel(controller: widget.controller)),
                 const SizedBox(width: columnGap),
                 SizedBox(
                   width: contextActualWidth,
@@ -224,7 +230,8 @@ class _BotCenterContentState extends State<BotCenterContent> {
                       ),
                     ],
                   ),
-                  if (widget.controller.isInitialLoading && !widget.controller.hasLoaded)
+                  if (widget.controller.isInitialLoading &&
+                      !widget.controller.hasLoaded)
                     const Positioned.fill(
                       child: _FullScreenLoader(),
                     ),
@@ -356,4 +363,3 @@ class _InlineBanner extends StatelessWidget {
     );
   }
 }
-
