@@ -1116,6 +1116,7 @@ class BotCenterController extends ChangeNotifier {
           thumbnailUrl: message.thumbnailUrl,
           mimeType: message.mimeType,
           fileName: message.fileName,
+          durationSeconds: message.durationSeconds,
         ),
       );
     } else {
@@ -1342,8 +1343,18 @@ class BotCenterController extends ChangeNotifier {
         (_messagesByConversation[conversationId] ?? const <BotMessage>[])
             .where((message) => message.conversationId == conversationId)
             .toList(growable: false);
+    final existingById = <String, BotMessage>{
+      for (final message in existing) message.id: message,
+    };
     final fetchedGrowable = fetched
         .where((message) => message.conversationId == conversationId)
+        .map((message) {
+          final previous = existingById[message.id];
+          if (previous == null) {
+            return message;
+          }
+          return _mergeMediaPresentation(previous, message);
+        })
         .toList(growable: true);
     final optimistic = existing
         .where(
@@ -1680,21 +1691,18 @@ class BotCenterController extends ChangeNotifier {
   }
 
   BotMessage _mergeMediaPresentation(BotMessage previous, BotMessage next) {
-    final shouldKeepLocalPreview = previous.localPreviewBytes != null &&
-        next.type == BotMessageType.image &&
-        (next.thumbnailUrl?.trim().isEmpty ?? true) &&
-        (next.mediaUrl?.trim().isEmpty ?? true);
-
-    final shouldKeepLocalFile = previous.localFileBytes != null &&
-        next.author == BotMessageAuthor.operator &&
-        next.state == BotMessageState.failed;
+    final localPreviewBytes =
+      next.localPreviewBytes ??
+      (next.hasVisualMedia ? previous.localPreviewBytes : null);
+    final localFileBytes =
+      next.localFileBytes ??
+      (next.hasDownloadableAsset ? previous.localFileBytes : null);
 
     return next.copyWith(
-      localPreviewBytes:
-          shouldKeepLocalPreview ? previous.localPreviewBytes : null,
-      localFileBytes: shouldKeepLocalFile ? previous.localFileBytes : null,
-      clearLocalPreviewBytes: !shouldKeepLocalPreview,
-      clearLocalFileBytes: !shouldKeepLocalFile,
+      localPreviewBytes: localPreviewBytes,
+      localFileBytes: localFileBytes,
+      clearLocalPreviewBytes: localPreviewBytes == null,
+      clearLocalFileBytes: localFileBytes == null,
     );
   }
 

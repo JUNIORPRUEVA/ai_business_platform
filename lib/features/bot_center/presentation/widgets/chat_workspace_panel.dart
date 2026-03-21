@@ -886,6 +886,12 @@ class _MessageMediaState extends State<_MessageMedia> {
   void _schedulePreviewLoad() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(widget.controller.ensureMessagePreviewLoaded(widget.message));
+      if (widget.message.isVideo &&
+          widget.message.state != BotMessageState.queued &&
+          (widget.message.localFileBytes == null ||
+              widget.message.localFileBytes!.isEmpty)) {
+        unawaited(widget.controller.ensureMessagePlayableLoaded(widget.message));
+      }
     });
   }
 
@@ -901,11 +907,19 @@ class _MessageMediaState extends State<_MessageMedia> {
 
     return GestureDetector(
       onTap: () async {
-        if (message.isImage && (previewBytes != null || previewUrl != null)) {
+        if (message.isImage) {
+          if (previewBytes == null && previewUrl == null) {
+            await widget.controller.ensureMessagePreviewLoaded(message);
+          }
           await widget.controller.ensureMessagePlayableLoaded(message);
           final resolved = widget.controller
                   .findMessageById(message.conversationId, message.id) ??
               message;
+          final resolvedPreview = _resolveInlinePreviewBytes(resolved);
+          final resolvedPreviewUrl = _resolvePreviewUrl(resolved);
+          if (resolvedPreview == null && resolvedPreviewUrl == null) {
+            return;
+          }
           if (!context.mounted) {
             return;
           }
@@ -913,13 +927,18 @@ class _MessageMediaState extends State<_MessageMedia> {
             context: context,
             builder: (_) => _ImagePreviewDialog(message: resolved),
           );
-        } else if (message.isVideo &&
-            _resolvePlayableVideoUrl(message) != null) {
+        } else if (message.isVideo) {
           await widget.controller.ensureMessagePreviewLoaded(message);
           await widget.controller.ensureMessagePlayableLoaded(message);
           final resolved = widget.controller
                   .findMessageById(message.conversationId, message.id) ??
               message;
+          final hasPlayableVideo =
+              resolved.localFileBytes?.isNotEmpty == true ||
+                  _resolvePlayableVideoUrl(resolved) != null;
+          if (!hasPlayableVideo) {
+            return;
+          }
           if (!context.mounted) {
             return;
           }
@@ -1371,21 +1390,26 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
     }
 
     _activeAudioMessageId.value = widget.message.id;
-    final ready = await _ensureSourceReady();
+    var candidate = widget.message;
+    if (candidate.localFileBytes == null || candidate.localFileBytes!.isEmpty) {
+      await widget.controller.ensureMessagePlayableLoaded(candidate);
+      candidate = widget.controller
+              .findMessageById(candidate.conversationId, candidate.id) ??
+          candidate;
+    }
+
+    final ready = await _ensureSourceReady(candidate);
     if (!ready) {
       return;
     }
 
     await _player.play();
-    if (widget.message.localFileBytes == null) {
-      unawaited(widget.controller.ensureMessagePlayableLoaded(widget.message));
-    }
   }
 
-  Future<bool> _ensureSourceReady() async {
-    final localBytes = widget.message.localFileBytes;
+  Future<bool> _ensureSourceReady(BotMessage candidate) async {
+    final localBytes = candidate.localFileBytes;
     if (localBytes != null && localBytes.isNotEmpty) {
-      final nextKey = 'local:${widget.message.id}:${localBytes.length}';
+      final nextKey = 'local:${candidate.id}:${localBytes.length}';
       if (_openedSourceKey == nextKey) {
         return true;
       }
@@ -1394,7 +1418,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
         final directory =
             await Directory.systemTemp.createTemp('bot-center-audio-');
         final extension =
-            _fileExtension(widget.message.fileName ?? 'audio.mp3');
+            _fileExtension(candidate.fileName ?? 'audio.mp3');
         final file = File(
           '${directory.path}${Platform.pathSeparator}audio.$extension',
         );
@@ -1422,7 +1446,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
       }
     }
 
-    final remoteUrl = _resolvePlayableAudioUrl(widget.message);
+    final remoteUrl = _resolvePlayableAudioUrl(candidate);
     if (remoteUrl == null) {
       if (mounted) {
         setState(() {
@@ -1749,6 +1773,10 @@ Uint8List? _resolveInlinePreviewBytes(BotMessage message) {
   final localBytes = message.localPreviewBytes;
   if (_isValidImageBytes(localBytes)) {
     return localBytes;
+  }
+
+  if (message.isImage && _isValidImageBytes(message.localFileBytes)) {
+    return message.localFileBytes;
   }
 
   final thumbnailBytes = _tryDecodeImageSource(message.thumbnailUrl);

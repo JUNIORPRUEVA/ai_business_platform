@@ -109,7 +109,7 @@ export class BotCenterRealtimeService {
     const thumbnailUrl =
       message.messageType === 'image'
         ? mediaUrl
-        : this.resolveStoredUrlCandidate(message.thumbnailUrl);
+        : await this.resolveStoredUrlCandidate(message.companyId, message.thumbnailUrl);
 
     return {
       id: message.id,
@@ -218,11 +218,26 @@ export class BotCenterRealtimeService {
       }
     }
 
-    return this.resolveStoredUrlCandidate(fallbackUrl);
+    return this.resolveStoredUrlCandidate(companyId, fallbackUrl);
   }
 
-  private resolveStoredUrlCandidate(url: string | null): string | null {
-    const candidate = url?.trim() ?? '';
-    return candidate.length === 0 ? null : candidate;
+  private async resolveStoredUrlCandidate(
+    companyId: string,
+    candidate: string | null,
+  ): Promise<string | null> {
+    const trimmed = candidate?.trim() ?? '';
+    if (!trimmed) {
+      return null;
+    }
+
+    if (!trimmed.startsWith(`${companyId}/`)) {
+      return trimmed;
+    }
+
+    try {
+      return (await this.storageService.presignDownload({ companyId, key: trimmed })).url;
+    } catch {
+      return null;
+    }
   }
 }
