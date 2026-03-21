@@ -36,6 +36,7 @@ export interface BotMessageResponse {
   mediaUrl: string | null;
   thumbnailUrl: string | null;
   fileName: string | null;
+  duration: number | null;
   timestamp: string;
   state: BotMessageState;
 }

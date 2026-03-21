@@ -68,6 +68,9 @@ export class WhatsappMessageEntity extends BaseEntity {
   @Column({ type: 'text', name: 'thumbnail_url', nullable: true })
   thumbnailUrl!: string | null;
 
+  @Column({ type: 'integer', name: 'duration_seconds', nullable: true })
+  durationSeconds!: number | null;
+
   @Column({ type: 'jsonb', name: 'raw_payload_json', default: () => `'{}'::jsonb` })
   rawPayloadJson!: Record<string, unknown>;
 

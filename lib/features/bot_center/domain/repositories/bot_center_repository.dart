@@ -72,6 +72,7 @@ abstract interface class BotCenterRepository {
     required String mimeType,
     required BotMessageType mediaType,
     String? caption,
+    int? durationSeconds,
   });
 
   Future<Uint8List> fetchMessageAssetBytes({

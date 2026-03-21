@@ -39,6 +39,7 @@ class BotMessage {
     this.thumbnailUrl,
     this.mimeType,
     this.fileName,
+    this.durationSeconds,
     this.localPreviewBytes,
     this.localFileBytes,
   });
@@ -55,6 +56,7 @@ class BotMessage {
   final String? thumbnailUrl;
   final String? mimeType;
   final String? fileName;
+  final int? durationSeconds;
   final Uint8List? localPreviewBytes;
   final Uint8List? localFileBytes;
 
@@ -64,7 +66,11 @@ class BotMessage {
 
   bool get isVideo => type == BotMessageType.video;
 
-  bool get hasMedia => isImage || isVideo;
+  bool get isAudio => type == BotMessageType.audio;
+
+  bool get hasVisualMedia => isImage || isVideo;
+
+  bool get hasDownloadableAsset => hasVisualMedia || isAudio;
 
   bool get canRetry =>
       state == BotMessageState.failed &&
@@ -84,6 +90,7 @@ class BotMessage {
     String? thumbnailUrl,
     String? mimeType,
     String? fileName,
+    int? durationSeconds,
     Uint8List? localPreviewBytes,
     Uint8List? localFileBytes,
     bool clearLocalPreviewBytes = false,
@@ -102,6 +109,7 @@ class BotMessage {
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       mimeType: mimeType ?? this.mimeType,
       fileName: fileName ?? this.fileName,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
       localPreviewBytes: clearLocalPreviewBytes
           ? null
           : (localPreviewBytes ?? this.localPreviewBytes),

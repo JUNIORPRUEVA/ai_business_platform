@@ -252,6 +252,7 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
     required String mimeType,
     required BotMessageType mediaType,
     String? caption,
+    int? durationSeconds,
   }) async {
     final model = await _resolve(
       () => _remoteDataSource.sendMediaMessage(
@@ -261,6 +262,7 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
         mimeType: mimeType,
         mediaType: _messageTypeToApi(mediaType),
         caption: caption,
+        durationSeconds: durationSeconds,
       ),
       fallback: () => throw const BotCenterApiException(
         'El envío de archivos requiere el backend real del Bot Center.',
@@ -340,9 +342,11 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
         return 'image';
       case BotMessageType.video:
         return 'video';
+      case BotMessageType.audio:
+        return 'audio';
       default:
         throw const BotCenterApiException(
-          'Solo se admiten imágenes y videos en el envío de archivos.',
+          'Solo se admiten imágenes, videos y audios en el envío de archivos.',
         );
     }
   }

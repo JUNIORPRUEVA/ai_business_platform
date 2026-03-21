@@ -603,7 +603,7 @@ export class BotCenterService {
       mimeType?: string;
       fileType: string;
     },
-  ): Promise<{ attachmentId: string; mimeType: string | null; fileName: string | null }> {
+  ): Promise<{ attachmentId: string; mimeType: string | null; fileName: string | null; duration: number | null }> {
     await this.getConversationOrThrow(companyId, conversationId);
 
     const attachment = await this.attachmentsService.uploadManual({
@@ -619,6 +619,7 @@ export class BotCenterService {
       attachmentId: attachment.id,
       mimeType: attachment.mimeType,
       fileName: attachment.originalName,
+      duration: this.readOptionalNumber(attachment.metadataJson['durationSeconds']),
     };
   }
 
@@ -629,14 +630,21 @@ export class BotCenterService {
     const conversation = await this.getConversationOrThrow(companyId, payload.conversationId);
     const dispatchedAt = new Date().toISOString();
 
-    const outboundDispatch = await this.whatsappMessagingService.sendMedia(companyId, {
-      remoteJid: conversation.remoteJid,
-      attachmentId: payload.attachmentId,
-      mediaType: payload.mediaType,
-      mimeType: payload.mimeType,
-      fileName: payload.fileName,
-      caption: payload.caption,
-    });
+    const outboundDispatch = payload.mediaType === 'audio'
+      ? await this.whatsappMessagingService.sendAudio(companyId, {
+          remoteJid: conversation.remoteJid,
+          attachmentId: payload.attachmentId,
+          quotedMessageId: undefined,
+          durationSeconds: payload.duration,
+        })
+      : await this.whatsappMessagingService.sendMedia(companyId, {
+          remoteJid: conversation.remoteJid,
+          attachmentId: payload.attachmentId,
+          mediaType: payload.mediaType,
+          mimeType: payload.mimeType,
+          fileName: payload.fileName,
+          caption: payload.caption,
+        });
 
     const outboundMessageId = this.readString(this.readMap(outboundDispatch['message'])['id']);
     const persistedOutbound = outboundMessageId
@@ -1003,6 +1011,7 @@ export class BotCenterService {
       mediaUrl,
       thumbnailUrl,
       fileName: message.mediaOriginalName,
+      duration: message.durationSeconds,
       timestamp: message.createdAt.toISOString(),
       state: this.resolveMessageState(message.status),
     };
@@ -1245,6 +1254,16 @@ export class BotCenterService {
         return 'png';
       case 'image/webp':
         return 'webp';
+      case 'audio/mpeg':
+      case 'audio/mp3':
+        return 'mp3';
+      case 'audio/mp4':
+      case 'audio/m4a':
+      case 'audio/aac':
+        return 'm4a';
+      case 'audio/ogg':
+      case 'audio/opus':
+        return 'ogg';
       case 'video/mp4':
         return 'mp4';
       case 'video/webm':
@@ -1254,6 +1273,21 @@ export class BotCenterService {
       default:
         return 'jpg';
     }
+  }
+
+  private readOptionalNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.round(value));
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, Math.round(parsed));
+      }
+    }
+
+    return null;
   }
 
   private extractRemoteJidFromLog(log: WhatsappChannelLogEntity): string | null {

@@ -224,7 +224,7 @@ export class BotCenterController {
     @Param('conversationId') conversationId: string,
     @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string },
     @Query('fileType') fileType = 'document',
-  ): Promise<{ attachmentId: string; mimeType: string | null; fileName: string | null }> {
+  ): Promise<{ attachmentId: string; mimeType: string | null; fileName: string | null; duration: number | null }> {
     return this.botCenterService.uploadConversationMedia(user.companyId, conversationId, {
       buffer: file.buffer,
       originalName: file.originalname,

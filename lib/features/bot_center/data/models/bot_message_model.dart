@@ -15,6 +15,7 @@ class BotMessageModel {
     this.thumbnailUrl,
     this.mimeType,
     this.fileName,
+    this.durationSeconds,
   });
 
   factory BotMessageModel.fromJson(Map<String, dynamic> json) {
@@ -31,6 +32,8 @@ class BotMessageModel {
       thumbnailUrl: parseNullableString(json['thumbnailUrl']),
       mimeType: parseNullableString(json['mimeType']),
       fileName: parseNullableString(json['fileName']),
+      durationSeconds:
+          parseNullableInt(json['duration'] ?? json['durationSeconds']),
     );
   }
 
@@ -46,6 +49,7 @@ class BotMessageModel {
   final String? thumbnailUrl;
   final String? mimeType;
   final String? fileName;
+  final int? durationSeconds;
 
   BotMessage toEntity() {
     return BotMessage(
@@ -61,6 +65,7 @@ class BotMessageModel {
       thumbnailUrl: thumbnailUrl,
       mimeType: mimeType,
       fileName: fileName,
+      durationSeconds: durationSeconds,
     );
   }
 }

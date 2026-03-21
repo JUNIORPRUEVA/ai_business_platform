@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class SendWhatsappAudioDto {
   @IsString()
@@ -16,4 +16,9 @@ export class SendWhatsappAudioDto {
   @IsOptional()
   @IsString()
   quotedMessageId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  durationSeconds?: number;
 }

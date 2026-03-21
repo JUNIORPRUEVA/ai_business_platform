@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+import 'package:record/record.dart';
 
 import '../../data/repositories/bot_center_repository_impl.dart';
 import '../../domain/entities/bot_ai_process_result.dart';
@@ -41,6 +45,7 @@ class BotCenterController extends ChangeNotifier {
 
   BotCenterController({required BotCenterRepository repository})
       : _repository = repository,
+        _audioRecorder = AudioRecorder(),
         promptTitleController = TextEditingController(),
         promptDescriptionController = TextEditingController(),
         promptEditorController = TextEditingController(),
@@ -61,6 +66,7 @@ class BotCenterController extends ChangeNotifier {
   }
 
   final BotCenterRepository _repository;
+  final AudioRecorder _audioRecorder;
 
   final TextEditingController messageComposerController;
   final TextEditingController promptTitleController;
@@ -81,6 +87,8 @@ class BotCenterController extends ChangeNotifier {
   Timer? _realtimeReconnectTimer;
   StreamSubscription<BotRealtimeEvent>? _realtimeSubscription;
   Timer? _backgroundRefreshTimer;
+  Timer? _recordingTicker;
+  StreamSubscription<Amplitude>? _recordingAmplitudeSubscription;
 
   String _selectedConversationId = '';
   String _searchQuery = '';
@@ -100,6 +108,11 @@ class BotCenterController extends ChangeNotifier {
   bool _isProcessingWithAi = false;
   bool _isRealtimeConnected = false;
   bool _hasLoaded = false;
+  bool _isRecordingAudio = false;
+  bool _isPreparingAudio = false;
+  Duration _recordingDuration = Duration.zero;
+  double _recordingLevel = 0;
+  String? _recordingFilePath;
 
   List<BotConversation> get conversations => List.unmodifiable(_conversations);
   List<BotTool> get tools => List.unmodifiable(_tools);
@@ -118,10 +131,20 @@ class BotCenterController extends ChangeNotifier {
   bool get isProcessingWithAi => _isProcessingWithAi;
   bool get hasLoaded => _hasLoaded;
   bool get isRealtimeConnected => _isRealtimeConnected;
+  bool get isRecordingAudio => _isRecordingAudio;
+  bool get isPreparingAudio => _isPreparingAudio;
+  Duration get recordingDuration => _recordingDuration;
+  double get recordingLevel => _recordingLevel;
   String? get errorMessage => _errorMessage;
   String? get conversationErrorMessage => _conversationErrorMessage;
   String? get actionMessage => _actionMessage;
   bool get hasDraftMessage => messageComposerController.text.trim().isNotEmpty;
+  bool get canStartAudioRecording =>
+      hasConversationSelection &&
+      !_isSendingMessage &&
+      !_isProcessingWithAi &&
+      !_isPreparingAudio &&
+      !_isRecordingAudio;
 
   List<BotConversation> get filteredConversations {
     final normalizedQuery = _searchQuery.trim().toLowerCase();
@@ -168,7 +191,12 @@ class BotCenterController extends ChangeNotifier {
       );
 
   List<BotMessage> get selectedMessages => List.unmodifiable(
-      _messagesByConversation[_selectedConversationId] ?? const <BotMessage>[]);
+        (_messagesByConversation[_selectedConversationId] ??
+                const <BotMessage>[])
+            .where(
+          (message) => message.conversationId == _selectedConversationId,
+        ),
+      );
 
   BotContactContext get selectedContact =>
       _contactsByConversation[_selectedConversationId] ??
@@ -299,6 +327,7 @@ class BotCenterController extends ChangeNotifier {
           _mergeOptimisticMessages(conversationId, fetchedMessages);
       _contactsByConversation[conversationId] = results[1] as BotContactContext;
       _memoryByConversation[conversationId] = results[2] as List<BotMemoryItem>;
+      _primeMediaPreviewsForConversation(conversationId);
     } catch (error) {
       _conversationErrorMessage =
           'No se pudo cargar la conversación seleccionada. ${error.toString()}';
@@ -703,8 +732,138 @@ class BotCenterController extends ChangeNotifier {
       fileName: message.fileName ?? 'archivo',
       mimeType: message.mimeType ?? 'application/octet-stream',
       caption: message.caption ?? '',
+      durationSeconds: message.durationSeconds,
       replaceMessageId: message.id,
     );
+  }
+
+  Future<void> startAudioRecording() async {
+    if (!canStartAudioRecording) {
+      return;
+    }
+
+    try {
+      final hasPermission = await _audioRecorder.hasPermission();
+      if (!hasPermission) {
+        _actionMessage =
+            'No se pudo acceder al micrófono. Revisa los permisos del sistema.';
+        notifyListeners();
+        return;
+      }
+
+      final directory =
+          await Directory.systemTemp.createTemp('bot-center-voice-note-');
+      final filePath =
+          '${directory.path}${Platform.pathSeparator}voice-${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 64000,
+          sampleRate: 24000,
+          numChannels: 1,
+        ),
+        path: filePath,
+      );
+
+      _recordingFilePath = filePath;
+      _recordingDuration = Duration.zero;
+      _recordingLevel = 0;
+      _isRecordingAudio = true;
+      _isPreparingAudio = false;
+      _actionMessage = null;
+
+      _recordingTicker?.cancel();
+      _recordingTicker = Timer.periodic(
+        const Duration(milliseconds: 200),
+        (_) {
+          _recordingDuration += const Duration(milliseconds: 200);
+          notifyListeners();
+        },
+      );
+
+      _recordingAmplitudeSubscription?.cancel();
+      _recordingAmplitudeSubscription = _audioRecorder
+          .onAmplitudeChanged(const Duration(milliseconds: 120))
+          .listen((amplitude) {
+        _recordingLevel =
+            (((amplitude.current + 60) / 60).clamp(0.12, 1.0)).toDouble();
+        notifyListeners();
+      });
+
+      notifyListeners();
+    } catch (error) {
+      _clearRecordingUiState();
+      _actionMessage = 'No se pudo iniciar la grabación. ${error.toString()}';
+      await _deleteRecordingFile(_recordingFilePath);
+      notifyListeners();
+    }
+  }
+
+  Future<void> finishAudioRecording({bool cancel = false}) async {
+    if (!_isRecordingAudio && !_isPreparingAudio) {
+      return;
+    }
+
+    final recordingPath = _recordingFilePath;
+    final elapsed = _recordingDuration;
+
+    _recordingTicker?.cancel();
+    _recordingTicker = null;
+    await _recordingAmplitudeSubscription?.cancel();
+    _recordingAmplitudeSubscription = null;
+
+    if (cancel) {
+      try {
+        await _audioRecorder.cancel();
+      } catch (_) {
+        // Ignore recorder cleanup failures.
+      }
+      _clearRecordingUiState();
+      await _deleteRecordingFile(recordingPath);
+      notifyListeners();
+      return;
+    }
+
+    _isRecordingAudio = false;
+    _isPreparingAudio = true;
+    _recordingLevel = 0;
+    notifyListeners();
+
+    try {
+      final stoppedPath = await _audioRecorder.stop();
+      final resolvedPath = stoppedPath ?? recordingPath;
+      if (resolvedPath == null || resolvedPath.isEmpty) {
+        throw StateError('No se generó ningún archivo de audio.');
+      }
+
+      if (elapsed.inMilliseconds < 500) {
+        _actionMessage = 'La nota de voz es demasiado corta.';
+        return;
+      }
+
+      final audioFile = File(resolvedPath);
+      final bytes = Uint8List.fromList(await audioFile.readAsBytes());
+      final durationSeconds = math.max(1, elapsed.inMilliseconds ~/ 1000);
+
+      await _sendMediaPayload(
+        conversationId: _selectedConversationId,
+        type: BotMessageType.audio,
+        bytes: bytes,
+        previewBytes: null,
+        fileName: 'voice-note-${DateTime.now().millisecondsSinceEpoch}.m4a',
+        mimeType: 'audio/mp4',
+        caption: '',
+        durationSeconds: durationSeconds,
+      );
+    } catch (error) {
+      _actionMessage =
+          'No se pudo procesar la nota de voz. ${error.toString()}';
+    } finally {
+      _clearRecordingUiState();
+      await _deleteRecordingFile(recordingPath);
+      notifyListeners();
+    }
   }
 
   void clearActionMessage() {
@@ -732,7 +891,7 @@ class BotCenterController extends ChangeNotifier {
   }
 
   Future<void> ensureMessagePreviewLoaded(BotMessage message) {
-    if (!message.hasMedia || message.localPreviewBytes != null) {
+    if (!message.hasVisualMedia || message.localPreviewBytes != null) {
       return Future.value();
     }
 
@@ -745,7 +904,7 @@ class BotCenterController extends ChangeNotifier {
   }
 
   Future<void> ensureMessagePlayableLoaded(BotMessage message) {
-    if (!message.hasMedia || message.localFileBytes != null) {
+    if (!message.hasDownloadableAsset || message.localFileBytes != null) {
       return Future.value();
     }
 
@@ -811,6 +970,7 @@ class BotCenterController extends ChangeNotifier {
           selectedConversationData.contact;
       _memoryByConversation[_selectedConversationId] =
           selectedConversationData.memoryItems;
+      _primeMediaPreviewsForConversation(_selectedConversationId);
     } else if (_selectedConversationId.isEmpty && _conversations.isNotEmpty) {
       _selectedConversationId = _conversations.first.id;
     }
@@ -911,6 +1071,7 @@ class BotCenterController extends ChangeNotifier {
     final message = event.message!;
     _upsertConversation(conversation);
     _upsertRealtimeMessage(message);
+    unawaited(ensureMessagePreviewLoaded(message));
 
     if (message.author == BotMessageAuthor.contact &&
         event.event == 'message.upsert' &&
@@ -945,16 +1106,16 @@ class BotCenterController extends ChangeNotifier {
       existing[exactIndex] = _mergeMediaPresentation(
         existing[exactIndex],
         existing[exactIndex].copyWith(
-        author: message.author,
-        body: message.body,
-        type: message.type,
-        timestamp: message.timestamp,
-        state: message.state,
-        caption: message.caption,
-        mediaUrl: message.mediaUrl,
-        thumbnailUrl: message.thumbnailUrl,
-        mimeType: message.mimeType,
-        fileName: message.fileName,
+          author: message.author,
+          body: message.body,
+          type: message.type,
+          timestamp: message.timestamp,
+          state: message.state,
+          caption: message.caption,
+          mediaUrl: message.mediaUrl,
+          thumbnailUrl: message.thumbnailUrl,
+          mimeType: message.mimeType,
+          fileName: message.fileName,
         ),
       );
     } else {
@@ -1089,6 +1250,7 @@ class BotCenterController extends ChangeNotifier {
             conversationResults[1] as BotContactContext;
         _memoryByConversation[nextSelectedConversationId] =
             conversationResults[2] as List<BotMemoryItem>;
+        _primeMediaPreviewsForConversation(nextSelectedConversationId);
       }
 
       _errorMessage = null;
@@ -1177,8 +1339,12 @@ class BotCenterController extends ChangeNotifier {
     List<BotMessage> fetched,
   ) {
     final existing =
-        _messagesByConversation[conversationId] ?? const <BotMessage>[];
-    final fetchedGrowable = List<BotMessage>.of(fetched, growable: true);
+        (_messagesByConversation[conversationId] ?? const <BotMessage>[])
+            .where((message) => message.conversationId == conversationId)
+            .toList(growable: false);
+    final fetchedGrowable = fetched
+        .where((message) => message.conversationId == conversationId)
+        .toList(growable: true);
     final optimistic = existing
         .where(
           (message) =>
@@ -1235,6 +1401,7 @@ class BotCenterController extends ChangeNotifier {
     required String fileName,
     required String mimeType,
     required String caption,
+    int? durationSeconds,
     String? replaceMessageId,
   }) async {
     final optimisticId = replaceMessageId ??
@@ -1247,13 +1414,16 @@ class BotCenterController extends ChangeNotifier {
           ? caption
           : type == BotMessageType.image
               ? 'Imagen enviada'
-              : 'Video enviado',
+              : type == BotMessageType.video
+                  ? 'Video enviado'
+                  : 'Audio enviado',
       type: type,
       timestamp: DateTime.now(),
       state: BotMessageState.queued,
       caption: caption.isNotEmpty ? caption : null,
       mimeType: mimeType,
       fileName: fileName,
+      durationSeconds: durationSeconds,
       localPreviewBytes: previewBytes,
       localFileBytes: bytes,
     );
@@ -1276,6 +1446,7 @@ class BotCenterController extends ChangeNotifier {
         mimeType: mimeType,
         mediaType: type,
         caption: caption.isEmpty ? null : caption,
+        durationSeconds: durationSeconds,
       );
 
       _replaceMessage(
@@ -1290,8 +1461,12 @@ class BotCenterController extends ChangeNotifier {
       );
       await selectConversation(conversationId, forceReload: true);
       await _reloadGlobalLists();
-      _actionMessage =
-          type == BotMessageType.image ? 'Imagen enviada.' : 'Video enviado.';
+      _actionMessage = switch (type) {
+        BotMessageType.image => 'Imagen enviada.',
+        BotMessageType.video => 'Video enviado.',
+        BotMessageType.audio => 'Nota de voz enviada.',
+        _ => 'Archivo enviado.',
+      };
     } catch (error) {
       _replaceMessage(
         conversationId,
@@ -1491,15 +1666,26 @@ class BotCenterController extends ChangeNotifier {
     }
   }
 
+  void _primeMediaPreviewsForConversation(String conversationId) {
+    final messages = _messagesByConversation[conversationId];
+    if (messages == null || messages.isEmpty) {
+      return;
+    }
+
+    for (final message in messages) {
+      if (message.hasVisualMedia && message.localPreviewBytes == null) {
+        unawaited(ensureMessagePreviewLoaded(message));
+      }
+    }
+  }
+
   BotMessage _mergeMediaPresentation(BotMessage previous, BotMessage next) {
-    final shouldKeepLocalPreview =
-        previous.localPreviewBytes != null &&
+    final shouldKeepLocalPreview = previous.localPreviewBytes != null &&
         next.type == BotMessageType.image &&
         (next.thumbnailUrl?.trim().isEmpty ?? true) &&
         (next.mediaUrl?.trim().isEmpty ?? true);
 
-    final shouldKeepLocalFile =
-        previous.localFileBytes != null &&
+    final shouldKeepLocalFile = previous.localFileBytes != null &&
         next.author == BotMessageAuthor.operator &&
         next.state == BotMessageState.failed;
 
@@ -1516,6 +1702,9 @@ class BotCenterController extends ChangeNotifier {
   void dispose() {
     _backgroundRefreshTimer?.cancel();
     _realtimeReconnectTimer?.cancel();
+    _recordingTicker?.cancel();
+    unawaited(_recordingAmplitudeSubscription?.cancel());
+    unawaited(_audioRecorder.dispose());
     unawaited(_realtimeSubscription?.cancel());
     messageComposerController.removeListener(_handleComposerChanged);
     messageComposerController.dispose();
@@ -1523,6 +1712,35 @@ class BotCenterController extends ChangeNotifier {
     promptDescriptionController.dispose();
     promptEditorController.dispose();
     super.dispose();
+  }
+
+  void _clearRecordingUiState() {
+    _isRecordingAudio = false;
+    _isPreparingAudio = false;
+    _recordingDuration = Duration.zero;
+    _recordingLevel = 0;
+    _recordingFilePath = null;
+  }
+
+  Future<void> _deleteRecordingFile(String? path) async {
+    if (path == null || path.isEmpty) {
+      return;
+    }
+
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.parent.delete(recursive: true);
+        return;
+      }
+
+      final directory = Directory(File(path).parent.path);
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    } catch (_) {
+      // Ignore temp cleanup failures.
+    }
   }
 }
 

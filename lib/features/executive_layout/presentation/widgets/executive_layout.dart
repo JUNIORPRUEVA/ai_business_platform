@@ -133,28 +133,31 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                   Expanded(
                     child: Column(
                       children: [
-                        ExecutiveAppBar(
-                          title: isMessagesPage ? 'FULLTECH' : pageTitle,
-                          height: isMessagesPage ? 48 : 70,
-                          minimal: isMessagesPage,
-                          onToggleSidebar: () {
-                            if (isMobile) {
-                              _scaffoldKey.currentState?.openDrawer();
-                              return;
-                            }
-                            setState(() =>
-                                _isSidebarCollapsed = !_isSidebarCollapsed);
-                          },
-                        ),
+                        if (!isMessagesPage)
+                          ExecutiveAppBar(
+                            title: pageTitle,
+                            height: 70,
+                            minimal: false,
+                            onToggleSidebar: () {
+                              if (isMobile) {
+                                _scaffoldKey.currentState?.openDrawer();
+                                return;
+                              }
+                              setState(() =>
+                                  _isSidebarCollapsed = !_isSidebarCollapsed);
+                            },
+                          ),
                         Expanded(
                           child: Column(
                             children: [
                               Expanded(
                                 child: isMessagesPage
                                     ? Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 12,
+                                        padding: const EdgeInsets.fromLTRB(
+                                          10,
+                                              2,
+                                          10,
+                                          0,
                                         ),
                                         child: widget.builder(
                                             context, selectedIndex),

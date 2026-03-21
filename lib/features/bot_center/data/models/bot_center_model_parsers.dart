@@ -27,6 +27,22 @@ String? parseNullableString(dynamic rawValue) {
   return null;
 }
 
+int? parseNullableInt(dynamic rawValue) {
+  if (rawValue is int) {
+    return rawValue;
+  }
+
+  if (rawValue is num) {
+    return rawValue.round();
+  }
+
+  if (rawValue is String && rawValue.trim().isNotEmpty) {
+    return int.tryParse(rawValue);
+  }
+
+  return null;
+}
+
 int parseInt(dynamic rawValue, {int fallback = 0}) {
   if (rawValue is int) {
     return rawValue;

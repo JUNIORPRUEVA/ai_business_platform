@@ -182,6 +182,7 @@ class BotCenterRemoteDataSource {
     required String mimeType,
     required String mediaType,
     String? caption,
+    int? durationSeconds,
   }) async {
     final upload = await _apiClient.postMultipart(
       '/bot-center/media-upload/$conversationId',
@@ -205,6 +206,7 @@ class BotCenterRemoteDataSource {
       'fileName': fileName,
       if (caption != null && caption.trim().isNotEmpty)
         'caption': caption.trim(),
+      if (durationSeconds != null) 'duration': durationSeconds,
     });
 
     final outboundMessage = json['outboundMessage'];

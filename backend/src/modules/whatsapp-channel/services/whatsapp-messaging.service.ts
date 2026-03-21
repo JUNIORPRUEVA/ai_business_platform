@@ -136,6 +136,7 @@ export class WhatsappMessagingService {
       mediaOriginalName: null,
       mediaSizeBytes: null,
       thumbnailUrl: null,
+      durationSeconds: null,
       rawPayloadJson: response,
     });
 
@@ -213,6 +214,7 @@ export class WhatsappMessagingService {
         payload.mediaType === 'image'
           ? outboundMedia.storagePath
           : outboundMedia.thumbnailStoragePath,
+      durationSeconds: outboundMedia.durationSeconds,
       rawPayloadJson: response,
     });
 
@@ -287,6 +289,7 @@ export class WhatsappMessagingService {
       mediaOriginalName: outboundMedia.fileName,
       mediaSizeBytes: outboundMedia.sizeBytes,
       thumbnailUrl: null,
+      durationSeconds: payload.durationSeconds ?? outboundMedia.durationSeconds,
       rawPayloadJson: response,
     });
 
@@ -349,6 +352,7 @@ export class WhatsappMessagingService {
       mimeType?: string | null;
       mediaUrl?: string | null;
       thumbnailUrl?: string | null;
+      durationSeconds?: number | null;
     },
   ): Promise<WhatsappMessageEntity> {
     const message = await this.messagesRepository.findOne({ where: { id: messageId, companyId } });
@@ -366,6 +370,9 @@ export class WhatsappMessagingService {
     }
     if (params.thumbnailUrl !== undefined) {
       message.thumbnailUrl = params.thumbnailUrl;
+    }
+    if (params.durationSeconds !== undefined) {
+      message.durationSeconds = params.durationSeconds;
     }
     return this.messagesRepository.save(message);
   }
@@ -464,6 +471,7 @@ export class WhatsappMessagingService {
     mediaUrl: string | null;
     mediaOriginalName: string | null;
     thumbnailUrl: string | null;
+    durationSeconds: number | null;
     rawPayloadJson: Record<string, unknown>;
     status?: string;
   }): Promise<WhatsappMessageEntity> {
@@ -513,6 +521,7 @@ export class WhatsappMessagingService {
       mediaOriginalName: params.mediaOriginalName,
       mediaSizeBytes: null,
       thumbnailUrl: params.thumbnailUrl,
+      durationSeconds: params.durationSeconds,
       rawPayloadJson: params.rawPayloadJson,
       status: normalizedStatus ?? (params.fromMe ? 'sent' : 'received'),
       sentAt: params.fromMe ? new Date() : null,
@@ -572,6 +581,7 @@ export class WhatsappMessagingService {
     mediaOriginalName: string | null;
     mediaSizeBytes: string | null;
     thumbnailUrl: string | null;
+    durationSeconds: number | null;
     rawPayloadJson: Record<string, unknown>;
   }): Promise<WhatsappMessageEntity> {
     params.chat.lastMessageAt = new Date();
@@ -596,6 +606,7 @@ export class WhatsappMessagingService {
       mediaOriginalName: params.mediaOriginalName,
       mediaSizeBytes: params.mediaSizeBytes,
       thumbnailUrl: params.thumbnailUrl,
+      durationSeconds: params.durationSeconds,
       rawPayloadJson: params.rawPayloadJson,
       status: normalizedStatus ?? 'sent',
       sentAt: new Date(),
@@ -619,6 +630,7 @@ export class WhatsappMessagingService {
     storagePath: string | null;
     sizeBytes: string | null;
     thumbnailStoragePath: string | null;
+    durationSeconds: number | null;
   }> {
     if (attachmentId) {
       const attachment = await this.attachmentsService.getById(companyId, attachmentId);
@@ -634,6 +646,7 @@ export class WhatsappMessagingService {
         storagePath: attachment.storagePath,
         sizeBytes: attachment.sizeBytes,
         thumbnailStoragePath: this.readString(attachment.metadataJson['thumbnailStoragePath']) || null,
+        durationSeconds: this.readOptionalNumber(attachment.metadataJson['durationSeconds']),
       };
     }
 
@@ -645,6 +658,7 @@ export class WhatsappMessagingService {
         storagePath: null,
         sizeBytes: null,
         thumbnailStoragePath: null,
+        durationSeconds: null,
       };
     }
 
@@ -1045,6 +1059,7 @@ export class WhatsappMessagingService {
       mediaOriginalName: message.mediaOriginalName,
       mediaSizeBytes: message.mediaSizeBytes,
       thumbnailUrl,
+      duration: message.durationSeconds,
       status: message.status,
       sentAt: message.sentAt?.toISOString(),
       deliveredAt: message.deliveredAt?.toISOString(),
@@ -1079,6 +1094,21 @@ export class WhatsappMessagingService {
     }
 
     return this.resolveStoredUrlOrFallback(message.companyId, message.thumbnailUrl);
+  }
+
+  private readOptionalNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.round(value));
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, Math.round(parsed));
+      }
+    }
+
+    return null;
   }
 
   private async resolveStoredUrlOrFallback(

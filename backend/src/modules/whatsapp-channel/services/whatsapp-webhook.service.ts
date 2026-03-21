@@ -247,6 +247,7 @@ export class WhatsappWebhookService {
       mediaUrl: content.mediaUrl,
       mediaOriginalName: content.mediaOriginalName,
       thumbnailUrl: content.thumbnailUrl,
+      durationSeconds: content.durationSeconds,
       rawPayloadJson: payload,
       status: fromMe ? 'sent' : 'received',
     });
@@ -259,7 +260,7 @@ export class WhatsappWebhookService {
     );
     await this.botCenterRealtimeService.publishMessageUpsert(saved);
 
-    if (content.mediaUrl) {
+    if (type !== 'text' && type !== 'system' && type !== 'unknown') {
       const attachment = await this.attachmentsService.downloadRemoteToStorage({
         config,
         companyId: config.companyId,
@@ -276,11 +277,13 @@ export class WhatsappWebhookService {
 
       if (attachment) {
         const thumbnailStoragePath = this.readString(attachment.metadataJson['thumbnailStoragePath']) || null;
+        const storedDurationSeconds = this.readOptionalNumber(attachment.metadataJson['durationSeconds']);
         await this.messagingService.updateStoredMedia(config.companyId, saved.id, {
           mediaStoragePath: attachment.storagePath,
           mediaSizeBytes: attachment.sizeBytes,
           mimeType: attachment.mimeType,
           thumbnailUrl: thumbnailStoragePath,
+          durationSeconds: storedDurationSeconds ?? content.durationSeconds,
         });
       }
     }
@@ -298,7 +301,7 @@ export class WhatsappWebhookService {
     if (message['conversation'] != null || message['extendedTextMessage'] != null) return 'text';
     if (message['imageMessage'] != null) return 'image';
     if (message['videoMessage'] != null) return 'video';
-    if (message['audioMessage'] != null) return 'audio';
+    if (message['audioMessage'] != null || message['pttMessage'] != null) return 'audio';
     if (message['documentMessage'] != null) return 'document';
     return 'unknown';
   }
@@ -313,6 +316,7 @@ export class WhatsappWebhookService {
     mediaUrl: string | null;
     mediaOriginalName: string | null;
     thumbnailUrl: string | null;
+    durationSeconds: number | null;
   } {
     if (type === 'text') {
       const extended = this.readMap(message['extendedTextMessage']);
@@ -323,6 +327,7 @@ export class WhatsappWebhookService {
         mediaUrl: null,
         mediaOriginalName: null,
         thumbnailUrl: null,
+        durationSeconds: null,
       };
     }
 
@@ -332,7 +337,7 @@ export class WhatsappWebhookService {
         : type === 'video'
             ? this.readMap(message['videoMessage'])
             : type === 'audio'
-                ? this.readMap(message['audioMessage'])
+                ? this.readMap(message['audioMessage'] ?? message['pttMessage'])
                 : this.readMap(message['documentMessage']);
 
     return {
@@ -342,6 +347,7 @@ export class WhatsappWebhookService {
       mediaUrl: this.readString(media['url']) || null,
       mediaOriginalName: this.readString(media['fileName']) || null,
       thumbnailUrl: this.readString(media['jpegThumbnail']) || null,
+      durationSeconds: this.readOptionalNumber(media['seconds']),
     };
   }
 
@@ -809,6 +815,21 @@ export class WhatsappWebhookService {
 
   private readBoolean(value: unknown): boolean {
     return value === true;
+  }
+
+  private readOptionalNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.round(value));
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, Math.round(parsed));
+      }
+    }
+
+    return null;
   }
 
   private readOptionalBoolean(value: unknown): boolean | null {

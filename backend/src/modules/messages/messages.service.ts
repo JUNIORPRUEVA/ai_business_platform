@@ -34,6 +34,8 @@ export class MessagesService {
       sender: 'user',
       content: dto.content,
       type: dto.type ?? 'text',
+      mediaUrl: dto.mediaUrl ?? null,
+      duration: dto.duration ?? null,
       metadata: {},
     });
   }
@@ -45,6 +47,8 @@ export class MessagesService {
       sender: MessageSender;
       content: string;
       type: MessageType;
+      mediaUrl?: string | null;
+      duration?: number | null;
       metadata?: Record<string, unknown>;
     },
   ): Promise<MessageEntity> {
@@ -57,6 +61,8 @@ export class MessagesService {
       sender: params.sender,
       content: params.content,
       type: params.type,
+      mediaUrl: params.mediaUrl ?? null,
+      duration: params.duration ?? null,
       metadata: params.metadata ?? {},
     });
 

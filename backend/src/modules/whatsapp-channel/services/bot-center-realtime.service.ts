@@ -122,6 +122,7 @@ export class BotCenterRealtimeService {
       mediaUrl,
       thumbnailUrl,
       fileName: message.mediaOriginalName,
+      duration: message.durationSeconds,
       timestamp: message.createdAt.toISOString(),
       state: this.resolveMessageState(message.status),
     };

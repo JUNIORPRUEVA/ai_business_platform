@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'node:child_process';
@@ -14,6 +14,8 @@ import { EvolutionApiClientService } from './evolution-api-client.service';
 
 @Injectable()
 export class WhatsappAttachmentService {
+  private readonly logger = new Logger(WhatsappAttachmentService.name);
+
   constructor(
     @InjectRepository(WhatsappAttachmentEntity)
     private readonly attachmentsRepository: Repository<WhatsappAttachmentEntity>,
@@ -33,12 +35,19 @@ export class WhatsappAttachmentService {
       throw new BadRequestException('El archivo esta vacio.');
     }
 
+    const preparedUpload = await this.prepareUploadPayload({
+      buffer: params.buffer,
+      originalName: params.originalName,
+      mimeType: params.mimeType ?? null,
+      fileType: params.fileType,
+    });
+
     const draftKey = params.conversationId
       ? this.buildDraftStorageKey(
           params.companyId,
           params.conversationId,
-          params.originalName,
-          params.mimeType ?? null,
+          preparedUpload.originalName,
+          preparedUpload.mimeType,
           params.fileType,
         )
       : null;
@@ -47,15 +56,15 @@ export class WhatsappAttachmentService {
       ? await this.storageService.uploadBufferToKey({
           companyId: params.companyId,
           key: draftKey,
-          contentType: params.mimeType,
-          buffer: params.buffer,
+          contentType: preparedUpload.mimeType ?? undefined,
+          buffer: preparedUpload.buffer,
         })
       : await this.storageService.uploadBuffer({
           companyId: params.companyId,
           folder: 'media',
-          filename: params.originalName,
-          contentType: params.mimeType,
-          buffer: params.buffer,
+          filename: preparedUpload.originalName,
+          contentType: preparedUpload.mimeType ?? undefined,
+          buffer: preparedUpload.buffer,
         });
 
     const thumbnailStoragePath = await this.createUploadThumbnail(
@@ -63,10 +72,10 @@ export class WhatsappAttachmentService {
       params.conversationId,
       undefined,
       params.fileType,
-      params.mimeType ?? null,
-      params.buffer,
+      preparedUpload.mimeType,
+      preparedUpload.buffer,
       uploaded.key,
-      params.originalName,
+      preparedUpload.originalName,
       null,
     );
 
@@ -74,14 +83,17 @@ export class WhatsappAttachmentService {
       companyId: params.companyId,
       messageId: null,
       fileType: params.fileType,
-      mimeType: params.mimeType ?? null,
-      originalName: params.originalName,
+      mimeType: preparedUpload.mimeType,
+      originalName: preparedUpload.originalName,
       storagePath: uploaded.key,
       publicUrl: null,
-      sizeBytes: String(params.buffer.length),
+      sizeBytes: String(preparedUpload.buffer.length),
       metadataJson: {
         conversationId: params.conversationId ?? null,
         thumbnailStoragePath,
+        ...(preparedUpload.durationSeconds != null
+          ? { durationSeconds: preparedUpload.durationSeconds }
+          : {}),
       },
     });
 
@@ -111,19 +123,26 @@ export class WhatsappAttachmentService {
         return null;
       }
 
-      const resolvedMimeType = params.mimeType ?? downloaded.contentType ?? null;
+      const preparedUpload = await this.prepareUploadPayload({
+        buffer: downloaded.buffer,
+        originalName: params.originalName,
+        mimeType: params.mimeType ?? downloaded.contentType ?? null,
+        fileType: params.fileType,
+      });
+
+      const resolvedMimeType = preparedUpload.mimeType;
       const mediaKey = this.buildMessageStorageKey(
         params.companyId,
         params.conversationId,
         params.messageId,
-        this.resolveExtension(params.originalName, resolvedMimeType, params.fileType),
+        this.resolveExtension(preparedUpload.originalName, resolvedMimeType, params.fileType),
       );
 
       await this.storageService.uploadBufferToKey({
         companyId: params.companyId,
         key: mediaKey,
         contentType: resolvedMimeType ?? undefined,
-        buffer: downloaded.buffer,
+        buffer: preparedUpload.buffer,
       });
 
       const thumbnailStoragePath = await this.createUploadThumbnail(
@@ -132,9 +151,9 @@ export class WhatsappAttachmentService {
         params.messageId,
         params.fileType,
         resolvedMimeType,
-        downloaded.buffer,
+        preparedUpload.buffer,
         mediaKey,
-        params.originalName,
+        preparedUpload.originalName,
         params.thumbnailSource ?? null,
       );
 
@@ -143,14 +162,17 @@ export class WhatsappAttachmentService {
         messageId: params.messageId,
         fileType: params.fileType,
         mimeType: resolvedMimeType,
-        originalName: params.originalName,
+        originalName: preparedUpload.originalName,
         storagePath: mediaKey,
         publicUrl: null,
-        sizeBytes: String(downloaded.buffer.length),
+        sizeBytes: String(preparedUpload.buffer.length),
         metadataJson: {
           ...(params.metadataJson ?? {}),
           sourceUrl: params.sourceUrl ?? null,
           thumbnailStoragePath,
+          ...(preparedUpload.durationSeconds != null
+            ? { durationSeconds: preparedUpload.durationSeconds }
+            : {}),
         },
       });
 
@@ -235,6 +257,43 @@ export class WhatsappAttachmentService {
     return `${companyId}/chat/${conversationId}/${messageId}-thumbnail.jpg`;
   }
 
+  private async prepareUploadPayload(params: {
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+    fileType: string;
+  }): Promise<{
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+    durationSeconds: number | null;
+  }> {
+    if (params.fileType !== 'audio') {
+      return {
+        buffer: params.buffer,
+        originalName: params.originalName,
+        mimeType: params.mimeType,
+        durationSeconds: null,
+      };
+    }
+
+    const normalizedAudio = await this.normalizeAudioBuffer({
+      buffer: params.buffer,
+      originalName: params.originalName,
+      mimeType: params.mimeType,
+    });
+    if (!normalizedAudio) {
+      return {
+        buffer: params.buffer,
+        originalName: this.ensureAudioFileName(params.originalName, params.mimeType),
+        mimeType: params.mimeType,
+        durationSeconds: null,
+      };
+    }
+
+    return normalizedAudio;
+  }
+
   private async createUploadThumbnail(
     companyId: string,
     conversationId: string | undefined,
@@ -273,6 +332,119 @@ export class WhatsappAttachmentService {
     });
 
     return thumbnailKey;
+  }
+
+  private async normalizeAudioBuffer(params: {
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+  }): Promise<{
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+    durationSeconds: number | null;
+  } | null> {
+    if (!ffmpegPath) {
+      this.logger.warn('[AUDIO NORMALIZATION] skipped reason=missing_ffmpeg');
+      return null;
+    }
+
+    const ffmpegExecutable = String(ffmpegPath);
+    const inputExtension = this.resolveExtension(
+      params.originalName,
+      params.mimeType,
+      'audio',
+    );
+    const tempDir = await mkdtemp(join(tmpdir(), 'botposvendedor-audio-'));
+    const inputPath = join(tempDir, `input.${inputExtension}`);
+    const outputPath = join(tempDir, 'output.mp3');
+
+    try {
+      await writeFile(inputPath, params.buffer);
+
+      const stderr = await new Promise<string>((resolve, reject) => {
+        let collected = '';
+        const child = spawn(
+          ffmpegExecutable,
+          [
+            '-y',
+            '-i',
+            inputPath,
+            '-vn',
+            '-ac',
+            '1',
+            '-ar',
+            '24000',
+            '-c:a',
+            'libmp3lame',
+            '-b:a',
+            '48k',
+            outputPath,
+          ],
+          { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
+        );
+
+        child.stderr?.on('data', (chunk: Buffer | string) => {
+          collected += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code: number | null) => {
+          if (code === 0) {
+            resolve(collected);
+            return;
+          }
+
+          reject(new Error(collected || `ffmpeg exited with code ${code}`));
+        });
+      });
+
+      const outputBuffer = await readFile(outputPath);
+      return {
+        buffer: outputBuffer,
+        originalName: this.ensureMp3FileName(params.originalName),
+        mimeType: 'audio/mpeg',
+        durationSeconds: this.parseDurationSeconds(stderr),
+      };
+    } catch (error) {
+      this.logger.warn(
+        `[AUDIO NORMALIZATION] failed file=${params.originalName} error=${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return null;
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  private ensureAudioFileName(originalName: string, mimeType: string | null): string {
+    const fromName = extname(originalName).trim().toLowerCase();
+    if (fromName) {
+      return originalName;
+    }
+
+    const fallbackExtension = this.resolveExtension(originalName, mimeType, 'audio');
+    return `${originalName}.${fallbackExtension}`;
+  }
+
+  private ensureMp3FileName(originalName: string): string {
+    const baseName = originalName.replace(/\.[^.]+$/, '').trim();
+    return `${baseName || 'voice-note'}.mp3`;
+  }
+
+  private parseDurationSeconds(stderr: string): number | null {
+    const timeMatches = Array.from(stderr.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g));
+    const durationMatch = timeMatches.at(-1) ?? stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+    if (!durationMatch) {
+      return null;
+    }
+
+    const hours = Number(durationMatch[1]);
+    const minutes = Number(durationMatch[2]);
+    const seconds = Number(durationMatch[3]);
+    if ([hours, minutes, seconds].some((value) => Number.isNaN(value))) {
+      return null;
+    }
+
+    return Math.max(1, Math.round(hours * 3600 + minutes * 60 + seconds));
   }
 
   private decodeThumbnailSource(value: string | null): Buffer | null {
@@ -364,8 +536,31 @@ export class WhatsappAttachmentService {
         return 'webm';
       case 'video/quicktime':
         return 'mov';
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/mp3':
+        return 'mp3';
+      case 'audio/mp4':
+      case 'audio/m4a':
+      case 'audio/aac':
+        return 'm4a';
+      case 'audio/ogg':
+      case 'audio/opus':
+        return 'ogg';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'wav';
       default:
-        return fileType === 'image' ? 'jpg' : fileType === 'video' ? 'mp4' : 'bin';
+        if (fileType === 'image') {
+          return 'jpg';
+        }
+        if (fileType === 'video') {
+          return 'mp4';
+        }
+        if (fileType === 'audio') {
+          return 'mp3';
+        }
+        return 'bin';
     }
   }
 }

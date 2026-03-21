@@ -110,7 +110,7 @@ class BotCenterContent extends StatefulWidget {
 }
 
 class _BotCenterContentState extends State<BotCenterContent> {
-  bool _isContextExpanded = true;
+  bool _isContextExpanded = false;
   final ScrollController _horizontalScrollController = ScrollController();
 
   @override
@@ -147,20 +147,18 @@ class _BotCenterContentState extends State<BotCenterContent> {
           builder: (context, constraints) {
             final contentPadding = widget.embedded
                 ? EdgeInsets.zero
-                : const EdgeInsets.symmetric(horizontal: 10, vertical: 8);
+              : const EdgeInsets.fromLTRB(6, 0, 6, 4);
 
             // Spec: | Chats | Conversación | Contexto |
             final isWideDesktop = constraints.maxWidth >= 1320;
-            final chatsWidth = isWideDesktop ? 276.0 : 288.0;
-            final contextWidth = isWideDesktop ? 312.0 : 324.0;
-            const contextRailWidth = 40.0;
-            const columnGap = 10.0;
+            final chatsWidth = isWideDesktop ? 272.0 : 284.0;
+            final contextWidth = isWideDesktop ? 308.0 : 320.0;
+            const columnGap = 8.0;
             const minConversationWidth = 640.0;
 
-            final contextActualWidth =
-                _isContextExpanded ? contextWidth : contextRailWidth;
+            final contextActualWidth = _isContextExpanded ? contextWidth : 0.0;
 
-            final fixed = chatsWidth + contextActualWidth + columnGap * 2;
+            final fixed = chatsWidth + contextActualWidth + (_isContextExpanded ? columnGap * 2 : columnGap);
             final availableConversationWidth = constraints.maxWidth - fixed;
             final needsHorizontalScroll =
                 availableConversationWidth < minConversationWidth;
@@ -175,27 +173,36 @@ class _BotCenterContentState extends State<BotCenterContent> {
                 if (needsHorizontalScroll)
                   SizedBox(
                     width: minConversationWidth,
-                    child: ChatWorkspacePanel(controller: widget.controller),
+                    child: ChatWorkspacePanel(
+                      controller: widget.controller,
+                      isContextExpanded: _isContextExpanded,
+                      onToggleContext: () {
+                        setState(() => _isContextExpanded = !_isContextExpanded);
+                      },
+                    ),
                   )
                 else
                   Expanded(
-                      child: ChatWorkspacePanel(controller: widget.controller)),
-                const SizedBox(width: columnGap),
-                SizedBox(
-                  width: contextActualWidth,
-                  child: _isContextExpanded
-                      ? BotContextColumn(
-                          controller: widget.controller,
-                          onCollapse: () {
-                            setState(() => _isContextExpanded = false);
-                          },
-                        )
-                      : _ContextCollapsedRail(
-                          onExpand: () {
-                            setState(() => _isContextExpanded = true);
-                          },
-                        ),
-                ),
+                    child: ChatWorkspacePanel(
+                      controller: widget.controller,
+                      isContextExpanded: _isContextExpanded,
+                      onToggleContext: () {
+                        setState(() => _isContextExpanded = !_isContextExpanded);
+                      },
+                    ),
+                  ),
+                if (_isContextExpanded) ...[
+                  const SizedBox(width: columnGap),
+                  SizedBox(
+                    width: contextActualWidth,
+                    child: BotContextColumn(
+                      controller: widget.controller,
+                      onCollapse: () {
+                        setState(() => _isContextExpanded = false);
+                      },
+                    ),
+                  ),
+                ],
               ],
             );
 

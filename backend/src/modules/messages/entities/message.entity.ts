@@ -20,6 +20,12 @@ export class MessageEntity extends BaseEntity {
   @Column({ type: 'text', default: 'text' })
   type!: MessageType;
 
+  @Column({ type: 'text', name: 'media_url', nullable: true })
+  mediaUrl!: string | null;
+
+  @Column({ type: 'integer', nullable: true })
+  duration!: number | null;
+
   @Column({ type: 'jsonb', default: () => `'{}'::jsonb` })
   metadata!: Record<string, unknown>;
 }

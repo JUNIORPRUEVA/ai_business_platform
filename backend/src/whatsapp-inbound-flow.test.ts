@@ -399,6 +399,96 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
   assert.equal(storedMediaUpdates[0]['thumbnailUrl'], 'company-1/chat/chat-image-1/message-image-1.jpg');
 });
 
+test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion almacenada', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+  const storedMediaUpdates: Array<Record<string, unknown>> = [];
+  const attachmentDownloads: Array<Record<string, unknown>> = [];
+
+  const service = new WhatsappWebhookService(
+    { add: async () => undefined } as never,
+    configsRepository as never,
+    { getEntity: async () => config } as never,
+    { create: async () => ({}) } as never,
+    {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-audio-1',
+          chatId: 'chat-audio-1',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async (
+        companyId: string,
+        messageId: string,
+        params: Record<string, unknown>,
+      ) => {
+        storedMediaUpdates.push({ companyId, messageId, ...params });
+        return {};
+      },
+    } as never,
+    botCenterRealtimeStub as never,
+    {
+      downloadRemoteToStorage: async (params: Record<string, unknown>) => {
+        attachmentDownloads.push(params);
+        return {
+          id: 'attachment-audio-1',
+          storagePath: 'company-1/chat/chat-audio-1/message-audio-1.mp3',
+          sizeBytes: '4096',
+          mimeType: 'audio/mpeg',
+          metadataJson: {
+            durationSeconds: 12,
+          },
+        };
+      },
+    } as never,
+    emptyEvolutionApiClient as never,
+    jidResolverStub as never,
+  );
+
+  await service.processNow('company-1', {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      key: {
+        remoteJid: '5511999999999@s.whatsapp.net',
+        id: 'wamid-audio-1',
+        fromMe: false,
+      },
+      pushName: 'Marina',
+      message: {
+        pttMessage: {
+          mimetype: 'audio/ogg; codecs=opus',
+          seconds: 9,
+        },
+      },
+    },
+  });
+
+  assert.equal(savedMessages[0]['messageType'], 'audio');
+  assert.equal(savedMessages[0]['textBody'], 'Audio recibido');
+  assert.equal(savedMessages[0]['durationSeconds'], 9);
+  assert.equal(attachmentDownloads.length, 1);
+  assert.equal(attachmentDownloads[0]['fileType'], 'audio');
+  assert.equal(attachmentDownloads[0]['sourceUrl'], null);
+  assert.equal(attachmentDownloads[0]['originalName'], 'audio-message-audio-1');
+  assert.equal(storedMediaUpdates.length, 1);
+  assert.equal(storedMediaUpdates[0]['mediaStoragePath'], 'company-1/chat/chat-audio-1/message-audio-1.mp3');
+  assert.equal(storedMediaUpdates[0]['mimeType'], 'audio/mpeg');
+  assert.equal(storedMediaUpdates[0]['durationSeconds'], 12);
+});
+
 test('WhatsappWebhookService no regresa de read a delivered cuando llegan updates duplicados', async () => {
   const config = {
     id: 'config-1',
@@ -1232,6 +1322,7 @@ test('WhatsappMessagingService normaliza delivered para mensajes salientes y mar
     mediaUrl: null,
     mediaOriginalName: null,
     thumbnailUrl: null,
+    durationSeconds: null,
     rawPayloadJson: { status: 'delivered' },
     status: 'delivered_ack',
   });
@@ -1312,6 +1403,7 @@ test('WhatsappMessagingService normaliza read para mensajes salientes y marca re
     mediaUrl: null,
     mediaOriginalName: null,
     thumbnailUrl: null,
+    durationSeconds: null,
     rawPayloadJson: { status: 'read' },
     status: 'READ_ACK',
   });
