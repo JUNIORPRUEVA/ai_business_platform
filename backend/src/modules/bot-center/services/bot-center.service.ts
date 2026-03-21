@@ -102,11 +102,10 @@ export class BotCenterService {
     selectedConversationId?: string,
   ): Promise<BotCenterOverviewResponse> {
     const conversations = await this.listConversations(companyId);
-    const selectedConversation = selectedConversationId
-      ? await this.getConversationDetail(companyId, selectedConversationId)
-      : conversations.length > 0
-          ? await this.getConversationDetail(companyId, conversations[0].id)
-          : undefined;
+    const selectedConversationTarget = selectedConversationId || conversations[0]?.id;
+    const selectedConversation = selectedConversationTarget
+      ? await this.getConversationDetailSafely(companyId, selectedConversationTarget)
+      : undefined;
 
     return {
       conversations,
@@ -834,12 +833,52 @@ export class BotCenterService {
       order: { createdAt: 'DESC' },
     });
 
+    const [messagesResult, contextResult, memoryResult] = await Promise.allSettled([
+      this.getConversationMessages(companyId, conversationId),
+      this.getConversationContext(companyId, conversationId),
+      this.getConversationMemory(companyId, conversationId),
+    ]);
+
+    if (messagesResult.status === 'rejected') {
+      this.logger.warn(
+        `[BOT CENTER] conversation messages fallback companyId=${companyId} conversationId=${conversationId} error=${this.describeUnknownError(messagesResult.reason)}`,
+      );
+    }
+    if (contextResult.status === 'rejected') {
+      this.logger.warn(
+        `[BOT CENTER] conversation context fallback companyId=${companyId} conversationId=${conversationId} error=${this.describeUnknownError(contextResult.reason)}`,
+      );
+    }
+    if (memoryResult.status === 'rejected') {
+      this.logger.warn(
+        `[BOT CENTER] conversation memory fallback companyId=${companyId} conversationId=${conversationId} error=${this.describeUnknownError(memoryResult.reason)}`,
+      );
+    }
+
     return {
       conversation: this.toConversationSummary(chat, latestMessage),
-      messages: await this.getConversationMessages(companyId, conversationId),
-      context: await this.getConversationContext(companyId, conversationId),
-      memory: await this.getConversationMemory(companyId, conversationId),
+      messages: messagesResult.status === 'fulfilled' ? messagesResult.value : [],
+      context: contextResult.status === 'fulfilled'
+        ? contextResult.value
+        : this.buildFallbackConversationContext(chat, latestMessage),
+      memory: memoryResult.status === 'fulfilled'
+        ? memoryResult.value
+        : { shortTerm: [], longTerm: [], operational: [] },
     };
+  }
+
+  private async getConversationDetailSafely(
+    companyId: string,
+    conversationId: string,
+  ): Promise<BotConversationDetailResponse | undefined> {
+    try {
+      return await this.getConversationDetail(companyId, conversationId);
+    } catch (error) {
+      this.logger.warn(
+        `[BOT CENTER] selected conversation fallback companyId=${companyId} conversationId=${conversationId} error=${this.describeUnknownError(error)}`,
+      );
+      return undefined;
+    }
   }
 
   private async getConversationOrThrow(
@@ -913,6 +952,35 @@ export class BotCenterService {
     }
 
     return remoteJid;
+  }
+
+  private buildFallbackConversationContext(
+    chat: WhatsappChatEntity,
+    latestMessage: WhatsappMessageEntity | null,
+  ): BotContactContextResponse {
+    return {
+      customerName: this.resolveContactName(chat),
+      phone: this.toPhoneDisplay(chat.remoteJid),
+      role: 'Contacto de WhatsApp',
+      businessType: 'No disponible',
+      city: 'No disponible',
+      tags: [
+        'WhatsApp',
+        ...(chat.unreadCount > 0 ? ['Con mensajes sin leer'] : []),
+        ...(latestMessage?.messageType && latestMessage.messageType !== 'text'
+          ? [`Ultimo tipo: ${latestMessage.messageType}`]
+          : []),
+      ],
+      productKnowledge: [],
+    };
+  }
+
+  private describeUnknownError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return typeof error === 'string' ? error : 'unknown_error';
   }
 
   private async resolveCanonicalChannel(
