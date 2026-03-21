@@ -1092,7 +1092,13 @@ export class WhatsappMessagingService {
   ): Promise<string | null> {
     if (storagePath) {
       try {
-        return (await this.storageService.presignDownload({ companyId, key: storagePath })).url;
+        return (
+          await this.storageService.presignDownload({
+            companyId,
+            key: storagePath,
+            expiresInSeconds: 60 * 60 * 24,
+          })
+        ).url;
       } catch {
         // fall back to existing URL when signing fails
       }
@@ -1141,7 +1147,13 @@ export class WhatsappMessagingService {
     }
 
     try {
-      return (await this.storageService.presignDownload({ companyId, key: trimmed })).url;
+      return (
+        await this.storageService.presignDownload({
+          companyId,
+          key: trimmed,
+          expiresInSeconds: 60 * 60 * 24,
+        })
+      ).url;
     } catch {
       return null;
     }

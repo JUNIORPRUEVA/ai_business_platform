@@ -323,6 +323,7 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
   const savedMessages: Array<Record<string, unknown>> = [];
   const storedMediaUpdates: Array<Record<string, unknown>> = [];
   const attachmentDownloads: Array<Record<string, unknown>> = [];
+  const realtimeMessages: Array<Record<string, unknown>> = [];
 
   const service = new WhatsappWebhookService(
     { add: async () => undefined } as never,
@@ -346,10 +347,24 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
         params: Record<string, unknown>,
       ) => {
         storedMediaUpdates.push({ companyId, messageId, ...params });
-        return {};
+        return {
+          id: messageId,
+          chatId: 'chat-image-1',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          messageType: 'image',
+          fromMe: false,
+          companyId,
+          mediaStoragePath: params['mediaStoragePath'],
+          thumbnailUrl: params['thumbnailUrl'],
+        };
       },
     } as never,
-    botCenterRealtimeStub as never,
+    {
+      ...botCenterRealtimeStub,
+      publishMessageUpsert: async (message: Record<string, unknown>) => {
+        realtimeMessages.push(message);
+      },
+    } as never,
     {
       downloadRemoteToStorage: async (params: Record<string, unknown>) => {
         attachmentDownloads.push(params);
@@ -397,6 +412,8 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
   assert.equal(storedMediaUpdates.length, 1);
   assert.equal(storedMediaUpdates[0]['mediaStoragePath'], 'company-1/chat/chat-image-1/message-image-1.jpg');
   assert.equal(storedMediaUpdates[0]['thumbnailUrl'], 'company-1/chat/chat-image-1/message-image-1.jpg');
+  assert.equal(realtimeMessages.length, 1);
+  assert.equal(realtimeMessages[0]['mediaStoragePath'], 'company-1/chat/chat-image-1/message-image-1.jpg');
 });
 
 test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion almacenada', async () => {
@@ -412,6 +429,7 @@ test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion a
   const savedMessages: Array<Record<string, unknown>> = [];
   const storedMediaUpdates: Array<Record<string, unknown>> = [];
   const attachmentDownloads: Array<Record<string, unknown>> = [];
+  const realtimeMessages: Array<Record<string, unknown>> = [];
 
   const service = new WhatsappWebhookService(
     { add: async () => undefined } as never,
@@ -435,10 +453,24 @@ test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion a
         params: Record<string, unknown>,
       ) => {
         storedMediaUpdates.push({ companyId, messageId, ...params });
-        return {};
+        return {
+          id: messageId,
+          chatId: 'chat-audio-1',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          messageType: 'audio',
+          fromMe: false,
+          companyId,
+          mediaStoragePath: params['mediaStoragePath'],
+          durationSeconds: params['durationSeconds'],
+        };
       },
     } as never,
-    botCenterRealtimeStub as never,
+    {
+      ...botCenterRealtimeStub,
+      publishMessageUpsert: async (message: Record<string, unknown>) => {
+        realtimeMessages.push(message);
+      },
+    } as never,
     {
       downloadRemoteToStorage: async (params: Record<string, unknown>) => {
         attachmentDownloads.push(params);
@@ -487,6 +519,9 @@ test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion a
   assert.equal(storedMediaUpdates[0]['mediaStoragePath'], 'company-1/chat/chat-audio-1/message-audio-1.mp3');
   assert.equal(storedMediaUpdates[0]['mimeType'], 'audio/mpeg');
   assert.equal(storedMediaUpdates[0]['durationSeconds'], 12);
+  assert.equal(realtimeMessages.length, 1);
+  assert.equal(realtimeMessages[0]['mediaStoragePath'], 'company-1/chat/chat-audio-1/message-audio-1.mp3');
+  assert.equal(realtimeMessages[0]['durationSeconds'], 12);
 });
 
 test('WhatsappWebhookService no regresa de read a delivered cuando llegan updates duplicados', async () => {

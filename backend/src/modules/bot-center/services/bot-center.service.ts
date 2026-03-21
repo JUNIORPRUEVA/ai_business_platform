@@ -1252,10 +1252,28 @@ export class BotCenterService {
     message: WhatsappMessageEntity,
     variant: 'media' | 'thumbnail',
   ): Promise<{ buffer: Buffer; contentType: string; fileName: string } | null> {
+    let hydratedMessage = message;
+    if (!message.mediaStoragePath) {
+      const storedAttachment = await this.attachmentsService.findStoredByMessageId(
+        companyId,
+        message.id,
+      );
+      if (storedAttachment) {
+        hydratedMessage = await this.whatsappMessagingService.updateStoredMedia(companyId, message.id, {
+          mediaStoragePath: storedAttachment.storagePath,
+          mediaSizeBytes: storedAttachment.sizeBytes,
+          mimeType: storedAttachment.mimeType ?? message.mimeType,
+          mediaUrl: message.mediaUrl,
+          thumbnailUrl: storedAttachment.thumbnailStoragePath ?? message.thumbnailUrl,
+          durationSeconds: storedAttachment.durationSeconds ?? message.durationSeconds,
+        });
+      }
+    }
+
     const storageCandidate =
       variant === 'thumbnail'
-        ? this.resolveMessageThumbnailStoragePath(message)
-        : message.mediaStoragePath;
+        ? this.resolveMessageThumbnailStoragePath(hydratedMessage)
+        : hydratedMessage.mediaStoragePath;
 
     if (storageCandidate) {
       const stored = await this.storageService.getObjectBuffer({
@@ -1264,28 +1282,28 @@ export class BotCenterService {
       });
       return {
         buffer: stored.buffer,
-        contentType: stored.contentType ?? this.resolveMessageAssetContentType(message, variant),
-        fileName: this.resolveMessageAssetFileName(message, variant),
+        contentType: stored.contentType ?? this.resolveMessageAssetContentType(hydratedMessage, variant),
+        fileName: this.resolveMessageAssetFileName(hydratedMessage, variant),
       };
     }
 
     const externalCandidate =
       variant === 'thumbnail'
-        ? await this.resolveMessageThumbnailUrl(message, message.mediaUrl)
-        : await this.resolveMessageMediaUrl(companyId, null, message.mediaUrl);
+        ? await this.resolveMessageThumbnailUrl(hydratedMessage, hydratedMessage.mediaUrl)
+        : await this.resolveMessageMediaUrl(companyId, null, hydratedMessage.mediaUrl);
     if (!externalCandidate) {
       return null;
     }
 
     const embeddedAsset = this.tryDecodeEmbeddedAsset(
       externalCandidate,
-      this.resolveMessageAssetContentType(message, variant),
+      this.resolveMessageAssetContentType(hydratedMessage, variant),
     );
     if (embeddedAsset) {
       return {
         buffer: embeddedAsset.buffer,
         contentType: embeddedAsset.contentType,
-        fileName: this.resolveMessageAssetFileName(message, variant),
+        fileName: this.resolveMessageAssetFileName(hydratedMessage, variant),
       };
     }
 
@@ -1303,8 +1321,8 @@ export class BotCenterService {
       buffer: Buffer.from(await response.arrayBuffer()),
       contentType:
         response.headers.get('content-type') ??
-        this.resolveMessageAssetContentType(message, variant),
-      fileName: this.resolveMessageAssetFileName(message, variant),
+        this.resolveMessageAssetContentType(hydratedMessage, variant),
+      fileName: this.resolveMessageAssetFileName(hydratedMessage, variant),
     };
   }
 

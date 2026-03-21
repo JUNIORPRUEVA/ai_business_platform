@@ -230,6 +230,35 @@ export class WhatsappAttachmentService {
     return entity;
   }
 
+  async findStoredByMessageId(
+    companyId: string,
+    messageId: string,
+  ): Promise<{
+    storagePath: string;
+    thumbnailStoragePath: string | null;
+    mimeType: string | null;
+    sizeBytes: string | null;
+    originalName: string | null;
+    durationSeconds: number | null;
+  } | null> {
+    const entity = await this.attachmentsRepository.findOne({
+      where: { companyId, messageId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!entity) {
+      return null;
+    }
+
+    return {
+      storagePath: entity.storagePath,
+      thumbnailStoragePath: this.readString(entity.metadataJson['thumbnailStoragePath']) || null,
+      mimeType: entity.mimeType,
+      sizeBytes: entity.sizeBytes,
+      originalName: entity.originalName,
+      durationSeconds: this.readOptionalNumber(entity.metadataJson['durationSeconds']),
+    };
+  }
+
   private async resolveInboundDownload(params: {
     config: WhatsappChannelConfigEntity;
     fileType: string;
@@ -700,5 +729,24 @@ export class WhatsappAttachmentService {
         }
         return 'bin';
     }
+  }
+
+  private readString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private readOptionalNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.round(value));
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, Math.round(parsed));
+      }
+    }
+
+    return null;
   }
 }

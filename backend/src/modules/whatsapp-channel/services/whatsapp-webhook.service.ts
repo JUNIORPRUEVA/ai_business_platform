@@ -258,7 +258,8 @@ export class WhatsappWebhookService {
     this.logger.log(
       `[EVOLUTION INBOUND] message saved id=${saved.id} type=${saved.messageType} companyId=${config.companyId} remoteJid=${remoteJid}`,
     );
-    await this.botCenterRealtimeService.publishMessageUpsert(saved);
+
+    let messageForRealtime = saved;
 
     if (type !== 'text' && type !== 'system' && type !== 'unknown') {
       const attachment = await this.attachmentsService.downloadRemoteToStorage({
@@ -278,7 +279,7 @@ export class WhatsappWebhookService {
       if (attachment) {
         const thumbnailStoragePath = this.readString(attachment.metadataJson['thumbnailStoragePath']) || null;
         const storedDurationSeconds = this.readOptionalNumber(attachment.metadataJson['durationSeconds']);
-        await this.messagingService.updateStoredMedia(config.companyId, saved.id, {
+        messageForRealtime = await this.messagingService.updateStoredMedia(config.companyId, saved.id, {
           mediaStoragePath: attachment.storagePath,
           mediaSizeBytes: attachment.sizeBytes,
           mimeType: attachment.mimeType,
@@ -287,6 +288,8 @@ export class WhatsappWebhookService {
         });
       }
     }
+
+    await this.botCenterRealtimeService.publishMessageUpsert(messageForRealtime);
 
     return {
       messageId: saved.id,

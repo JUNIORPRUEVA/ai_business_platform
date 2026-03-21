@@ -212,7 +212,13 @@ export class BotCenterRealtimeService {
   ): Promise<string | null> {
     if (storagePath) {
       try {
-        return (await this.storageService.presignDownload({ companyId, key: storagePath })).url;
+        return (
+          await this.storageService.presignDownload({
+            companyId,
+            key: storagePath,
+            expiresInSeconds: 60 * 60 * 24,
+          })
+        ).url;
       } catch {
         // fall through
       }
@@ -235,7 +241,13 @@ export class BotCenterRealtimeService {
     }
 
     try {
-      return (await this.storageService.presignDownload({ companyId, key: trimmed })).url;
+      return (
+        await this.storageService.presignDownload({
+          companyId,
+          key: trimmed,
+          expiresInSeconds: 60 * 60 * 24,
+        })
+      ).url;
     } catch {
       return null;
     }
