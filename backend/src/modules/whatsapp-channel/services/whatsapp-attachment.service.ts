@@ -35,6 +35,14 @@ export class WhatsappAttachmentService {
       throw new BadRequestException('El archivo esta vacio.');
     }
 
+    if (
+      params.fileType === 'audio' &&
+      this.looksLikeStructuredTextPayload(params.buffer, params.mimeType ?? null) &&
+      !this.looksLikePlayableAudio(params.buffer, params.mimeType ?? null)
+    ) {
+      throw new BadRequestException('El archivo enviado no contiene un audio valido.');
+    }
+
     const preparedUpload = await this.prepareUploadPayload({
       buffer: params.buffer,
       originalName: params.originalName,
@@ -120,6 +128,9 @@ export class WhatsappAttachmentService {
     try {
       const downloaded = await this.resolveInboundDownload(params);
       if (!downloaded || !downloaded.buffer.length) {
+        this.logger.warn(
+          `[WHATSAPP ATTACHMENT] inbound download skipped companyId=${params.companyId} messageId=${params.messageId} fileType=${params.fileType} sourceUrl=${params.sourceUrl ?? '(none)'} reason=empty_download`,
+        );
         return null;
       }
 
@@ -177,7 +188,10 @@ export class WhatsappAttachmentService {
       });
 
       return this.attachmentsRepository.save(entity);
-    } catch (_error) {
+    } catch (error) {
+      this.logger.warn(
+        `[WHATSAPP ATTACHMENT] inbound storage failed companyId=${params.companyId} messageId=${params.messageId} fileType=${params.fileType} sourceUrl=${params.sourceUrl ?? '(none)'} error=${error instanceof Error ? error.message : 'unknown'}`,
+      );
       return null;
     }
   }
@@ -218,14 +232,138 @@ export class WhatsappAttachmentService {
 
   private async resolveInboundDownload(params: {
     config: WhatsappChannelConfigEntity;
+    fileType: string;
+    mimeType?: string | null;
     sourceUrl?: string | null;
     messagePayload: Record<string, unknown>;
   }): Promise<{ buffer: Buffer; contentType: string | null } | null> {
+    const sourceDownload = params.sourceUrl
+      ? await this.evolutionApiClient.downloadMediaUrl(params.config, params.sourceUrl)
+      : null;
+
+    if (this.isInboundDownloadUsable(sourceDownload, params.fileType, params.mimeType ?? null)) {
+      this.logger.log(
+        `[WHATSAPP ATTACHMENT] inbound download source=url fileType=${params.fileType} bytes=${sourceDownload!.buffer.length} contentType=${sourceDownload!.contentType ?? params.mimeType ?? '(none)'}`,
+      );
+      return {
+        buffer: sourceDownload!.buffer,
+        contentType: sourceDownload!.contentType,
+      };
+    }
+
+    if (sourceDownload) {
+      this.logger.warn(
+        `[WHATSAPP ATTACHMENT] inbound download fallback source=url fileType=${params.fileType} bytes=${sourceDownload.buffer.length} contentType=${sourceDownload.contentType ?? params.mimeType ?? '(none)'}`,
+      );
+    }
+
+    const mediaMessageDownload = await this.evolutionApiClient.downloadMediaMessage(
+      params.config,
+      params.messagePayload,
+    );
+    if (this.isInboundDownloadUsable(mediaMessageDownload, params.fileType, params.mimeType ?? null)) {
+      this.logger.log(
+        `[WHATSAPP ATTACHMENT] inbound download source=message fileType=${params.fileType} bytes=${mediaMessageDownload!.buffer.length} contentType=${mediaMessageDownload!.contentType ?? params.mimeType ?? '(none)'}`,
+      );
+      return {
+        buffer: mediaMessageDownload!.buffer,
+        contentType: mediaMessageDownload!.contentType,
+      };
+    }
+
+    if (mediaMessageDownload) {
+      this.logger.warn(
+        `[WHATSAPP ATTACHMENT] inbound download rejected source=message fileType=${params.fileType} bytes=${mediaMessageDownload.buffer.length} contentType=${mediaMessageDownload.contentType ?? params.mimeType ?? '(none)'}`,
+      );
+    }
+
+    return null;
+  }
+
+  private isInboundDownloadUsable(
+    value: { buffer: Buffer; contentType: string | null } | null,
+    fileType: string,
+    declaredMimeType: string | null,
+  ): boolean {
+    if (!value || !value.buffer.length) {
+      return false;
+    }
+
+    const resolvedMimeType = value.contentType ?? declaredMimeType;
+    if (this.looksLikeStructuredTextPayload(value.buffer, resolvedMimeType)) {
+      return false;
+    }
+
+    if (fileType !== 'audio') {
+      return true;
+    }
+
+    return this.looksLikePlayableAudio(value.buffer, resolvedMimeType);
+  }
+
+  private looksLikePlayableAudio(buffer: Buffer, mimeType: string | null): boolean {
+    if (!buffer.length) {
+      return false;
+    }
+
+    const normalizedMimeType = mimeType?.toLowerCase() ?? '';
+    if (normalizedMimeType.startsWith('audio/') && !this.looksLikeStructuredTextPayload(buffer, mimeType)) {
+      return true;
+    }
+
+    if (buffer.length >= 3 && buffer.subarray(0, 3).toString('ascii') === 'ID3') {
+      return true;
+    }
+
+    if (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) {
+      return true;
+    }
+
+    if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === 'OggS') {
+      return true;
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WAVE'
+    ) {
+      return true;
+    }
+
+    if (buffer.length >= 8 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+      return true;
+    }
+
+    if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === 'fLaC') {
+      return true;
+    }
+
+    return !this.looksLikeStructuredTextPayload(buffer, mimeType) && buffer.length > 512;
+  }
+
+  private looksLikeStructuredTextPayload(buffer: Buffer, mimeType: string | null): boolean {
+    const normalizedMimeType = mimeType?.toLowerCase() ?? '';
+    if (
+      normalizedMimeType.includes('application/json') ||
+      normalizedMimeType.startsWith('text/') ||
+      normalizedMimeType.includes('text/html')
+    ) {
+      return true;
+    }
+
+    const sample = buffer.subarray(0, Math.min(buffer.length, 256)).toString('utf8').trim().toLowerCase();
+    if (!sample) {
+      return false;
+    }
+
     return (
-      (params.sourceUrl
-        ? await this.evolutionApiClient.downloadMediaUrl(params.config, params.sourceUrl)
-        : null) ??
-      (await this.evolutionApiClient.downloadMediaMessage(params.config, params.messagePayload))
+      sample.startsWith('{') ||
+      sample.startsWith('[') ||
+      sample.startsWith('<!doctype html') ||
+      sample.startsWith('<html') ||
+      sample.includes('"base64"') ||
+      sample.includes('access denied')
     );
   }
 

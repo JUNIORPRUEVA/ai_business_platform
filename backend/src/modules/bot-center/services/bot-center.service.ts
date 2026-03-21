@@ -1195,7 +1195,13 @@ export class BotCenterService {
   ): Promise<string | null> {
     if (storagePath) {
       try {
-        return (await this.storageService.presignDownload({ companyId, key: storagePath })).url;
+        return (
+          await this.storageService.presignDownload({
+            companyId,
+            key: storagePath,
+            expiresInSeconds: 60 * 60 * 24,
+          })
+        ).url;
       } catch {
         // fall through to the fallback URL
       }
@@ -1229,7 +1235,13 @@ export class BotCenterService {
     }
 
     try {
-      return (await this.storageService.presignDownload({ companyId, key: trimmed })).url;
+      return (
+        await this.storageService.presignDownload({
+          companyId,
+          key: trimmed,
+          expiresInSeconds: 60 * 60 * 24,
+        })
+      ).url;
     } catch {
       return null;
     }

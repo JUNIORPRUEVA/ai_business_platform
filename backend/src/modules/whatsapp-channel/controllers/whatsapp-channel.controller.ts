@@ -176,13 +176,59 @@ export class WhatsappChannelController {
 
   @Roles('admin', 'operator')
   @Post(':companyId/messages/audio')
+  @UseInterceptors(FileInterceptor('file'))
   sendAudio(
     @CurrentUser() user: AuthUser,
     @Param('companyId', new ParseUUIDPipe()) companyId: string,
     @Body() payload: SendWhatsappAudioDto,
+    @UploadedFile() file?: { buffer: Buffer; originalname: string; mimetype: string },
   ) {
     this.configService.assertCompanyAccess(user.companyId, companyId);
-    return this.messagingService.sendAudio(companyId, payload);
+
+    const rawDuration = (payload as SendWhatsappAudioDto & { durationSeconds?: number | string })
+      .durationSeconds;
+    const parsedDuration =
+      typeof rawDuration === 'string'
+        ? Number.parseInt(rawDuration, 10)
+        : rawDuration;
+
+    if (!file) {
+      return this.messagingService.sendAudio(companyId, {
+        ...payload,
+        ...(typeof parsedDuration === 'number' && Number.isFinite(parsedDuration)
+          ? { durationSeconds: parsedDuration }
+          : {}),
+      });
+    }
+
+    return this.attachmentsService
+      .uploadManual({
+        companyId,
+        buffer: file.buffer,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        fileType: 'audio',
+      })
+      .then((attachment) => {
+        const attachmentDurationRaw = attachment.metadataJson['durationSeconds'];
+        const attachmentDuration =
+          typeof attachmentDurationRaw === 'number'
+            ? attachmentDurationRaw
+            : typeof attachmentDurationRaw === 'string'
+              ? Number.parseInt(attachmentDurationRaw, 10)
+              : undefined;
+
+        return this.messagingService.sendAudio(companyId, {
+          ...payload,
+          attachmentId: attachment.id,
+          audioUrl: undefined,
+          ...(typeof parsedDuration === 'number' && Number.isFinite(parsedDuration)
+            ? { durationSeconds: parsedDuration }
+            : typeof attachmentDuration === 'number' && Number.isFinite(attachmentDuration)
+              ? { durationSeconds: attachmentDuration }
+              : {}),
+        });
+      });
   }
 
   @Roles('admin', 'operator', 'viewer')

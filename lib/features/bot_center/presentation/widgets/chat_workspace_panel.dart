@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
+import 'package:just_audio/just_audio.dart' as just_audio;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -890,7 +891,8 @@ class _MessageMediaState extends State<_MessageMedia> {
           widget.message.state != BotMessageState.queued &&
           (widget.message.localFileBytes == null ||
               widget.message.localFileBytes!.isEmpty)) {
-        unawaited(widget.controller.ensureMessagePlayableLoaded(widget.message));
+        unawaited(
+            widget.controller.ensureMessagePlayableLoaded(widget.message));
       }
     });
   }
@@ -1173,11 +1175,10 @@ class _AudioMessageCard extends StatefulWidget {
 }
 
 class _AudioMessageCardState extends State<_AudioMessageCard> {
-  late final Player _player;
+  late final just_audio.AudioPlayer _player;
   StreamSubscription<Duration>? _positionSubscription;
-  StreamSubscription<Duration>? _durationSubscription;
-  StreamSubscription<bool>? _playingSubscription;
-  StreamSubscription<bool>? _completedSubscription;
+  StreamSubscription<Duration?>? _durationSubscription;
+  StreamSubscription<just_audio.PlayerState>? _playerStateSubscription;
   File? _tempFile;
   String? _openedSourceKey;
   String? _errorMessage;
@@ -1188,35 +1189,32 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
   @override
   void initState() {
     super.initState();
-    _player = Player();
-    _positionSubscription = _player.stream.position.listen((value) {
+    _player = just_audio.AudioPlayer();
+    _positionSubscription = _player.positionStream.listen((value) {
       if (!mounted) {
         return;
       }
       setState(() => _position = value);
     });
-    _durationSubscription = _player.stream.duration.listen((value) {
+    _durationSubscription = _player.durationStream.listen((value) {
       if (!mounted) {
         return;
       }
-      setState(() => _duration = value);
+      setState(() => _duration = value ?? Duration.zero);
     });
-    _playingSubscription = _player.stream.playing.listen((value) {
+    _playerStateSubscription = _player.playerStateStream.listen((value) async {
       if (!mounted) {
         return;
       }
-      setState(() => _isPlaying = value);
-    });
-    _completedSubscription = _player.stream.completed.listen((value) async {
-      if (!value) {
-        return;
+      if (value.processingState == just_audio.ProcessingState.completed) {
+        await _player.pause();
+        await _player.seek(Duration.zero);
+        if (_activeAudioMessageId.value == widget.message.id) {
+          _activeAudioMessageId.value = null;
+        }
       }
 
-      await _player.pause();
-      await _player.seek(Duration.zero);
-      if (_activeAudioMessageId.value == widget.message.id) {
-        _activeAudioMessageId.value = null;
-      }
+      setState(() => _isPlaying = value.playing);
     });
     _activeAudioMessageId.addListener(_handleActiveAudioChanged);
   }
@@ -1239,9 +1237,8 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
     _activeAudioMessageId.removeListener(_handleActiveAudioChanged);
     unawaited(_positionSubscription?.cancel());
     unawaited(_durationSubscription?.cancel());
-    unawaited(_playingSubscription?.cancel());
-    unawaited(_completedSubscription?.cancel());
-    _player.dispose();
+    unawaited(_playerStateSubscription?.cancel());
+    unawaited(_player.dispose());
     final file = _tempFile;
     if (file != null) {
       unawaited(file.parent.delete(recursive: true));
@@ -1371,6 +1368,18 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                           ),
                     ),
                   ),
+                  TextButton(
+                    onPressed: _retryPlayback,
+                    child: Text(
+                      'Reintentar',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: widget.isOutgoing
+                                ? Colors.white
+                                : const Color(0xFF1D4ED8),
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -1403,7 +1412,18 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
       return;
     }
 
-    await _player.play();
+    try {
+      await _player.play();
+    } catch (error) {
+      debugPrint(
+        '[BOT_CENTER_AUDIO] play error messageId=${candidate.id} mediaUrl=${candidate.mediaUrl ?? '(none)'} error=$error',
+      );
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'No se pudo iniciar la reproducción.';
+        });
+      }
+    }
   }
 
   Future<bool> _ensureSourceReady(BotMessage candidate) async {
@@ -1417,8 +1437,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
       try {
         final directory =
             await Directory.systemTemp.createTemp('bot-center-audio-');
-        final extension =
-            _fileExtension(candidate.fileName ?? 'audio.mp3');
+        final extension = _fileExtension(candidate.fileName ?? 'audio.mp3');
         final file = File(
           '${directory.path}${Platform.pathSeparator}audio.$extension',
         );
@@ -1430,13 +1449,19 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
           unawaited(previousFile.parent.delete(recursive: true));
         }
 
-        await _player.open(Media(file.path), play: false);
+        debugPrint(
+          '[BOT_CENTER_AUDIO] setFilePath messageId=${candidate.id} path=${file.path}',
+        );
+        await _player.setFilePath(file.path);
         _openedSourceKey = nextKey;
         if (mounted) {
           setState(() => _errorMessage = null);
         }
         return true;
-      } catch (_) {
+      } catch (error) {
+        debugPrint(
+          '[BOT_CENTER_AUDIO] local load error messageId=${candidate.id} error=$error',
+        );
         if (mounted) {
           setState(() {
             _errorMessage = 'No se pudo reproducir el audio local.';
@@ -1448,9 +1473,12 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
 
     final remoteUrl = _resolvePlayableAudioUrl(candidate);
     if (remoteUrl == null) {
+      debugPrint(
+        '[BOT_CENTER_AUDIO] invalid mediaUrl messageId=${candidate.id} mediaUrl=${candidate.mediaUrl ?? '(none)'}',
+      );
       if (mounted) {
         setState(() {
-          _errorMessage = 'El audio no está disponible todavía.';
+          _errorMessage = 'El audio no tiene una URL válida.';
         });
       }
       return false;
@@ -1462,19 +1490,96 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
     }
 
     try {
-      await _player.open(Media(remoteUrl), play: false);
+      debugPrint(
+        '[BOT_CENTER_AUDIO] setUrl messageId=${candidate.id} mediaUrl=$remoteUrl',
+      );
+      await _player.setUrl(remoteUrl);
       _openedSourceKey = nextKey;
       if (mounted) {
         setState(() => _errorMessage = null);
       }
       return true;
-    } catch (_) {
+    } catch (error) {
+      debugPrint(
+        '[BOT_CENTER_AUDIO] remote load error messageId=${candidate.id} mediaUrl=$remoteUrl error=$error',
+      );
+
+      final refreshedCandidate = await _refreshMessageCandidate(candidate);
+      final refreshedUrl = _resolvePlayableAudioUrl(refreshedCandidate);
+      if (refreshedUrl != null && refreshedUrl != remoteUrl) {
+        try {
+          debugPrint(
+            '[BOT_CENTER_AUDIO] retry setUrl messageId=${refreshedCandidate.id} mediaUrl=$refreshedUrl',
+          );
+          await _player.setUrl(refreshedUrl);
+          _openedSourceKey = 'remote:$refreshedUrl';
+          if (mounted) {
+            setState(() => _errorMessage = null);
+          }
+          return true;
+        } catch (retryError) {
+          debugPrint(
+            '[BOT_CENTER_AUDIO] retry load error messageId=${refreshedCandidate.id} mediaUrl=$refreshedUrl error=$retryError',
+          );
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _errorMessage = 'No se pudo cargar el audio.';
+          _errorMessage =
+              'No se pudo cargar el audio. Reintenta para refrescar la URL.';
         });
       }
       return false;
+    }
+  }
+
+  Future<BotMessage> _refreshMessageCandidate(BotMessage candidate) async {
+    try {
+      await widget.controller.selectConversation(
+        candidate.conversationId,
+        forceReload: true,
+      );
+    } catch (error) {
+      debugPrint(
+        '[BOT_CENTER_AUDIO] refresh error messageId=${candidate.id} error=$error',
+      );
+    }
+
+    return widget.controller
+            .findMessageById(candidate.conversationId, candidate.id) ??
+        candidate;
+  }
+
+  Future<void> _retryPlayback() async {
+    if (mounted) {
+      setState(() {
+        _openedSourceKey = null;
+        _errorMessage = null;
+        _position = Duration.zero;
+        _duration = Duration.zero;
+      });
+    }
+
+    await _player.stop();
+    final candidate = await _refreshMessageCandidate(widget.message);
+    _activeAudioMessageId.value = widget.message.id;
+    final ready = await _ensureSourceReady(candidate);
+    if (!ready) {
+      return;
+    }
+
+    try {
+      await _player.play();
+    } catch (error) {
+      debugPrint(
+        '[BOT_CENTER_AUDIO] retry play error messageId=${candidate.id} mediaUrl=${candidate.mediaUrl ?? '(none)'} error=$error',
+      );
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'No se pudo iniciar la reproducción.';
+        });
+      }
     }
   }
 

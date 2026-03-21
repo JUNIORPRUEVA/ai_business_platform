@@ -125,9 +125,15 @@ export class EvolutionApiClientService {
           );
         }
 
+        const contentType = response.headers.get('content-type');
+        const resolvedBody = await this.readMediaDownloadBody(response, contentType);
+        if (!resolvedBody || !resolvedBody.buffer.length) {
+          throw new ServiceUnavailableException('Evolution media download returned an empty body.');
+        }
+
         return {
-          buffer: Buffer.from(await response.arrayBuffer()),
-          contentType: response.headers.get('content-type'),
+          buffer: resolvedBody.buffer,
+          contentType: resolvedBody.contentType ?? contentType,
           contentLength: response.headers.get('content-length'),
         };
       } catch (error) {
@@ -142,6 +148,48 @@ export class EvolutionApiClientService {
       `[EVOLUTION API] media url download failed instanceName=${config.instanceName} url=${sourceUrl} error=${lastError instanceof Error ? lastError.message : 'unknown'}`,
     );
     return null;
+  }
+
+  private async readMediaDownloadBody(
+    response: Response,
+    contentTypeHeader: string | null,
+  ): Promise<{ buffer: Buffer; contentType: string | null } | null> {
+    const normalizedContentType = contentTypeHeader?.toLowerCase() ?? '';
+    const expectsStructuredBody =
+      normalizedContentType.includes('application/json') ||
+      normalizedContentType.startsWith('text/');
+
+    if (expectsStructuredBody) {
+      const text = await response.text().catch(() => '');
+      const payload = this.parseJson(text);
+      const base64Payload = this.extractBase64Payload(payload);
+      if (!base64Payload) {
+        return null;
+      }
+
+      const normalized = base64Payload.includes(',')
+        ? (base64Payload.split(',').pop() ?? '')
+        : base64Payload;
+      const buffer = Buffer.from(normalized, 'base64');
+      if (!buffer.length) {
+        return null;
+      }
+
+      return {
+        buffer,
+        contentType: this.extractContentType(payload, base64Payload) ?? contentTypeHeader,
+      };
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) {
+      return null;
+    }
+
+    return {
+      buffer,
+      contentType: contentTypeHeader,
+    };
   }
 
   async downloadMediaMessage(

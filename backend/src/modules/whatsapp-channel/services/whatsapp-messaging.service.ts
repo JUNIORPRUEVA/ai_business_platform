@@ -637,6 +637,7 @@ export class WhatsappMessagingService {
       const signed = await this.storageService.presignDownload({
         companyId,
         key: attachment.storagePath,
+        expiresInSeconds: 60 * 60 * 24,
       });
 
       return {
@@ -651,8 +652,9 @@ export class WhatsappMessagingService {
     }
 
     if (directUrl && directUrl.trim().length > 0) {
+      const sanitizedUrl = this.assertHttpMediaUrl(directUrl, 'mediaUrl/audioUrl');
       return {
-        url: directUrl.trim(),
+        url: sanitizedUrl,
         mimeType: null,
         fileName: 'remote-file',
         storagePath: null,
@@ -663,6 +665,20 @@ export class WhatsappMessagingService {
     }
 
     throw new BadRequestException('Debes enviar attachmentId o mediaUrl/audioUrl.');
+  }
+
+  private assertHttpMediaUrl(value: string, fieldName: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new BadRequestException(`${fieldName} es obligatorio.`);
+    }
+
+    const parsed = URL.parse(trimmed);
+    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+      throw new BadRequestException(`${fieldName} debe ser una URL HTTP/HTTPS valida.`);
+    }
+
+    return trimmed;
   }
 
   private async resolveOutboundConfig(
