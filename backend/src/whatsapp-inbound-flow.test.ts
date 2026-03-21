@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { WhatsappAttachmentService } from './modules/whatsapp-channel/services/whatsapp-attachment.service';
 import { WhatsappMessagingService } from './modules/whatsapp-channel/services/whatsapp-messaging.service';
 import { WhatsappJidResolverService } from './modules/whatsapp-channel/services/whatsapp-jid-resolver.service';
 import { WhatsappWebhookService } from './modules/whatsapp-channel/services/whatsapp-webhook.service';
@@ -106,19 +107,6 @@ const jidResolverStub = {
       return null;
     }
     const normalized = digits.length === 10 ? `1${digits}` : digits;
-
-  test('WhatsappAttachmentService normaliza extensiones truncadas usando el mime type', () => {
-    const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
-    const resolveExtension = (
-      service as unknown as {
-        resolveExtension: (originalName: string, mimeType: string | null, fileType: string) => string;
-      }
-    ).resolveExtension.bind(service);
-
-    assert.equal(resolveExtension('foto.j', 'image/jpeg', 'image'), 'jpg');
-    assert.equal(resolveExtension('clip.vid', 'video/mp4', 'video'), 'mp4');
-    assert.equal(resolveExtension('voice.a', 'audio/ogg; codecs=opus', 'audio'), 'ogg');
-  });
     return `${normalized}@s.whatsapp.net`;
   },
   extractCanonicalRemoteJidFromPayload: (payload: Record<string, unknown>) => {
@@ -150,6 +138,19 @@ Object.assign(emptyEvolutionApiClient, {
   normalizeRemoteJid: jidResolverStub.normalizeRemoteJid,
   extractCanonicalRemoteJid: jidResolverStub.extractCanonicalRemoteJid,
   lookupCanonicalRemoteJidFromEvolution: jidResolverStub.lookupCanonicalRemoteJidFromEvolution,
+});
+
+test('WhatsappAttachmentService normaliza extensiones truncadas usando el mime type', () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const resolveExtension = (
+    service as unknown as {
+      resolveExtension: (originalName: string, mimeType: string | null, fileType: string) => string;
+    }
+  ).resolveExtension.bind(service);
+
+  assert.equal(resolveExtension('foto.j', 'image/jpeg', 'image'), 'jpg');
+  assert.equal(resolveExtension('clip.vid', 'video/mp4', 'video'), 'mp4');
+  assert.equal(resolveExtension('voice.a', 'audio/ogg; codecs=opus', 'audio'), 'ogg');
 });
 
 test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guarda en el flujo de la UI', async () => {
