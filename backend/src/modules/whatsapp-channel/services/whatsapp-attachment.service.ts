@@ -584,7 +584,7 @@ export class WhatsappAttachmentService {
 
   private ensureAudioFileName(originalName: string, mimeType: string | null): string {
     const fromName = extname(originalName).trim().toLowerCase();
-    if (fromName) {
+    if (this.resolveNamedExtension(originalName, 'audio')) {
       return originalName;
     }
 
@@ -685,24 +685,31 @@ export class WhatsappAttachmentService {
     mimeType: string | null,
     fileType: string,
   ): string {
-    const fromName = extname(originalName).replace('.', '').trim().toLowerCase();
+    const fromName = this.resolveNamedExtension(originalName, fileType);
     if (fromName) {
       return fromName;
     }
 
-    switch (mimeType?.toLowerCase()) {
+    const normalizedMimeType = mimeType?.split(';')[0]?.trim().toLowerCase() ?? null;
+
+    switch (normalizedMimeType) {
       case 'image/jpeg':
+      case 'image/jpg':
         return 'jpg';
       case 'image/png':
         return 'png';
       case 'image/webp':
         return 'webp';
+      case 'image/gif':
+        return 'gif';
       case 'video/mp4':
         return 'mp4';
       case 'video/webm':
         return 'webm';
       case 'video/quicktime':
         return 'mov';
+      case 'video/x-matroska':
+        return 'mkv';
       case 'audio/mpeg':
         return 'mp3';
       case 'audio/mp3':
@@ -728,6 +735,30 @@ export class WhatsappAttachmentService {
           return 'mp3';
         }
         return 'bin';
+    }
+  }
+
+  private resolveNamedExtension(originalName: string, fileType: string): string | null {
+    const fromName = extname(originalName).replace('.', '').trim().toLowerCase();
+    if (!fromName) {
+      return null;
+    }
+
+    switch (fileType) {
+      case 'image':
+        if (!['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(fromName)) {
+          return null;
+        }
+        return fromName === 'jpeg' ? 'jpg' : fromName;
+      case 'video':
+        return ['mp4', 'webm', 'mov', 'mkv'].includes(fromName) ? fromName : null;
+      case 'audio':
+        if (!['mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav'].includes(fromName)) {
+          return null;
+        }
+        return fromName === 'opus' ? 'ogg' : fromName;
+      default:
+        return fromName.length >= 2 ? fromName : null;
     }
   }
 
