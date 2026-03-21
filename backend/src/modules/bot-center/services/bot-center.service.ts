@@ -1277,7 +1277,24 @@ export class BotCenterService {
       return null;
     }
 
-    const response = await fetch(externalCandidate);
+    const embeddedAsset = this.tryDecodeEmbeddedAsset(
+      externalCandidate,
+      this.resolveMessageAssetContentType(message, variant),
+    );
+    if (embeddedAsset) {
+      return {
+        buffer: embeddedAsset.buffer,
+        contentType: embeddedAsset.contentType,
+        fileName: this.resolveMessageAssetFileName(message, variant),
+      };
+    }
+
+    const parsedUrl = this.parseHttpUrl(externalCandidate);
+    if (!parsedUrl) {
+      return null;
+    }
+
+    const response = await fetch(parsedUrl);
     if (!response.ok) {
       return null;
     }
@@ -1353,6 +1370,71 @@ export class BotCenterService {
       default:
         return 'jpg';
     }
+  }
+
+  private tryDecodeEmbeddedAsset(
+    candidate: string,
+    fallbackContentType: string,
+  ): { buffer: Buffer; contentType: string } | null {
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const dataUrlMatch = /^data:([^;]+);base64,(.+)$/is.exec(trimmed);
+    if (dataUrlMatch) {
+      const buffer = Buffer.from(dataUrlMatch[2], 'base64');
+      if (!buffer.length) {
+        return null;
+      }
+
+      return {
+        buffer,
+        contentType: dataUrlMatch[1] || fallbackContentType,
+      };
+    }
+
+    if (!this.looksLikeRawBase64(trimmed)) {
+      return null;
+    }
+
+    const buffer = Buffer.from(trimmed, 'base64');
+    if (!buffer.length) {
+      return null;
+    }
+
+    return {
+      buffer,
+      contentType: fallbackContentType,
+    };
+  }
+
+  private looksLikeRawBase64(value: string): boolean {
+    if (value.length < 32 || value.length % 4 !== 0) {
+      return false;
+    }
+
+    if (/[^A-Za-z0-9+/=\r\n]/.test(value)) {
+      return false;
+    }
+
+    return (
+      value.startsWith('/9j/') ||
+      value.startsWith('iVBOR') ||
+      value.startsWith('R0lGOD') ||
+      value.startsWith('UklGR')
+    );
+  }
+
+  private parseHttpUrl(candidate: string): string | null {
+    const parsed = URL.parse(candidate);
+    if (!parsed) {
+      return null;
+    }
+
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? candidate
+      : null;
   }
 
   private readOptionalNumber(value: unknown): number | null {
