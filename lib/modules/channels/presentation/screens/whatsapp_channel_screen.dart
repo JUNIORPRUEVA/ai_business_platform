@@ -547,6 +547,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       );
 
       await _loadHealth(silent: true);
+      await _refreshStatus(silent: true);
 
       // If not connected, fetch fresh QR and start polling.
       if (uiStatus != WhatsappChannelUiStatus.connected &&
@@ -1399,8 +1400,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                             _buildConfigField(
                                               controller:
                                                   _evolutionConnectedNumberController,
-                                              label: 'Número conectado',
-                                              hint: '+57 300 123 4567',
+                                              label:
+                                                  'Número global de referencia',
+                                              hint:
+                                                  'Opcional. No se usa para vincular la instancia.',
                                               enabled:
                                                   !_isSavingProviderSettings &&
                                                       !_loadingProviderSettings,
@@ -1726,9 +1729,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                             healthError == null),
                                         _buildSummaryRow(
                                             theme,
-                                            'Número configurado',
+                                            'Número global de referencia',
                                             configuredConnectedNumber.isEmpty
-                                                ? 'No definido'
+                                                ? 'No configurado (opcional)'
                                                 : configuredConnectedNumber,
                                             configuredConnectedNumber
                                                 .isNotEmpty),
@@ -2017,8 +2020,6 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   }
 
   _ChannelIssue? _derivePrimaryIssue() {
-    final configuredNumber = _evolutionConnectedNumberController.text.trim();
-    final configuredDigits = _normalizedDigits(configuredNumber);
     final instanceNumber = _instancePhoneNumber?.trim() ?? '';
     final instanceDigits = _normalizedDigits(instanceNumber);
     final providerMessage = _providerMessage?.trim();
@@ -2064,34 +2065,12 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     }
 
     if (_status == WhatsappChannelUiStatus.connected &&
-        configuredDigits.isEmpty) {
-      return const _ChannelIssue(
-        title: 'Falta el número conectado',
-        message:
-            'La instancia ya está conectada, pero todavía no guardaste el número conectado en Evolution. Complétalo en la configuración del proveedor.',
-        target: _ChannelIssueTarget.provider,
-      );
-    }
-
-    if (_status == WhatsappChannelUiStatus.connected &&
         instanceDigits.isEmpty) {
       return const _ChannelIssue(
         title: 'Evolution no reportó el número de la instancia',
         message:
-            'La conexión aparece activa, pero Evolution aún no devolvió el número vinculado. Actualiza el estado o reconecta la instancia para refrescarlo.',
+            'La conexión aparece activa, pero Evolution todavía no sincronizó la identidad del dispositivo. El sistema intentará detectarla automáticamente; si no aparece, actualiza el estado o reconecta la instancia.',
         target: _ChannelIssueTarget.status,
-      );
-    }
-
-    if (_status == WhatsappChannelUiStatus.connected &&
-        configuredDigits.isNotEmpty &&
-        instanceDigits.isNotEmpty &&
-        configuredDigits != instanceDigits) {
-      return _ChannelIssue(
-        title: 'El número configurado no coincide',
-        message:
-            'El número guardado ($configuredNumber) no coincide con el número que Evolution reporta para la instancia (${_instancePhoneNumber!.trim()}). Corrige ese dato para evitar confusión operativa.',
-        target: _ChannelIssueTarget.provider,
       );
     }
 

@@ -535,13 +535,17 @@ export class WhatsappInstancesService {
     if (event === 'CONNECTION_UPDATE') {
       const next = this.guessStatusFromWebhook(data);
       const instanceIdentity = this.extractInstanceIdentity(data);
+      const fallbackIdentity =
+        instanceIdentity.phoneNumber || instanceIdentity.jid
+          ? instanceIdentity
+          : await this.syncInstanceIdentityFromEvolution(entity, entity.instanceName);
       entity.status = next ?? entity.status;
       entity.sessionData = data;
-      if (instanceIdentity.phoneNumber) {
-        entity.phoneNumber = instanceIdentity.phoneNumber;
+      if (fallbackIdentity.phoneNumber) {
+        entity.phoneNumber = fallbackIdentity.phoneNumber;
       }
-      if (instanceIdentity.jid) {
-        entity.jid = instanceIdentity.jid;
+      if (fallbackIdentity.jid) {
+        entity.jid = fallbackIdentity.jid;
       }
 
       if (entity.status === 'connected') {
@@ -552,12 +556,25 @@ export class WhatsappInstancesService {
       await this.syncChannelInstanceIdentity(
         entity.tenantId,
         entity.instanceName,
-        instanceIdentity.phoneNumber ?? entity.phoneNumber,
+        fallbackIdentity.phoneNumber ?? entity.phoneNumber,
       );
       return { updated: true, instanceName, event };
     }
 
     if (event === 'MESSAGES_UPSERT') {
+      if (!entity.phoneNumber || !entity.jid) {
+        const identity = await this.syncInstanceIdentityFromEvolution(
+          entity,
+          entity.instanceName,
+        );
+        if (identity.phoneNumber) {
+          entity.phoneNumber = identity.phoneNumber;
+        }
+        if (identity.jid) {
+          entity.jid = identity.jid;
+        }
+      }
+
       const expandedPayloads = this.expandInboundPayloads(payload);
       let mirroredMessages = 0;
 
@@ -904,12 +921,132 @@ export class WhatsappInstancesService {
     return { phoneNumber: null, jid: null };
   }
 
+  private extractInstanceIdentityFromRuntimePayload(
+    value: unknown,
+    instanceName: string,
+    depth = 0,
+  ): { phoneNumber: string | null; jid: string | null } {
+    if (depth > 5 || value == null) {
+      return { phoneNumber: null, jid: null };
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const nested = this.extractInstanceIdentityFromRuntimePayload(
+          item,
+          instanceName,
+          depth + 1,
+        );
+        if (nested.phoneNumber || nested.jid) {
+          return nested;
+        }
+      }
+      return { phoneNumber: null, jid: null };
+    }
+
+    const map = this.readMap(value);
+    if (Object.keys(map).length === 0) {
+      return { phoneNumber: null, jid: null };
+    }
+
+    const direct = this.extractInstanceIdentity(map);
+    if (direct.phoneNumber || direct.jid) {
+      return direct;
+    }
+
+    const nestedCandidates: Array<unknown> = [
+      map['instance'],
+      map['data'],
+      map['response'],
+      map['me'],
+      map['instances'],
+      map['result'],
+      map['payload'],
+    ];
+
+    for (const candidate of nestedCandidates) {
+      const nested = this.extractInstanceIdentityFromRuntimePayload(
+        candidate,
+        instanceName,
+        depth + 1,
+      );
+      if (nested.phoneNumber || nested.jid) {
+        return nested;
+      }
+    }
+
+    for (const nestedValue of Object.values(map)) {
+      if (!this.payloadMayContainInstanceIdentity(nestedValue, instanceName)) {
+        continue;
+      }
+
+      const nested = this.extractInstanceIdentityFromRuntimePayload(
+        nestedValue,
+        instanceName,
+        depth + 1,
+      );
+      if (nested.phoneNumber || nested.jid) {
+        return nested;
+      }
+    }
+
+    return { phoneNumber: null, jid: null };
+  }
+
   private async syncInstanceIdentityFromEvolution(
     entity: WhatsappInstanceEntity,
     instanceName: string,
   ): Promise<{ phoneNumber: string | null; jid: string | null }> {
-    const status = await this.evolutionService.getInstanceStatus(instanceName).catch(() => null);
-    const identity = status ? this.extractInstanceIdentity(this.readMap(status.raw)) : { phoneNumber: null, jid: null };
+    const runtimePayloads: unknown[] = [];
+
+    if (entity.sessionData) {
+      runtimePayloads.push(entity.sessionData);
+    }
+
+    const connectionState =
+      typeof this.evolutionService.checkConnection === 'function'
+        ? await this.evolutionService.checkConnection(instanceName).catch(() => null)
+        : null;
+    if (connectionState?.raw != null) {
+      runtimePayloads.push(connectionState.raw);
+    }
+
+    const status =
+      typeof this.evolutionService.getInstanceStatus === 'function'
+        ? await this.evolutionService.getInstanceStatus(instanceName).catch(() => null)
+        : null;
+    if (status?.raw != null) {
+      runtimePayloads.push(status.raw);
+    }
+
+    const fetchedInstances =
+      typeof (this.evolutionService as { fetchInstances?: (name?: string) => Promise<unknown> }).fetchInstances ===
+      'function'
+        ? await (
+            this.evolutionService as {
+              fetchInstances: (name?: string) => Promise<unknown>;
+            }
+          )
+            .fetchInstances(instanceName)
+            .catch(() => null)
+        : null;
+    if (fetchedInstances != null) {
+      runtimePayloads.push(fetchedInstances);
+    }
+
+    let identity: { phoneNumber: string | null; jid: string | null } = {
+      phoneNumber: null,
+      jid: null,
+    };
+    for (const payload of runtimePayloads) {
+      identity = this.extractInstanceIdentityFromRuntimePayload(
+        payload,
+        instanceName,
+      );
+      if (identity.phoneNumber || identity.jid) {
+        break;
+      }
+    }
 
     if (identity.phoneNumber) {
       entity.phoneNumber = identity.phoneNumber;
@@ -920,6 +1057,37 @@ export class WhatsappInstancesService {
 
     await this.syncChannelInstanceIdentity(entity.tenantId, entity.instanceName, identity.phoneNumber ?? entity.phoneNumber);
     return identity;
+  }
+
+  private payloadMayContainInstanceIdentity(
+    value: unknown,
+    instanceName: string,
+  ): boolean {
+    if (typeof value === 'string') {
+      return value.trim() === instanceName;
+    }
+
+    if (Array.isArray(value)) {
+      return value.some((item) =>
+        this.payloadMayContainInstanceIdentity(item, instanceName),
+      );
+    }
+
+    if (typeof value !== 'object' || value == null) {
+      return false;
+    }
+
+    const map = value as Record<string, unknown>;
+    const candidateNames = [
+      this.readString(map['instanceName']),
+      this.readString(map['instance_name']),
+      this.readString(map['name']),
+      this.readString(this.readMap(map['instance'])['instanceName']),
+      this.readString(this.readMap(map['instance'])['instance_name']),
+      this.readString(this.readMap(map['instance'])['name']),
+    ];
+
+    return candidateNames.some((candidate) => candidate === instanceName);
   }
 
   private async syncChannelInstanceIdentity(

@@ -1149,6 +1149,7 @@ test('WhatsappInstancesService normaliza payloads inbound con data.messages[] y 
     companyId: 'company-1',
     provider: 'evolution',
     instanceName: 'demo-instance',
+    instancePhone: null,
     instanceStatus: 'connected',
     webhookUrl: 'https://example.com/webhook/evolution',
     lastSyncAt: new Date(),
@@ -1171,6 +1172,16 @@ test('WhatsappInstancesService normaliza payloads inbound con data.messages[] y 
     {
       getRuntimeSettingsSnapshot: async () => ({ baseUrl: 'https://evolution.example.com', apiKey: 'secret' }),
       buildInstanceWebhookUrl: () => 'https://app.example.com/webhook/evolution',
+      checkConnection: async () => ({ status: 'connected', raw: { instance: { instanceName: 'demo-instance', state: 'open' } } }),
+      getInstanceStatus: async () => ({ status: 'connected', raw: { instance: { instanceName: 'demo-instance', state: 'open' } } }),
+      fetchInstances: async () => ([
+        {
+          instance: {
+            instanceName: 'demo-instance',
+            owner: '18295319445@s.whatsapp.net',
+          },
+        },
+      ]),
     } as never,
     { get: () => undefined } as never,
     { getByInstanceNameUnsafe: async () => ({ id: 'channel-1' }) } as never,
@@ -1218,10 +1229,76 @@ test('WhatsappInstancesService normaliza payloads inbound con data.messages[] y 
   assert.equal(result['botCenterMessages'], 0);
   assert.equal(mirroredPayloads.length, 1);
   assert.equal(botCenterPayloads.length, 0);
+  assert.equal(instance.phoneNumber, '18295319445');
+  assert.equal(config.instancePhone, '18295319445');
   assert.equal(
     ((mirroredPayloads[0]['data'] as Record<string, unknown>)['messages'] as Array<unknown>).length,
     1,
   );
+});
+
+test('WhatsappInstancesService refresca y persiste el numero de la instancia desde fetchInstances de Evolution', async () => {
+  const instance = {
+    id: 'instance-1',
+    tenantId: 'company-1',
+    instanceName: 'demo-instance',
+    status: 'connecting',
+    qrCode: 'stub-qr',
+    phoneNumber: null,
+    jid: null,
+    sessionData: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instancePhone: null,
+    instanceStatus: 'connecting',
+    lastSyncAt: null,
+  };
+
+  const service = new WhatsappInstancesService(
+    new InMemoryRepository([instance]) as never,
+    { findOne: async () => ({ payload: { whatsapp: {} } }) } as never,
+    new InMemoryRepository([config]) as never,
+    new InMemoryRepository([]) as never,
+    new InMemoryRepository([]) as never,
+    new InMemoryRepository([]) as never,
+    {
+      checkConnection: async () => ({
+        status: 'connected',
+        raw: { instance: { instanceName: 'demo-instance', state: 'open' } },
+      }),
+      getInstanceStatus: async () => ({
+        status: 'connected',
+        raw: { instance: { instanceName: 'demo-instance', status: 'open' } },
+      }),
+      fetchInstances: async () => ([
+        {
+          instance: {
+            instanceName: 'demo-instance',
+            owner: '18295319445@s.whatsapp.net',
+          },
+        },
+      ]),
+    } as never,
+    { get: () => undefined } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const result = await service.refreshStatus('company-1', 'demo-instance');
+
+  assert.equal(result.status, 'connected');
+  assert.equal(result.phoneNumber, '18295319445');
+  assert.equal(instance.phoneNumber, '18295319445');
+  assert.equal(instance.jid, '18295319445@s.whatsapp.net');
+  assert.equal(config.instancePhone, '18295319445');
 });
 
 test('WhatsappWebhookService no procesa ni responde dos veces al mismo evolution message id', async () => {

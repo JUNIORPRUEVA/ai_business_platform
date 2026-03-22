@@ -362,6 +362,17 @@ export class EvolutionService {
     return { status, raw };
   }
 
+  async fetchInstances(instanceName?: string): Promise<unknown> {
+    const query = instanceName?.trim()
+      ? `?instanceName=${encodeURIComponent(instanceName.trim())}`
+      : '';
+
+    return this.requestJson(
+      `/instance/fetchInstances${query}`,
+      { method: 'GET' },
+    );
+  }
+
   async logoutInstance(instanceName: string): Promise<unknown> {
     try {
       return await this.requestJson(
