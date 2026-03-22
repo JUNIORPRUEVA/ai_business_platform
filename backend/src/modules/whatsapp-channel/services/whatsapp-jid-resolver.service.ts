@@ -39,6 +39,10 @@ export class WhatsappJidResolverService {
     return trimmed.includes('@') ? trimmed : `${trimmed.replace(/\D/g, '')}@s.whatsapp.net`;
   }
 
+  normalizeJid(value: string, options?: { throwOnEmpty?: boolean }): string {
+    return this.normalizeRemoteJid(value, options);
+  }
+
   describeJid(originalJid: string, canonicalJid?: string | null): JidDescriptor {
     const normalizedJid = this.normalizeRemoteJid(originalJid);
     const normalizedCanonical = this.normalizeCanonicalRemoteJid(canonicalJid);
@@ -75,6 +79,10 @@ export class WhatsappJidResolverService {
   }
 
   jidToNumber(jid: string): string {
+    return this.extractPhoneFromJid(jid);
+  }
+
+  extractPhoneFromJid(jid: string): string {
     return jid.replace(/@.+$/, '').replace(/\D/g, '');
   }
 

@@ -230,9 +230,26 @@ export class WhatsappWebhookService {
       remoteJid,
       messageId,
     );
+    const chatIdentityJid = this.resolveChatIdentityJid({
+      config,
+      remoteJid,
+      canonicalRemoteJid,
+      fromMe,
+    });
+
+    console.log('FROM ME:', fromMe);
+    console.log('REMOTE JID:', remoteJid);
+    console.log('CHAT JID USED:', chatIdentityJid ?? '(unresolved)');
+
+    if (!chatIdentityJid) {
+      this.logger.warn(
+        `[EVOLUTION INBOUND] message ignored reason=missing_chat_identity_jid companyId=${config.companyId} instanceName=${config.instanceName} remoteJid=${remoteJid} canonicalJid=${canonicalRemoteJid ?? '(none)'} fromMe=${fromMe}`,
+      );
+      return null;
+    }
 
     this.logger.log(
-      `[INBOUND JID RESOLUTION] companyId=${config.companyId} instanceName=${config.instanceName} remoteJidOriginal=${rawRemoteJid || '(none)'} remoteJidNormalized=${remoteJid} canonicalJid=${canonicalRemoteJid ?? '(none)'} canReply=${remoteJid.endsWith('@lid') ? canonicalRemoteJid != null : true}`,
+      `[INBOUND JID RESOLUTION] companyId=${config.companyId} instanceName=${config.instanceName} remoteJidOriginal=${rawRemoteJid || '(none)'} remoteJidNormalized=${remoteJid} canonicalJid=${canonicalRemoteJid ?? '(none)'} chatJidUsed=${chatIdentityJid} canReply=${remoteJid.endsWith('@lid') ? canonicalRemoteJid != null : true}`,
     );
 
     if (remoteJid.endsWith('@lid') && !canonicalRemoteJid) {
@@ -248,7 +265,7 @@ export class WhatsappWebhookService {
     const saved = await this.messagingService.upsertInboundMessage({
       companyId: config.companyId,
       config,
-      remoteJid,
+      remoteJid: chatIdentityJid,
       canonicalRemoteJid,
         rawRemoteJid: rawRemoteJid ? rawRemoteJid : null,
       pushName: this.readString(data['pushName']) || null,
@@ -267,10 +284,10 @@ export class WhatsappWebhookService {
     });
 
     this.logger.log(
-      `[EVOLUTION INBOUND] chat resolved id=${saved.chatId} companyId=${config.companyId} remoteJid=${remoteJid}`,
+      `[EVOLUTION INBOUND] chat resolved id=${saved.chatId} companyId=${config.companyId} remoteJid=${chatIdentityJid}`,
     );
     this.logger.log(
-      `[EVOLUTION INBOUND] message saved id=${saved.id} type=${saved.messageType} companyId=${config.companyId} remoteJid=${remoteJid}`,
+      `[EVOLUTION INBOUND] message saved id=${saved.id} type=${saved.messageType} companyId=${config.companyId} remoteJid=${chatIdentityJid}`,
     );
 
     let messageForRealtime = saved;
@@ -311,7 +328,7 @@ export class WhatsappWebhookService {
         messageForRealtime.chatId,
         messageForRealtime.id,
         content.textBody,
-        remoteJid,
+        chatIdentityJid,
         canonicalRemoteJid,
       );
     }
@@ -319,10 +336,46 @@ export class WhatsappWebhookService {
     return {
       messageId: saved.id,
       chatId: saved.chatId,
-      remoteJid: saved.remoteJid,
+      remoteJid: chatIdentityJid,
       messageType: saved.messageType,
       fromMe: saved.fromMe,
     };
+  }
+
+  private resolveChatIdentityJid(params: {
+    config: WhatsappChannelConfigEntity;
+    remoteJid: string;
+    canonicalRemoteJid?: string | null;
+    fromMe: boolean;
+  }): string | null {
+    const canonicalRemoteJid = this.jidResolver.normalizeCanonicalRemoteJid(params.canonicalRemoteJid);
+    if (canonicalRemoteJid && !this.isInstanceJid(params.config, canonicalRemoteJid)) {
+      return canonicalRemoteJid;
+    }
+
+    const normalizedRemoteJid = this.jidResolver.normalizeJid(params.remoteJid);
+    if (!params.fromMe && normalizedRemoteJid && !this.isInstanceJid(params.config, normalizedRemoteJid)) {
+      return normalizedRemoteJid;
+    }
+
+    if (params.fromMe) {
+      return null;
+    }
+
+    return normalizedRemoteJid && !this.isInstanceJid(params.config, normalizedRemoteJid)
+      ? normalizedRemoteJid
+      : null;
+  }
+
+  private isInstanceJid(config: WhatsappChannelConfigEntity, jid: string): boolean {
+    const instancePhone = this.readString(config.instancePhone);
+    if (!instancePhone) {
+      return false;
+    }
+
+    const instanceDigits = this.jidResolver.normalizeOutboundNumber(instancePhone);
+    const jidDigits = this.jidResolver.extractPhoneFromJid(jid);
+    return Boolean(instanceDigits && jidDigits && instanceDigits === jidDigits);
   }
 
   private async triggerAiAutoReply(

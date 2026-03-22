@@ -29,6 +29,34 @@ export class MessagesService {
     });
   }
 
+  async listRecent(companyId: string, conversationId: string, limit = 50): Promise<MessageEntity[]> {
+    const conversation = await this.conversationsRepository.findOne({
+      where: { id: conversationId },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found.');
+    if (conversation.companyId !== companyId) throw new ForbiddenException();
+
+    const recentMessages = await this.messagesRepository.find({
+      where: { conversationId },
+      order: { createdAt: 'DESC' },
+      take: Math.min(Math.max(limit, 1), 200),
+    });
+
+    return recentMessages.reverse();
+  }
+
+  async getById(companyId: string, conversationId: string, messageId: string): Promise<MessageEntity | null> {
+    const conversation = await this.conversationsRepository.findOne({
+      where: { id: conversationId },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found.');
+    if (conversation.companyId !== companyId) throw new ForbiddenException();
+
+    return this.messagesRepository.findOne({
+      where: { id: messageId, conversationId },
+    });
+  }
+
   async createFromUser(companyId: string, conversationId: string, dto: CreateMessageDto): Promise<MessageEntity> {
     return this.create(companyId, conversationId, {
       sender: 'user',

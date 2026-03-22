@@ -12,7 +12,7 @@ import { ChannelsService } from '../../channels/channels.service';
 import { CompaniesService } from '../../companies/companies.service';
 import { ContactsService } from '../../contacts/contacts.service';
 import { ConversationsService } from '../../conversations/conversations.service';
-import { MessageEntity } from '../../messages/entities/message.entity';
+import { MessageEntity, MessageSender } from '../../messages/entities/message.entity';
 import { MessagesService } from '../../messages/messages.service';
 import { OpenAiChatMessage, OpenAiDraftResponse } from '../../openai/types/openai.types';
 import { OpenAiService } from '../../openai/services/openai.service';
@@ -90,13 +90,27 @@ export class AiBrainService {
       const contact = await this.contactsService.get(params.companyId, conversation.contactId);
       contactId = contact.id;
 
-      const recentMessages = await this.messagesService.list(
+      const currentInboundMessage = await this.messagesService.getById(
+        params.companyId,
+        params.conversationId,
+        params.messageId,
+      );
+      if (!currentInboundMessage) {
+        throw new Error(
+          `[AI BRAIN] inbound message not found conversationId=${params.conversationId} messageId=${params.messageId}`,
+        );
+      }
+      if (currentInboundMessage.sender !== 'client') {
+        throw new Error(
+          `[AI BRAIN] latest message must be from user conversationId=${params.conversationId} messageId=${params.messageId} sender=${currentInboundMessage.sender}`,
+        );
+      }
+
+      const recentMessages = await this.messagesService.listRecent(
         params.companyId,
         params.conversationId,
         Math.max(memoryWindowSize, 20),
       );
-      const currentInboundMessage =
-        recentMessages.filter((message) => message.sender === 'client').slice(-1)[0] ?? null;
       const userMessage = currentInboundMessage?.content?.trim() || '';
       const contactPhone = (params.contactPhone || contact.phone || '').trim();
 
@@ -242,7 +256,10 @@ export class AiBrainService {
       );
       this.logger.log(`[AI BRAIN] tools resolved count=${activeTools.length}`);
 
-      const recentTranscriptMessages = this.buildRecentTranscriptMessages(recentMessages);
+      const recentTranscriptMessages = this.buildRecentTranscriptMessages(
+        recentMessages,
+        currentInboundMessage.id,
+      );
       const context = this.aiBrainContextBuilderService.build({
         company,
         bot,
@@ -258,11 +275,15 @@ export class AiBrainService {
         recentMessages: recentTranscriptMessages,
         incomingMessage: userMessage,
       });
+      const openAiMessages = this.ensureValidOpenAiMessages(
+        context.modelMessages,
+        userMessage,
+      );
       const approximatePromptTokens = this.approximateTokenCount(
-        context.modelMessages.map((item) => item.content),
+        openAiMessages.map((item) => item.content),
       );
       this.logger.log(
-        `[AI BRAIN] prompt built tokens=${approximatePromptTokens} messages=${context.modelMessages.length}`,
+        `[AI BRAIN] prompt built tokens=${approximatePromptTokens} messages=${openAiMessages.length}`,
       );
 
       const responseTemperature = this.resolveResponseTemperature(
@@ -280,13 +301,17 @@ export class AiBrainService {
       let finalContent = '';
       let executedTool: { tool: string; ok: boolean; result: unknown } | null = null;
 
-      console.log('[AI DEBUG] userMessage:', userMessage);
-      console.log('[AI DEBUG] finalPrompt:', context.modelMessages);
+      console.log('LATEST USER MESSAGE:', userMessage);
+      console.log('ALL MESSAGES:', openAiMessages.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })));
+      console.log('[AI DEBUG] finalPrompt:', openAiMessages);
       this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
       firstDraft = await this.openAiService.draftResponse({
         senderName: contact.name || undefined,
         detectedIntent,
-        messages: context.modelMessages,
+        messages: openAiMessages,
         model: bot.model,
         temperature: responseTemperature,
         presencePenalty: AiBrainService.responsePresencePenalty,
@@ -360,7 +385,7 @@ export class AiBrainService {
           frequencyPenalty: AiBrainService.responseFrequencyPenalty,
           maxTokens: configuration.openai.maxTokens,
           messages: [
-            ...context.modelMessages,
+            ...openAiMessages,
             {
               role: 'assistant',
               content: `[tool:${executedTool.tool}] ${JSON.stringify(executedTool.result)}`,
@@ -529,16 +554,23 @@ export class AiBrainService {
     });
 
     for (const message of recentMessages) {
-      const role = message.sender === 'bot' ? 'assistant' : 'user';
+      const role = this.mapSenderToOpenAiRole(message.sender as MessageSender);
+      if (!role) {
+        continue;
+      }
+      const content = message.content.trim();
+      if (!content) {
+        continue;
+      }
       await this.memoryService.appendConversationMemory({
         companyId,
         contactId,
         conversationId,
         role,
-        content: message.content,
+        content,
         contentType: 'text',
         metadataJson: {},
-        source: message.sender === 'bot' ? 'assistant_response' : 'inbound_message',
+        source: role === 'assistant' ? 'assistant_response' : 'inbound_message',
         dedupeAgainstLast: false,
       });
     }
@@ -633,21 +665,75 @@ export class AiBrainService {
 
   private buildRecentTranscriptMessages(
     recentMessages: MessageEntity[],
+    currentInboundId: string,
   ): OpenAiChatMessage[] {
-    const history = recentMessages.slice(-8);
+    const history = [...recentMessages]
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .slice(-8);
     if (history.length === 0) {
       return [];
     }
 
-    const currentInboundId =
-      history.filter((message) => message.sender === 'client').slice(-1)[0]?.id ?? null;
-
     return history
       .filter((message) => message.id !== currentInboundId)
+      .map((message) => {
+        const role = this.mapSenderToOpenAiRole(message.sender);
+        if (!role) {
+          return null;
+        }
+
+        const content = message.content.trim();
+        if (!content) {
+          return null;
+        }
+
+        return {
+          role,
+          content,
+        };
+      })
+      .filter((message): message is OpenAiChatMessage => message != null);
+  }
+
+  private ensureValidOpenAiMessages(
+    messages: OpenAiChatMessage[],
+    latestUserMessage: string,
+  ): OpenAiChatMessage[] {
+    if (!latestUserMessage.trim()) {
+      return [];
+    }
+
+    const sanitizedMessages = messages
       .map((message) => ({
-        role: message.sender === 'bot' ? 'assistant' : 'user',
-        content: message.content,
-      }));
+        role: message.role,
+        content: message.content.trim(),
+      }))
+      .filter((message) => message.content.length > 0);
+
+    const lastMessage = sanitizedMessages[sanitizedMessages.length - 1];
+    if (!lastMessage) {
+      throw new Error('[AI BRAIN] no messages were assembled for OpenAI');
+    }
+    if (lastMessage.role !== 'user') {
+      throw new Error(
+        `[AI BRAIN] latest openai message must be from user but received role=${lastMessage.role}`,
+      );
+    }
+    if (lastMessage.content !== latestUserMessage.trim()) {
+      throw new Error('[AI BRAIN] latest user message mismatch before OpenAI call');
+    }
+
+    return sanitizedMessages;
+  }
+
+  private mapSenderToOpenAiRole(sender: MessageSender): OpenAiChatMessage['role'] | null {
+    if (sender === 'client') {
+      return 'user';
+    }
+    if (sender === 'bot') {
+      return 'assistant';
+    }
+    return null;
   }
 
   private approximateTokenCount(chunks: string[]): number {

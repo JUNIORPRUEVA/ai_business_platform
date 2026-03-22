@@ -73,6 +73,7 @@ const emptyEvolutionApiClient = {
 
 const jidResolverStub = {
   normalizeRemoteJid: (value: string) => (value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`),
+  normalizeJid: (value: string) => (value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`),
   normalizeCanonicalRemoteJid: (value?: string | null) => {
     const trimmed = typeof value === 'string' ? value.trim() : '';
     if (!trimmed || !trimmed.endsWith('@s.whatsapp.net')) {
@@ -82,6 +83,7 @@ const jidResolverStub = {
     const normalized = digits.length === 10 ? `1${digits}` : digits;
     return normalized ? `${normalized}@s.whatsapp.net` : null;
   },
+  extractPhoneFromJid: (jid: string) => jid.replace(/@.+$/, '').replace(/\D/g, ''),
   jidToNumber: (jid: string) => jid.replace(/@.+$/, '').replace(/\D/g, ''),
   normalizeOutboundNumber: (value: string) => {
     const digits = value.replace(/\D/g, '');
@@ -359,6 +361,69 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
   assert.equal(savedMessages[0]['textBody'], 'Hola FULLPOS');
   assert.equal(logs.length, 1);
   assert.equal(logs[0]['eventName'], 'MESSAGES_UPSERT');
+});
+
+test('WhatsappWebhookService usa el jid del cliente cuando fromMe llega con el numero de la instancia', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    instancePhone: '5511888888888',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async (entry: Record<string, unknown>) => entry },
+    messagingService: {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-1',
+          chatId: 'chat-1',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async () => undefined,
+    },
+  });
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      type: 'notify',
+      messages: [
+        {
+          key: {
+            remoteJid: '5511888888888@s.whatsapp.net',
+            id: 'wamid-2',
+            fromMe: true,
+          },
+          sender: '5511999999999',
+          pushName: 'Cliente Real',
+          messageTimestamp: '1710000001',
+          message: {
+            conversation: 'Perfecto, me interesa',
+          },
+        },
+      ],
+    },
+  };
+
+  const result = await service.processNow('company-1', payload);
+
+  assert.equal(result.savedMessages.length, 1);
+  assert.equal(savedMessages.length, 1);
+  assert.equal(savedMessages[0]['remoteJid'], '5511999999999@s.whatsapp.net');
+  assert.equal(savedMessages[0]['canonicalRemoteJid'], '5511999999999@s.whatsapp.net');
 });
 
 test('WhatsappWebhookService procesa message-receipt sin fromMe y normaliza ack numerico a delivered', async () => {
@@ -908,7 +973,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
   await service.processNow('company-1', payload as never);
 
   assert.equal(savedMessages.length, 1);
-  assert.equal(savedMessages[0]['remoteJid'], '203040820879420@lid');
+  assert.equal(savedMessages[0]['remoteJid'], '18295344286@s.whatsapp.net');
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
 });
 
@@ -965,7 +1030,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numeric
   await service.processNow('company-1', payload as never);
 
   assert.equal(savedMessages.length, 1);
-  assert.equal(savedMessages[0]['remoteJid'], '234840490270800@lid');
+  assert.equal(savedMessages[0]['remoteJid'], '18295344286@s.whatsapp.net');
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
 });
 
@@ -1080,7 +1145,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
   await service.processNow('company-1', payload as never);
 
   assert.equal(savedMessages.length, 1);
-  assert.equal(savedMessages[0]['remoteJid'], '234840490270800@lid');
+  assert.equal(savedMessages[0]['remoteJid'], '18295344286@s.whatsapp.net');
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
 });
 

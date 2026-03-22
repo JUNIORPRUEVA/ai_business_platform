@@ -116,3 +116,96 @@ test('ai brain replaces generic repetitive replies with a human sales reply', ()
   assert.doesNotMatch(normalized, /mensaje es muy breve|podr[ií]as darme m[aá]s detalles/i);
   assert.match(normalized, /hola|opciones|interesarte|ayudarte/i);
 });
+
+test('ai brain transcript builder keeps chronological order and ignores operator messages', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const transcript = (service as any).buildRecentTranscriptMessages(
+    [
+      {
+        id: 'message-2',
+        sender: 'bot',
+        content: 'Hola, dime que necesitas.',
+        createdAt: new Date('2026-03-22T10:01:00.000Z'),
+      },
+      {
+        id: 'message-1',
+        sender: 'client',
+        content: 'Hola',
+        createdAt: new Date('2026-03-22T10:00:00.000Z'),
+      },
+      {
+        id: 'message-3',
+        sender: 'user',
+        content: 'Nota interna de operador',
+        createdAt: new Date('2026-03-22T10:02:00.000Z'),
+      },
+      {
+        id: 'message-4',
+        sender: 'client',
+        content: 'Quiero precios',
+        createdAt: new Date('2026-03-22T10:03:00.000Z'),
+      },
+    ],
+    'message-4',
+  );
+
+  assert.deepEqual(transcript, [
+    { role: 'user', content: 'Hola' },
+    { role: 'assistant', content: 'Hola, dime que necesitas.' },
+  ]);
+});
+
+test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  assert.throws(
+    () => (service as any).ensureValidOpenAiMessages([
+      { role: 'system', content: 'Rules' },
+      { role: 'assistant', content: 'Mensaje viejo del bot' },
+    ], 'Hola'),
+    /latest openai message must be from user/i,
+  );
+
+  assert.throws(
+    () => (service as any).ensureValidOpenAiMessages([
+      { role: 'system', content: 'Rules' },
+      { role: 'user', content: 'Mensaje anterior' },
+    ], 'Hola'),
+    /latest user message mismatch/i,
+  );
+});
