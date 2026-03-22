@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, Logger, MessageEvent, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Observable } from 'rxjs';
 import { Repository } from 'typeorm';
+import { Readable } from 'node:stream';
 
 import { DatabaseService } from '../../../common/database/database.service';
 import { AiBrainService } from '../../ai_brain/services/ai-brain.service';
@@ -57,6 +59,7 @@ export class BotCenterService {
   private readonly runtimeLogs: Array<BotLogResponse & { companyId: string }> = [];
 
   constructor(
+    private readonly configService: ConfigService,
     private readonly botConfigurationService: BotConfigurationService,
     private readonly memoryService: MemoryService,
     private readonly databaseService: DatabaseService,
@@ -1061,12 +1064,66 @@ export class BotCenterService {
   }
 
   private async toBotMessage(message: WhatsappMessageEntity): Promise<BotMessageResponse> {
-    const mediaUrl = await this.resolveMessageMediaUrl(
-      message.companyId,
-      message.mediaStoragePath,
-      message.mediaUrl,
-    );
+    const mediaUrl = await this.resolveMessageMediaUrl(message);
     const thumbnailUrl = await this.resolveMessageThumbnailUrl(message, mediaUrl);
+  async streamPublicVideo(
+    messageId: string,
+    range?: string,
+  ): Promise<{
+    stream: Readable;
+    contentType: string;
+    contentLength: number | null;
+    contentRange: string | null;
+    acceptRanges: string;
+    statusCode: number;
+    fileName: string;
+  }> {
+    const message = await this.messagesRepository.findOne({ where: { id: messageId } });
+    if (!message || message.messageType !== 'video') {
+      throw new NotFoundException('Video no encontrado.');
+    }
+
+    let hydratedMessage = message;
+    const repaired = await this.attachmentsService.repairStoredMessageMedia({
+      companyId: message.companyId,
+      conversationId: message.chatId,
+      messageId: message.id,
+      fileType: 'video',
+      mimeType: message.mimeType,
+      originalName: message.mediaOriginalName,
+    });
+    if (repaired) {
+      hydratedMessage = await this.whatsappMessagingService.updateStoredMedia(message.companyId, message.id, {
+        mediaStoragePath: repaired.storagePath,
+        mediaSizeBytes: repaired.sizeBytes,
+        mimeType: repaired.mimeType ?? 'video/mp4',
+        mediaUrl: message.mediaUrl,
+        thumbnailUrl: repaired.thumbnailStoragePath ?? message.thumbnailUrl,
+        durationSeconds: repaired.durationSeconds ?? message.durationSeconds,
+      });
+    }
+
+    if (!hydratedMessage.mediaStoragePath) {
+      throw new NotFoundException('Video almacenado no encontrado.');
+    }
+
+    const stored = await this.storageService.getObjectStream({
+      companyId: hydratedMessage.companyId,
+      key: hydratedMessage.mediaStoragePath,
+      range,
+    });
+
+    return {
+      stream: stored.stream,
+      contentType: this.resolveVideoContentType(hydratedMessage.mimeType),
+      contentLength: stored.contentLength,
+      contentRange: stored.contentRange,
+      acceptRanges: stored.acceptRanges ?? 'bytes',
+      statusCode: stored.statusCode,
+      fileName: this.resolveMessageAssetFileName(hydratedMessage, 'media'),
+    };
+  }
+
 
     return {
       id: message.id,
@@ -1188,11 +1245,17 @@ export class BotCenterService {
     return `+${digits}`;
   }
 
-  private async resolveMessageMediaUrl(
-    companyId: string,
-    storagePath: string | null,
-    fallbackUrl: string | null,
-  ): Promise<string | null> {
+  private async resolveMessageMediaUrl(message: WhatsappMessageEntity): Promise<string | null> {
+    if (message.messageType === 'video') {
+      const proxyUrl = this.buildPublicMediaUrl(`/media/video/${message.id}`);
+      if (proxyUrl) {
+        return proxyUrl;
+      }
+    }
+
+    const companyId = message.companyId;
+    const storagePath = message.mediaStoragePath;
+    const fallbackUrl = message.mediaUrl;
     if (storagePath) {
       try {
         return (
@@ -1353,6 +1416,10 @@ export class BotCenterService {
         : 'image/jpeg';
     }
 
+    if (message.messageType === 'video') {
+      return this.resolveVideoContentType(message.mimeType);
+    }
+
     return message.mimeType ?? 'application/octet-stream';
   }
 
@@ -1391,6 +1458,29 @@ export class BotCenterService {
         return 'mov';
       default:
         return 'jpg';
+    }
+  }
+
+  private resolveVideoContentType(mimeType: string | null): string {
+    const normalized = mimeType?.split(';')[0]?.trim().toLowerCase() ?? '';
+    return normalized.startsWith('video/') ? 'video/mp4' : 'video/mp4';
+  }
+
+  private buildPublicMediaUrl(path: string): string | null {
+    const configuredBaseUrl =
+      this.configService.get<string>('BACKEND_PUBLIC_URL') ??
+      this.configService.get<string>('APP_BACKEND_URL') ??
+      '';
+    const trimmedBaseUrl = configuredBaseUrl.trim();
+    if (!trimmedBaseUrl) {
+      return null;
+    }
+
+    try {
+      const normalizedBaseUrl = trimmedBaseUrl.endsWith('/') ? trimmedBaseUrl : `${trimmedBaseUrl}/`;
+      return new URL(path.replace(/^\//, ''), normalizedBaseUrl).toString();
+    } catch {
+      return null;
     }
   }
 

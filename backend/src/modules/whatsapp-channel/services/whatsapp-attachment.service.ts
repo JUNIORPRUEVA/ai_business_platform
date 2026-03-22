@@ -589,6 +589,42 @@ export class WhatsappAttachmentService {
     });
 
     if (params.fileType !== 'audio') {
+      if (params.fileType === 'video') {
+        const normalizedVideo = await this.normalizeVideoBuffer({
+          buffer: normalizedSource.buffer,
+          originalName: normalizedSource.originalName,
+          mimeType: normalizedSource.mimeType,
+        });
+
+        if (normalizedVideo) {
+          return normalizedVideo;
+        }
+
+        if (!this.looksLikePlayableVideo(normalizedSource.buffer, normalizedSource.mimeType)) {
+          throw new BadRequestException('El archivo enviado no contiene un video valido.');
+        }
+
+        const detectedVideoMimeType = this.resolveMimeType(
+          normalizedSource.buffer,
+          normalizedSource.mimeType,
+          'video',
+        );
+        if (detectedVideoMimeType !== 'video/mp4') {
+          throw new BadRequestException('No se pudo normalizar el video a MP4.');
+        }
+
+        return {
+          buffer: normalizedSource.buffer,
+          originalName: this.ensureCanonicalFileName(
+            normalizedSource.originalName,
+            'video/mp4',
+            'video',
+          ),
+          mimeType: 'video/mp4',
+          durationSeconds: null,
+        };
+      }
+
       return {
         buffer: normalizedSource.buffer,
         originalName: normalizedSource.originalName,
@@ -655,6 +691,95 @@ export class WhatsappAttachmentService {
     return thumbnailKey;
   }
 
+  private async normalizeVideoBuffer(params: {
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+  }): Promise<{
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+    durationSeconds: number | null;
+  } | null> {
+    if (!ffmpegPath) {
+      this.logger.warn('[VIDEO NORMALIZATION] skipped reason=missing_ffmpeg');
+      return null;
+    }
+
+    if (!this.looksLikePlayableVideo(params.buffer, params.mimeType)) {
+      return null;
+    }
+
+    const ffmpegExecutable = String(ffmpegPath);
+    const inputExtension = this.resolveExtension(
+      params.originalName,
+      params.mimeType,
+      'video',
+    );
+    const tempDir = await mkdtemp(join(tmpdir(), 'botposvendedor-video-'));
+    const inputPath = join(tempDir, `input.${inputExtension}`);
+    const outputPath = join(tempDir, 'output.mp4');
+
+    try {
+      await writeFile(inputPath, params.buffer);
+
+      await new Promise<void>((resolve, reject) => {
+        let collected = '';
+        const child = spawn(
+          ffmpegExecutable,
+          [
+            '-y',
+            '-i',
+            inputPath,
+            '-movflags',
+            '+faststart',
+            '-pix_fmt',
+            'yuv420p',
+            '-c:v',
+            'libx264',
+            '-preset',
+            'veryfast',
+            '-crf',
+            '28',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            outputPath,
+          ],
+          { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
+        );
+
+        child.stderr?.on('data', (chunk: Buffer | string) => {
+          collected += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code: number | null) => {
+          if (code === 0) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(collected || `ffmpeg exited with code ${code}`));
+        });
+      });
+
+      return {
+        buffer: await readFile(outputPath),
+        originalName: this.ensureCanonicalFileName(params.originalName, 'video/mp4', 'video'),
+        mimeType: 'video/mp4',
+        durationSeconds: null,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `[VIDEO NORMALIZATION] failed file=${params.originalName} error=${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return null;
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
   private normalizeInboundPayload(params: {
     buffer: Buffer;
     originalName: string;
@@ -691,6 +816,41 @@ export class WhatsappAttachmentService {
       originalName: resolvedOriginalName,
       mimeType: resolvedMimeType,
     };
+  }
+
+  private looksLikePlayableVideo(buffer: Buffer, mimeType: string | null): boolean {
+    if (!buffer.length) {
+      return false;
+    }
+
+    const normalizedMimeType = mimeType?.toLowerCase() ?? '';
+    if (normalizedMimeType.startsWith('video/') && !this.looksLikeStructuredTextPayload(buffer, mimeType)) {
+      return true;
+    }
+
+    if (buffer.length >= 8 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+      return true;
+    }
+
+    if (
+      buffer.length >= 4 &&
+      buffer[0] === 0x1a &&
+      buffer[1] === 0x45 &&
+      buffer[2] === 0xdf &&
+      buffer[3] === 0xa3
+    ) {
+      return true;
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 11).toString('ascii') === 'AVI'
+    ) {
+      return true;
+    }
+
+    return !this.looksLikeStructuredTextPayload(buffer, mimeType) && buffer.length > 1024;
   }
 
   private async normalizeAudioBuffer(params: {

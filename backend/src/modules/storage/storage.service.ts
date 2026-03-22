@@ -117,6 +117,46 @@ export class StorageService {
     };
   }
 
+  async getObjectStream(params: {
+    companyId: string;
+    key: string;
+    range?: string | null;
+  }): Promise<{
+    key: string;
+    stream: Readable;
+    contentType: string | null;
+    contentLength: number | null;
+    contentRange: string | null;
+    acceptRanges: string | null;
+    statusCode: number;
+  }> {
+    this.assertCompanyKeyOwnership(params.companyId, params.key);
+
+    const bucket = this.getBucket();
+    const response = await this.s3.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: params.key,
+        ...(this.normalizeRangeHeader(params.range) ? { Range: this.normalizeRangeHeader(params.range)! } : {}),
+      }),
+    );
+
+    const stream = response.Body as Readable | undefined;
+    if (!stream) {
+      throw new BadRequestException('Stored object stream is empty.');
+    }
+
+    return {
+      key: params.key,
+      stream,
+      contentType: response.ContentType ?? null,
+      contentLength: typeof response.ContentLength === 'number' ? response.ContentLength : null,
+      contentRange: response.ContentRange ?? null,
+      acceptRanges: response.AcceptRanges ?? 'bytes',
+      statusCode: response.ContentRange ? 206 : 200,
+    };
+  }
+
   async uploadBuffer(params: {
     companyId: string;
     folder: StorageFolder;
@@ -252,5 +292,14 @@ export class StorageService {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new BadRequestException('Generated storage URL must use HTTP/HTTPS.');
     }
+  }
+
+  private normalizeRangeHeader(value?: string | null): string | null {
+    const trimmed = value?.trim() ?? '';
+    if (!trimmed) {
+      return null;
+    }
+
+    return /^bytes=\d*-\d*$/i.test(trimmed) ? trimmed : null;
   }
 }

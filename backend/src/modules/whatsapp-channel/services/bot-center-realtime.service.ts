@@ -1,4 +1,5 @@
 import { Injectable, MessageEvent } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Observable, Subject, filter, interval, map, merge, of } from 'rxjs';
 import { Repository } from 'typeorm';
@@ -24,6 +25,7 @@ export class BotCenterRealtimeService {
   private readonly events = new Subject<CompanyRealtimeEvent>();
 
   constructor(
+    private readonly configService: ConfigService,
     @InjectRepository(WhatsappChatEntity)
     private readonly chatsRepository: Repository<WhatsappChatEntity>,
     private readonly storageService: StorageService,
@@ -101,11 +103,7 @@ export class BotCenterRealtimeService {
   }
 
   private async toBotMessage(message: WhatsappMessageEntity): Promise<BotMessageResponse> {
-    const mediaUrl = await this.resolveMessageMediaUrl(
-      message.companyId,
-      message.mediaStoragePath,
-      message.mediaUrl,
-    );
+    const mediaUrl = await this.resolveMessageMediaUrl(message);
     const thumbnailUrl =
       message.messageType === 'image'
         ? mediaUrl
@@ -205,11 +203,17 @@ export class BotCenterRealtimeService {
     return `+${digits}`;
   }
 
-  private async resolveMessageMediaUrl(
-    companyId: string,
-    storagePath: string | null,
-    fallbackUrl: string | null,
-  ): Promise<string | null> {
+  private async resolveMessageMediaUrl(message: WhatsappMessageEntity): Promise<string | null> {
+    if (message.messageType === 'video') {
+      const proxyUrl = this.buildPublicMediaUrl(`/media/video/${message.id}`);
+      if (proxyUrl) {
+        return proxyUrl;
+      }
+    }
+
+    const companyId = message.companyId;
+    const storagePath = message.mediaStoragePath;
+    const fallbackUrl = message.mediaUrl;
     if (storagePath) {
       try {
         return (
@@ -248,6 +252,24 @@ export class BotCenterRealtimeService {
           expiresInSeconds: 60 * 60 * 24,
         })
       ).url;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildPublicMediaUrl(path: string): string | null {
+    const configuredBaseUrl =
+      this.configService.get<string>('BACKEND_PUBLIC_URL') ??
+      this.configService.get<string>('APP_BACKEND_URL') ??
+      '';
+    const trimmedBaseUrl = configuredBaseUrl.trim();
+    if (!trimmedBaseUrl) {
+      return null;
+    }
+
+    try {
+      const normalizedBaseUrl = trimmedBaseUrl.endsWith('/') ? trimmedBaseUrl : `${trimmedBaseUrl}/`;
+      return new URL(path.replace(/^\//, ''), normalizedBaseUrl).toString();
     } catch {
       return null;
     }

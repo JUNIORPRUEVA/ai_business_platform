@@ -154,6 +154,18 @@ test('WhatsappAttachmentService normaliza extensiones truncadas usando el mime t
   assert.equal(resolveExtension('voice.a', 'audio/ogg; codecs=opus', 'audio'), 'ogg');
 });
 
+test('WhatsappAttachmentService resuelve video/octet-stream como video mp4', () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const resolveMimeType = (
+    service as unknown as {
+      resolveMimeType: (buffer: Buffer, mimeType: string | null, fileType: string) => string | null;
+    }
+  ).resolveMimeType.bind(service);
+
+  const mp4Header = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32]);
+  assert.equal(resolveMimeType(mp4Header, 'application/octet-stream', 'video'), 'video/mp4');
+});
+
 test('WhatsappAttachmentService decodifica payload base64 antes de persistir media', async () => {
   const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
   const prepareUploadPayload = (

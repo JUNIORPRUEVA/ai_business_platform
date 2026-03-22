@@ -24,6 +24,7 @@ import { WhatsappChannelLogEntity } from '../whatsapp-channel/entities/whatsapp-
 import { WhatsappChatEntity } from '../whatsapp-channel/entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from '../whatsapp-channel/entities/whatsapp-message.entity';
 import { BotCenterController } from './controllers/bot-center.controller';
+import { PublicMediaController } from './controllers/public-media.controller';
 import { BotCenterService } from './services/bot-center.service';
 
 @Module({
@@ -53,7 +54,7 @@ import { BotCenterService } from './services/bot-center.service';
       WhatsappChannelLogEntity,
     ]),
   ],
-  controllers: [BotCenterController],
+  controllers: [BotCenterController, PublicMediaController],
   providers: [BotCenterService],
   exports: [BotCenterService],
 })
