@@ -1233,7 +1233,7 @@ export class WhatsappAttachmentService {
       return 'audio/mpeg';
     }
 
-    return normalized;
+    return null;
   }
 
   private isMimeTypeCompatible(mimeType: string | null, fileType: string): boolean {
