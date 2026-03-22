@@ -14,7 +14,7 @@ import { ContactsService } from '../../contacts/contacts.service';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { MessageEntity } from '../../messages/entities/message.entity';
 import { MessagesService } from '../../messages/messages.service';
-import { OpenAiChatMessage } from '../../openai/types/openai.types';
+import { OpenAiChatMessage, OpenAiDraftResponse } from '../../openai/types/openai.types';
 import { OpenAiService } from '../../openai/services/openai.service';
 import { PromptEntity } from '../../prompts/entities/prompt.entity';
 import { PromptsService } from '../../prompts/prompts.service';
