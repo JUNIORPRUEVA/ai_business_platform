@@ -9,22 +9,24 @@ export type AppErrorType =
   | 'internal'
   | 'unknown';
 
-export interface AppErrorResponse {
-  error: {
-    id: string;
-    type: AppErrorType;
-    message: string;
-    details: string[];
-    module: string;
-    timestamp: string;
-    statusCode: number;
-    path: string;
-    method: string;
-    requestId: string;
-  };
+export interface AppErrorPayload {
+  id: string;
+  type: AppErrorType;
+  message: string;
+  details: string[];
+  module: string;
+  timestamp: string;
+  statusCode: number;
+  path: string;
+  method: string;
+  requestId: string;
 }
 
-export interface AppErrorLogEntry extends AppErrorResponse['error'] {
+export interface AppErrorResponse {
+  error: AppErrorPayload;
+}
+
+export interface AppErrorLogEntry extends AppErrorPayload {
   source: 'backend';
   stack?: string;
 }

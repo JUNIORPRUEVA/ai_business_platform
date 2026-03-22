@@ -984,13 +984,13 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                 ),
                 const SizedBox(height: 14),
                 ExecutiveGlassCard(
-                  padding: const EdgeInsets.all(22),
+                  padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(24),
+                        padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(28),
                           gradient: LinearGradient(
@@ -1008,13 +1008,13 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                         ),
                         child: LayoutBuilder(
                           builder: (context, constraints) {
-                            final compact = constraints.maxWidth < 860;
+                            final compact = constraints.maxWidth < 920;
                             return Wrap(
-                              spacing: 18,
-                              runSpacing: 18,
+                              spacing: 14,
+                              runSpacing: 14,
                               children: [
                                 SizedBox(
-                                  width: compact ? double.infinity : 360,
+                                  width: compact ? double.infinity : 320,
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -1028,16 +1028,17 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                               activityBadge, activityLabel),
                                         ],
                                       ),
-                                      const SizedBox(height: 18),
+                                      const SizedBox(height: 14),
                                       Text(
                                         statusTitle,
                                         style: theme.textTheme.headlineSmall
                                             ?.copyWith(
+                                          fontSize: 28,
                                           fontWeight: FontWeight.w900,
                                           height: 1.0,
                                         ),
                                       ),
-                                      const SizedBox(height: 10),
+                                      const SizedBox(height: 8),
                                       Text(
                                         statusDescription,
                                         style: theme.textTheme.bodyMedium
@@ -1047,10 +1048,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           height: 1.5,
                                         ),
                                       ),
-                                      const SizedBox(height: 18),
+                                      const SizedBox(height: 14),
                                       Container(
                                         width: double.infinity,
-                                        padding: const EdgeInsets.all(16),
+                                        padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
                                           borderRadius:
                                               BorderRadius.circular(20),
@@ -1104,10 +1105,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                 SizedBox(
                                   width: compact
                                       ? double.infinity
-                                      : constraints.maxWidth - 420,
+                                      : constraints.maxWidth - 360,
                                   child: Wrap(
-                                    spacing: 12,
-                                    runSpacing: 12,
+                                    spacing: 10,
+                                    runSpacing: 10,
                                     children: [
                                       _buildTopMetricCard(
                                         theme: theme,
@@ -1144,7 +1145,9 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                         const SizedBox(height: 16),
                         _buildErrorBanner(theme),
                       ],
-                      if (_loadingExisting || _isLoadingHealth || _isCheckingWebhookStatus) ...[
+                      if (_loadingExisting ||
+                          _isLoadingHealth ||
+                          _isCheckingWebhookStatus) ...[
                         const SizedBox(height: 16),
                         const LinearProgressIndicator(),
                       ],
@@ -1154,7 +1157,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                 if (_showAdvancedProviderPanel) ...[
                   const SizedBox(height: 14),
                   ExecutiveGlassCard(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1211,21 +1214,21 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                           const SizedBox(height: 14),
                           const LinearProgressIndicator(),
                         ],
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         LayoutBuilder(
                           builder: (context, constraints) {
                             final compact = constraints.maxWidth < 980;
 
                             return Wrap(
-                              spacing: 14,
-                              runSpacing: 14,
+                              spacing: 12,
+                              runSpacing: 12,
                               children: [
                                 SizedBox(
                                   width: compact
                                       ? constraints.maxWidth
                                       : constraints.maxWidth,
                                   child: Container(
-                                    padding: const EdgeInsets.all(18),
+                                    padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(24),
                                       gradient: LinearGradient(
@@ -1277,7 +1280,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                                 .withValues(alpha: 0.66),
                                           ),
                                         ),
-                                        const SizedBox(height: 14),
+                                        const SizedBox(height: 12),
                                         _buildConfigField(
                                           controller: _evolutionUrlController,
                                           label: 'URL de Evolution API',
@@ -1293,10 +1296,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           enabled: !_isSavingProviderSettings &&
                                               !_loadingProviderSettings,
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 6),
                                         Container(
                                           width: double.infinity,
-                                          padding: const EdgeInsets.all(14),
+                                          padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
                                             borderRadius:
                                                 BorderRadius.circular(18),
