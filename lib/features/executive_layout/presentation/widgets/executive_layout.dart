@@ -50,6 +50,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
     final size = MediaQuery.sizeOf(context);
     final rawSelectedIndex = ref.watch(executiveSelectedIndexProvider);
     final selectedIndex = rawSelectedIndex.clamp(0, widget.items.length - 1);
+    const useWhatsappShell = true;
 
     final isMobile = size.width < 760;
     final isNarrow = size.width >= 760 && size.width < 1100;
@@ -87,13 +88,15 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
       key: _scaffoldKey,
       drawer: isMobile
           ? Drawer(
-              width: ExecutiveSidebar.expandedWidth,
+              width: useWhatsappShell
+                  ? ExecutiveSidebar.whatsappRailWidth
+                  : ExecutiveSidebar.expandedWidth,
               backgroundColor: Colors.transparent,
               child: SafeArea(
                 child: ExecutiveSidebar(
                   items: widget.items,
                   selectedIndex: selectedIndex,
-                  whatsappStyle: isMessagesPage,
+                  whatsappStyle: useWhatsappShell,
                   isCollapsed: false,
                   onSelect: (index) {
                     ref.read(executiveSelectedIndexProvider.notifier).state =
@@ -107,12 +110,12 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
           : null,
       body: Stack(
         children: [
-          if (isMessagesPage)
+          if (useWhatsappShell)
             const _ExecutiveLightBackground()
           else
             const _ExecutiveBackground(),
           Theme(
-            data: isMessagesPage ? messagesTheme : Theme.of(context),
+            data: useWhatsappShell ? messagesTheme : Theme.of(context),
             child: SafeArea(
               child: Row(
                 children: [
@@ -120,7 +123,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                     ExecutiveSidebar(
                       items: widget.items,
                       selectedIndex: selectedIndex,
-                      whatsappStyle: isMessagesPage,
+                      whatsappStyle: useWhatsappShell,
                       isCollapsed: _isSidebarCollapsed,
                       onSelect: (index) {
                         ref
@@ -137,9 +140,9 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                       children: [
                         ExecutiveAppBar(
                           title: pageTitle,
-                          height: isMessagesPage ? 58 : 70,
-                          minimal: isMessagesPage,
-                          whatsappStyle: isMessagesPage,
+                          height: useWhatsappShell ? 58 : 70,
+                          minimal: useWhatsappShell,
+                          whatsappStyle: useWhatsappShell,
                           onToggleSidebar: () {
                             if (isMobile) {
                               _scaffoldKey.currentState?.openDrawer();
@@ -170,7 +173,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                                       ),
                               ),
                               const SizedBox(height: 8),
-                              if (isMessagesPage)
+                              if (useWhatsappShell)
                                 const _FooterFullWidth(whatsappStyle: true)
                               else
                                 const _FooterMaxWidth(),

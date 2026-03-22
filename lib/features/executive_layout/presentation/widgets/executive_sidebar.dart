@@ -27,6 +27,7 @@ class ExecutiveSidebar extends ConsumerWidget {
 
   static const double expandedWidth = 260;
   static const double collapsedWidth = 80;
+  static const double whatsappRailWidth = 72;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -151,7 +152,7 @@ class _WhatsappSidebarRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 72,
+      width: ExecutiveSidebar.whatsappRailWidth,
       child: DecoratedBox(
         decoration: const BoxDecoration(
           color: Color(0xFFF0F2F5),

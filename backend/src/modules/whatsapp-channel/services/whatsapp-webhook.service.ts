@@ -348,7 +348,10 @@ export class WhatsappWebhookService {
 
     let channelId = '';
     try {
-      const channel = await this.channelsService.getByInstanceNameUnsafe(config.instanceName);
+      const channel = await this.channelsService.findOrCreateWhatsappBridge(
+        config.companyId,
+        config.instanceName,
+      );
       if (channel.companyId !== config.companyId) {
         return;
       }

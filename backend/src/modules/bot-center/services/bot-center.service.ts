@@ -1630,7 +1630,7 @@ export class BotCenterService {
         this.resolveConversationMemoryTitle(item.role),
       content: item.content,
       type: 'shortTerm',
-      updatedAt: item.updatedAt.toISOString(),
+      updatedAt: this.toIsoString(item.updatedAt),
       isEditable: Boolean(item.metadataJson['isEditable']),
     };
   }
@@ -1641,7 +1641,7 @@ export class BotCenterService {
       title: 'Conversation summary',
       content: item.summaryText,
       type: 'longTerm',
-      updatedAt: item.updatedAt.toISOString(),
+      updatedAt: this.toIsoString(item.updatedAt),
       isEditable: false,
     };
   }
@@ -1652,7 +1652,7 @@ export class BotCenterService {
       title: this.readString(item.metadata['title']) || item.key,
       content: item.value,
       type: 'longTerm',
-      updatedAt: item.updatedAt.toISOString(),
+      updatedAt: this.toIsoString(item.updatedAt),
       isEditable: true,
     };
   }
@@ -1663,9 +1663,25 @@ export class BotCenterService {
       title: this.readString(item.metadataJson['title']) || item.key,
       content: item.value,
       type: 'operational',
-      updatedAt: item.updatedAt.toISOString(),
+      updatedAt: this.toIsoString(item.updatedAt),
       isEditable: item.stateType === 'manual_note' || Boolean(item.metadataJson['isEditable']),
     };
+  }
+
+  private toIsoString(value: Date | string | null | undefined): string {
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    if (typeof value === 'string') {
+      const normalized = new Date(value);
+      if (!Number.isNaN(normalized.getTime())) {
+        return normalized.toISOString();
+      }
+      return value;
+    }
+
+    return new Date(0).toISOString();
   }
 
   private mapManualMemoryItem(item: {

@@ -1106,6 +1106,8 @@ export class WhatsappInstancesService {
     instanceStatus: string,
   ): Promise<void> {
     try {
+      await this.channelsService.findOrCreateWhatsappBridge(companyId, instanceName);
+
       const settings = await this.evolutionService.getRuntimeSettingsSnapshot();
       const webhookUrl = this.evolutionService.buildInstanceWebhookUrl();
       await this.whatsappChannelConfigService.upsertAutomationConfig({

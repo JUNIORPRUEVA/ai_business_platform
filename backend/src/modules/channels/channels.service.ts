@@ -122,6 +122,54 @@ export class ChannelsService {
     return channel;
   }
 
+  async findOrCreateWhatsappBridge(companyId: string, instanceName: string): Promise<ChannelEntity> {
+    const normalizedInstanceName = instanceName.trim();
+    const direct = await this.channelsRepository.findOne({
+      where: { companyId, instanceName: normalizedInstanceName },
+    });
+    if (direct) {
+      return direct;
+    }
+
+    const companyChannels = await this.channelsRepository.find({
+      where: { companyId, type: 'whatsapp' },
+      order: { createdAt: 'ASC' },
+    });
+    const fallback = companyChannels.find((item) => {
+      const configuredInstanceName = typeof item.config?.['instanceName'] === 'string'
+        ? String(item.config['instanceName']).trim()
+        : '';
+      return configuredInstanceName === normalizedInstanceName;
+    });
+    if (fallback) {
+      if (!fallback.instanceName) {
+        fallback.instanceName = normalizedInstanceName;
+        fallback.config = {
+          ...fallback.config,
+          instanceName: normalizedInstanceName,
+          bridgeSource: 'whatsapp-instance-sync',
+        };
+        return this.channelsRepository.save(fallback);
+      }
+      return fallback;
+    }
+
+    const created = this.channelsRepository.create({
+      companyId,
+      type: 'whatsapp',
+      name: `WhatsApp ${normalizedInstanceName}`,
+      status: 'active',
+      instanceName: normalizedInstanceName,
+      connectionStatus: 'connected',
+      config: {
+        instanceName: normalizedInstanceName,
+        bridgeSource: 'whatsapp-instance-sync',
+      },
+    });
+
+    return this.channelsRepository.save(created);
+  }
+
   async getQrCode(companyId: string, id: string): Promise<{ instanceName: string; payload: unknown }> {
     const channel = await this.get(companyId, id);
     if (channel.type !== 'whatsapp') {

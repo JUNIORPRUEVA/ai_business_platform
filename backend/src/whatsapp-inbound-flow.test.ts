@@ -159,6 +159,7 @@ function createWhatsappWebhookService(params: {
     (params.chatsRepository ?? new InMemoryRepository([])) as never,
     (params.channelsService ?? {
       getByInstanceNameUnsafe: async () => ({ id: 'channel-1', companyId: 'company-1' }),
+      findOrCreateWhatsappBridge: async () => ({ id: 'channel-1', companyId: 'company-1' }),
     }) as never,
     (params.contactsService ?? {
       findOrCreateByPhone: async () => ({ id: 'contact-1' }),
@@ -1231,6 +1232,94 @@ test('WhatsappWebhookService encola auto reply cuando el chat tiene modo agente 
   assert.equal(queuedJobs[0]['name'], 'process-inbound-message');
   assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['companyId'], 'company-1');
   assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['conversationId'], 'conversation-1');
+});
+
+test('WhatsappWebhookService crea o reutiliza bridge de canal cuando no existe uno exacto por instanceName', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '18295344286@s.whatsapp.net',
+      canonicalRemoteJid: '18295344286@s.whatsapp.net',
+      canonicalNumber: '18295344286',
+      sendTarget: '18295344286',
+      autoReplyEnabled: true,
+      pushName: 'Cliente',
+      profileName: 'Cliente',
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const queuedJobs: Array<Record<string, unknown>> = [];
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    chatsRepository,
+    channelsService: {
+      getByInstanceNameUnsafe: async () => {
+        throw new Error('Channel not found.');
+      },
+      findOrCreateWhatsappBridge: async () => ({
+        id: 'channel-bridge-1',
+        companyId: 'company-1',
+      }),
+    },
+    messageProcessingQueue: {
+      add: async (name: string, data: Record<string, unknown>, options: Record<string, unknown>) => {
+        queuedJobs.push({ name, data, options });
+      },
+    },
+    messagingService: {
+      upsertInboundMessage: async (params: Record<string, unknown>) => ({
+        id: 'wa-message-1',
+        chatId: 'chat-1',
+        remoteJid: params['remoteJid'],
+        messageType: params['messageType'],
+        fromMe: params['fromMe'],
+      }),
+      updateStoredMedia: async () => undefined,
+    },
+    appMessagesService: {
+      findByMetadataValue: async () => null,
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'app-message-1',
+        ...payload,
+      }),
+    },
+  });
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      messages: [
+        {
+          key: {
+            remoteJid: '18295344286@s.whatsapp.net',
+            id: 'wamid-auto-3',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          message: { conversation: 'hola bot' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(queuedJobs.length, 1);
+  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['channelId'], 'channel-bridge-1');
 });
 
 test('WhatsappWebhookService no encola auto reply cuando el chat tiene modo agente apagado', async () => {
