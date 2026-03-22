@@ -341,6 +341,13 @@ export class AiBrainService {
         finalContent = followUp.content;
       }
 
+      finalContent = this.normalizeAssistantReply({
+        draft: finalContent,
+        userMessage,
+        recentMessages,
+        senderName: contact.name || null,
+      });
+
       const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
         sender: 'bot',
         content: finalContent,
@@ -609,6 +616,85 @@ export class AiBrainService {
   private approximateTokenCount(chunks: string[]): number {
     const totalCharacters = chunks.reduce((sum, item) => sum + item.length, 0);
     return Math.max(1, Math.ceil(totalCharacters / 4));
+  }
+
+  private normalizeAssistantReply(params: {
+    draft: string;
+    userMessage: string;
+    recentMessages: MessageEntity[];
+    senderName: string | null;
+  }): string {
+    const trimmedDraft = params.draft.trim();
+    const trimmedUserMessage = params.userMessage.trim();
+    if (!trimmedDraft) {
+      return this.buildNaturalShortReply(trimmedUserMessage, params.recentMessages, params.senderName);
+    }
+
+    const normalizedDraft = trimmedDraft.toLowerCase();
+    const looksLikeGenericShortMessageReply =
+      normalizedDraft.includes('mensaje es muy breve') ||
+      normalizedDraft.includes('mensaje sigue siendo breve') ||
+      normalizedDraft.includes('no proporciona suficiente información') ||
+      normalizedDraft.includes('no proporciona suficiente informacion') ||
+      normalizedDraft.includes('podrías darme más detalles') ||
+      normalizedDraft.includes('podrias darme mas detalles');
+
+    const lastAssistantMessage = [...params.recentMessages]
+      .reverse()
+      .find((message) => message.sender === 'bot')?.content.trim();
+    const repeatsLastAssistant =
+      !!lastAssistantMessage &&
+      lastAssistantMessage.toLowerCase() == normalizedDraft;
+
+    if (!looksLikeGenericShortMessageReply && !repeatsLastAssistant) {
+      return trimmedDraft;
+    }
+
+    const fallback = this.buildNaturalShortReply(
+      trimmedUserMessage,
+      params.recentMessages,
+      params.senderName,
+    );
+    return fallback || trimmedDraft;
+  }
+
+  private buildNaturalShortReply(
+    userMessage: string,
+    recentMessages: MessageEntity[],
+    senderName: string | null,
+  ): string {
+    const normalized = userMessage.toLowerCase();
+    const namePrefix = senderName?.trim().isNotEmpty == true ? `${senderName!.trim()}, ` : '';
+    const previousClientTopic = [...recentMessages]
+      .reverse()
+      .find((message) => message.sender === 'client' && message.content.trim() != userMessage.trim())
+      ?.content
+      .trim();
+    const shortPreviousTopic = previousClientTopic == null || previousClientTopic.isEmpty
+      ? null
+      : previousClientTopic.length > 80
+        ? `${previousClientTopic.substring(0, 77)}...`
+        : previousClientTopic;
+
+    if (RegExp(r'^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b').hasMatch(normalized)) {
+      return shortPreviousTopic != null
+        ? `Hola ${namePrefix}seguimos con lo que me comentabas sobre "${shortPreviousTopic}". ¿Qué necesitas ahora mismo?`
+        : `Hola ${namePrefix}estoy aquí para ayudarte. ¿Qué necesitas?`;
+    }
+
+    if (RegExp(r'(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)').hasMatch(normalized)) {
+      return shortPreviousTopic != null
+        ? `Todo bien. Seguimos con "${shortPreviousTopic}" si quieres, o dime en qué te ayudo ahora.`
+        : 'Todo bien. Dime en qué te ayudo y seguimos por ahí.';
+    }
+
+    if (normalized.length <= 12) {
+      return shortPreviousTopic != null
+        ? `Te sigo el hilo con "${shortPreviousTopic}". Cuéntame un poco más y te ayudo.`
+        : `Claro ${namePrefix}cuéntame un poco más y te ayudo enseguida.`;
+    }
+
+    return `Entiendo. Cuéntame un poco más para ayudarte mejor con eso.`;
   }
 
   private async persistAiBrainLog(params: {
