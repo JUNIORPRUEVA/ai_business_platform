@@ -19,6 +19,11 @@ import { WhatsappChannelLogService } from './whatsapp-channel-log.service';
 import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappJidResolverService } from './whatsapp-jid-resolver.service';
 import { WhatsappMessagingService } from './whatsapp-messaging.service';
+import {
+  normalizeEvolutionWebhookEvent,
+  normalizeWhatsappJid,
+  normalizeWhatsappPhoneNumber,
+} from './whatsapp-normalization.util';
 
 export interface WhatsappWebhookJob {
   companyId: string;
@@ -156,7 +161,11 @@ export class WhatsappWebhookService {
   ): Promise<void> {
     const data = this.readMap(payload['data']);
     const state = this.readString(data['state']) || this.readString(data['status']);
+    const instancePhone = this.extractInstancePhoneNumber(data);
     config.instanceStatus = state || config.instanceStatus;
+    if (instancePhone) {
+      config.instancePhone = instancePhone;
+    }
     config.lastSyncAt = new Date();
     await this.configsRepository.save(config);
   }
@@ -214,7 +223,8 @@ export class WhatsappWebhookService {
     const data = this.readMap(payload['data']);
     const key = this.readMap(data['key']);
     const rawRemoteJid = this.readString(key['remoteJid']);
-    const remoteJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid);
+    const rawSenderJid = this.resolveInboundSenderJid(config, key);
+    const remoteJid = this.jidResolver.normalizeRemoteJid(rawSenderJid);
     if (!remoteJid) {
       this.logger.warn('[EVOLUTION INBOUND] message ignored reason=missing_remote_jid');
       return null;
@@ -222,9 +232,6 @@ export class WhatsappWebhookService {
 
     const messageId = this.readString(key['id']) || null;
     const fromMe = this.readBoolean(key['fromMe']);
-    console.log('EVENT:', eventName);
-    console.log('PROCESSING MESSAGE ID:', messageId ?? '(missing)');
-    console.log('FROM ME:', fromMe);
 
     if (eventName !== 'MESSAGES_UPSERT') {
       this.logger.log(
@@ -276,11 +283,6 @@ export class WhatsappWebhookService {
       fromMe,
     });
 
-    console.log('REMOTE:', remoteJid);
-    console.log('USED:', chatIdentityJid ?? '(unresolved)');
-    console.log('REMOTE JID:', remoteJid);
-    console.log('CHAT JID USED:', chatIdentityJid ?? '(unresolved)');
-
     if (!chatIdentityJid) {
       this.logger.warn(
         `[EVOLUTION INBOUND] message ignored reason=missing_chat_identity_jid companyId=${config.companyId} instanceName=${config.instanceName} remoteJid=${remoteJid} canonicalJid=${canonicalRemoteJid ?? '(none)'} fromMe=${fromMe}`,
@@ -307,7 +309,7 @@ export class WhatsappWebhookService {
       config,
       remoteJid: chatIdentityJid,
       canonicalRemoteJid,
-        rawRemoteJid: rawRemoteJid ? rawRemoteJid : null,
+      rawRemoteJid: rawSenderJid ? rawSenderJid : null,
       pushName: this.readString(data['pushName']) || null,
       evolutionMessageId: messageId,
       fromMe,
@@ -628,7 +630,7 @@ export class WhatsappWebhookService {
     if (!raw) {
       return 'UNKNOWN_EVENT';
     }
-    return raw.replace(/\./g, '_').replace(/-/g, '_').toUpperCase();
+    return normalizeEvolutionWebhookEvent(raw) ?? 'UNKNOWN_EVENT';
   }
 
   private normalizeRemoteJid(value: string): string {
@@ -636,6 +638,63 @@ export class WhatsappWebhookService {
       return '';
     }
     return value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`;
+  }
+
+  private resolveInboundSenderJid(
+    config: WhatsappChannelConfigEntity,
+    key: Record<string, unknown>,
+  ): string {
+    const remoteJid = this.readString(key['remoteJid']);
+    const participantJid = this.readString(key['participant']);
+    const instanceJid = this.buildInstanceJid(config);
+    if (!remoteJid) {
+      return participantJid;
+    }
+
+    const normalizedRemote = normalizeWhatsappJid(remoteJid, { allowGroup: true, allowLid: true });
+    const normalizedParticipant = normalizeWhatsappJid(participantJid, {
+      allowGroup: true,
+      allowLid: true,
+    });
+
+    if (instanceJid && normalizedRemote && normalizedRemote === instanceJid && normalizedParticipant) {
+      return normalizedParticipant;
+    }
+
+    return normalizedRemote ?? normalizedParticipant ?? remoteJid;
+  }
+
+  private buildInstanceJid(config: WhatsappChannelConfigEntity): string | null {
+    const normalizedPhone = normalizeWhatsappPhoneNumber(this.readString(config.instancePhone));
+    return normalizedPhone ? `${normalizedPhone}@s.whatsapp.net` : null;
+  }
+
+  private extractInstancePhoneNumber(data: Record<string, unknown>): string | null {
+    const candidates: Array<unknown> = [
+      data['phone'],
+      data['phoneNumber'],
+      data['number'],
+      data['owner'],
+      data['ownerJid'],
+      data['jid'],
+      data['id'],
+      this.readMap(data['instance'])['phone'],
+      this.readMap(data['instance'])['phoneNumber'],
+      this.readMap(data['instance'])['number'],
+      this.readMap(data['instance'])['owner'],
+      this.readMap(data['instance'])['jid'],
+      this.readMap(data['me'])['id'],
+      this.readMap(data['me'])['jid'],
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = normalizeWhatsappPhoneNumber(this.readString(candidate));
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return null;
   }
 
   private async resolveCanonicalRemoteJid(

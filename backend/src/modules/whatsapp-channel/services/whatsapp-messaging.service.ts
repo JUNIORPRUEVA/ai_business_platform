@@ -13,6 +13,7 @@ import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappAttachmentService } from './whatsapp-attachment.service';
 import { WhatsappChannelConfigService } from './whatsapp-channel-config.service';
 import { WhatsappJidResolverService } from './whatsapp-jid-resolver.service';
+import { normalizeWhatsappJid } from './whatsapp-normalization.util';
 
 @Injectable()
 export class WhatsappMessagingService {
@@ -455,7 +456,9 @@ export class WhatsappMessagingService {
         existing.replyTargetUnresolved = false;
       }
 
-      const derivedSendTarget = this.extractPhoneFromRemoteJid(existing.remoteJid);
+      const derivedSendTarget = normalizedCanonical
+        ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(normalizedCanonical))
+        : this.deriveDirectSendTarget(existing.remoteJid);
       if (derivedSendTarget) {
         existing.sendTarget = derivedSendTarget;
       }
@@ -486,7 +489,7 @@ export class WhatsappMessagingService {
       : (remoteJid.endsWith('@s.whatsapp.net')
           ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(remoteJid))
           : null);
-    const derivedSendTarget = this.extractPhoneFromRemoteJid(remoteJid);
+    const derivedSendTarget = canonicalNumber ?? this.deriveDirectSendTarget(remoteJid);
 
     const entity = this.chatsRepository.create({
       companyId: config.companyId,
@@ -865,7 +868,19 @@ export class WhatsappMessagingService {
       );
     }
 
-    const sendTarget = this.extractPhoneFromRemoteJid(outboundRemoteJid);
+    if (this.isInstanceJid(config, outboundRemoteJid)) {
+      const instanceJid = this.buildInstanceJid(config) ?? '(none)';
+      this.logger.error(
+        `[WHATSAPP OUTBOUND] blocked instance jid companyId=${companyId} instanceName=${config.instanceName} chatRemoteJid=${chatRemoteJid} outboundRemoteJid=${outboundRemoteJid} instanceJid=${instanceJid}`,
+      );
+      throw new BadRequestException(
+        `Destino bloqueado: el jid ${outboundRemoteJid} coincide con la instancia. chat.remoteJid=${chatRemoteJid}`,
+      );
+    }
+
+    const sendTarget = this.jidResolver.normalizeOutboundNumber(
+      this.extractPhoneFromRemoteJid(outboundRemoteJid),
+    );
     if (!sendTarget) {
       throw new BadRequestException(`remoteJid no contiene digitos para envío: ${outboundRemoteJid}`);
     }
@@ -898,6 +913,17 @@ export class WhatsappMessagingService {
     return this.jidResolver.extractPhoneFromJid(remoteJid.trim());
   }
 
+  private deriveDirectSendTarget(remoteJid: string): string | null {
+    if (!remoteJid.endsWith('@s.whatsapp.net')) {
+      return null;
+    }
+
+    const normalized = this.jidResolver.normalizeOutboundNumber(
+      this.extractPhoneFromRemoteJid(remoteJid),
+    );
+    return normalized || null;
+  }
+
   private isInstanceSendTarget(config: WhatsappChannelConfigEntity, sendTarget: string): boolean {
     const instancePhone = this.readString(config.instancePhone);
     if (!instancePhone) {
@@ -906,6 +932,17 @@ export class WhatsappMessagingService {
 
     return this.jidResolver.normalizeOutboundNumber(sendTarget) ===
       this.jidResolver.normalizeOutboundNumber(instancePhone);
+  }
+
+  private buildInstanceJid(config: WhatsappChannelConfigEntity): string | null {
+    const instancePhone = this.jidResolver.normalizeOutboundNumber(this.readString(config.instancePhone));
+    return instancePhone ? `${instancePhone}@s.whatsapp.net` : null;
+  }
+
+  private isInstanceJid(config: WhatsappChannelConfigEntity, jid: string): boolean {
+    const normalizedJid = normalizeWhatsappJid(jid, { allowGroup: false, allowLid: false });
+    const instanceJid = this.buildInstanceJid(config);
+    return Boolean(normalizedJid && instanceJid && normalizedJid === instanceJid);
   }
 
   private sanitizeOutboundCanonicalRemoteJid(

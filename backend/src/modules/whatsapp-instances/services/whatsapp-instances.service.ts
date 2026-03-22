@@ -18,6 +18,11 @@ import { WhatsappChannelLogEntity } from '../../whatsapp-channel/entities/whatsa
 import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappChannelConfigService } from '../../whatsapp-channel/services/whatsapp-channel-config.service';
+import {
+  normalizeEvolutionWebhookEvent,
+  normalizeWhatsappJid,
+  normalizeWhatsappPhoneNumber,
+} from '../../whatsapp-channel/services/whatsapp-normalization.util';
 import { WhatsappWebhookService } from '../../whatsapp-channel/services/whatsapp-webhook.service';
 import { WhatsappInstanceEntity, WhatsappInstanceStatus } from '../entities/whatsapp-instance.entity';
 
@@ -88,6 +93,7 @@ export class WhatsappInstancesService {
       status: 'created',
       qrCode: null,
       phoneNumber: null,
+      jid: null,
       sessionData: null,
     });
 
@@ -114,6 +120,7 @@ export class WhatsappInstancesService {
     const entity = await this.getByInstanceName(tenantId, instanceName);
 
     const { status: evoStatus } = await this.evolutionService.checkConnection(entity.instanceName);
+    const identity = await this.syncInstanceIdentityFromEvolution(entity, entity.instanceName);
 
     entity.status = this.mapEvolutionStatus(evoStatus);
     if (entity.status === 'connected') {
@@ -121,7 +128,7 @@ export class WhatsappInstancesService {
     }
 
     await this.repo.save(entity);
-    return { status: entity.status, phoneNumber: entity.phoneNumber };
+    return { status: entity.status, phoneNumber: identity.phoneNumber ?? entity.phoneNumber };
   }
 
   async logoutInstance(tenantId: string, instanceName: string): Promise<{ ok: true }> {
@@ -132,6 +139,7 @@ export class WhatsappInstancesService {
     entity.status = 'disconnected';
     entity.qrCode = null;
     entity.phoneNumber = null;
+    entity.jid = null;
     entity.sessionData = null;
 
     await this.repo.save(entity);
@@ -193,6 +201,7 @@ export class WhatsappInstancesService {
     entity.status = 'created';
     entity.qrCode = null;
     entity.phoneNumber = null;
+    entity.jid = null;
     entity.sessionData = null;
     entity.evolutionUrl =
       (this.configService.get<string>('EVOLUTION_API_URL') ?? '').trim() ||
@@ -522,17 +531,26 @@ export class WhatsappInstancesService {
 
     if (event === 'CONNECTION_UPDATE') {
       const next = this.guessStatusFromWebhook(data);
+      const instanceIdentity = this.extractInstanceIdentity(data);
       entity.status = next ?? entity.status;
       entity.sessionData = data;
-
-      const phone = this.extractPhoneNumber(data);
-      if (phone) entity.phoneNumber = phone;
+      if (instanceIdentity.phoneNumber) {
+        entity.phoneNumber = instanceIdentity.phoneNumber;
+      }
+      if (instanceIdentity.jid) {
+        entity.jid = instanceIdentity.jid;
+      }
 
       if (entity.status === 'connected') {
         entity.qrCode = null;
       }
 
       await this.repo.save(entity);
+      await this.syncChannelInstanceIdentity(
+        entity.tenantId,
+        entity.instanceName,
+        instanceIdentity.phoneNumber ?? entity.phoneNumber,
+      );
       return { updated: true, instanceName, event };
     }
 
@@ -845,30 +863,7 @@ export class WhatsappInstancesService {
   }
 
   private normalizeWebhookEvent(event: string): string {
-    const normalized = event.trim().toUpperCase();
-    switch (normalized) {
-      case 'MESSAGES_UPSERT':
-      case 'MESSAGES.UPSERT':
-        return 'MESSAGES_UPSERT';
-      case 'MESSAGES_UPDATE':
-      case 'MESSAGES.UPDATE':
-        return 'MESSAGES_UPDATE';
-      case 'MESSAGES_DELETE':
-      case 'MESSAGES.DELETE':
-        return 'MESSAGES_DELETE';
-      case 'SEND_MESSAGE':
-      case 'SEND.MESSAGE':
-        return 'SEND_MESSAGE';
-      case 'CONNECTION_UPDATE':
-      case 'CONNECTION.UPDATE':
-        return 'CONNECTION_UPDATE';
-      case 'QRCODE_UPDATED':
-      case 'QR_UPDATED':
-      case 'QR.UPDATED':
-        return 'QRCODE_UPDATED';
-      default:
-        return normalized;
-    }
+    return normalizeEvolutionWebhookEvent(event) ?? event.trim().toUpperCase();
   }
 
   private normalizeWebhookEventName(value?: string): string {
@@ -877,25 +872,7 @@ export class WhatsappInstancesService {
       return '';
     }
 
-    const normalized = raw.toUpperCase();
-    switch (normalized) {
-      case 'MESSAGE.UPSERT':
-      case 'MESSAGE_UPSERT':
-      case 'MESSAGES.UPSERT':
-      case 'MESSAGES_UPSERT':
-        return 'MESSAGES_UPSERT';
-      case 'CONNECTION.UPDATE':
-      case 'CONNECTION.STATE':
-      case 'CONNECTION_UPDATE':
-        return 'CONNECTION_UPDATE';
-      case 'QR.UPDATED':
-      case 'QRCODE.UPDATED':
-      case 'QR_UPDATED':
-      case 'QRCODE_UPDATED':
-        return 'QRCODE_UPDATED';
-      default:
-        return normalized;
-    }
+    return normalizeEvolutionWebhookEvent(raw) ?? raw.replace(/\./g, '_').replace(/-/g, '_').toUpperCase();
   }
 
   private resolveWebhookInstanceName(
@@ -944,21 +921,87 @@ export class WhatsappInstancesService {
   }
 
   private extractPhoneNumber(data: Record<string, unknown>): string | null {
+    return this.extractInstanceIdentity(data).phoneNumber;
+  }
+
+  private extractInstanceIdentity(data: Record<string, unknown>): {
+    phoneNumber: string | null;
+    jid: string | null;
+  } {
     const candidates: Array<unknown> = [
-      data.phone_number,
-      data.phoneNumber,
-      data.number,
-      data.user,
-      data.me,
-      data.id,
+      data['phone_number'],
+      data['phoneNumber'],
+      data['phone'],
+      data['number'],
+      data['user'],
+      data['owner'],
+      data['jid'],
+      data['id'],
+      this.readMap(data['instance'])['phone_number'],
+      this.readMap(data['instance'])['phoneNumber'],
+      this.readMap(data['instance'])['phone'],
+      this.readMap(data['instance'])['number'],
+      this.readMap(data['instance'])['owner'],
+      this.readMap(data['instance'])['jid'],
+      this.readMap(data['instance'])['id'],
+      this.readMap(data['me'])['id'],
+      this.readMap(data['me'])['jid'],
     ];
 
-    for (const c of candidates) {
-      const maybe = this.stringifyWhatsAppId(c);
-      if (maybe) return maybe;
+    for (const candidate of candidates) {
+      const raw = this.readString(candidate);
+      if (!raw) {
+        continue;
+      }
+
+      const jid = normalizeWhatsappJid(raw, { allowGroup: false, allowLid: false });
+      const phoneNumber = normalizeWhatsappPhoneNumber(raw);
+      if (jid || phoneNumber) {
+        return {
+          phoneNumber: phoneNumber ?? (jid ? jid.replace(/@.+$/, '') : null),
+          jid: jid ?? (phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null),
+        };
+      }
     }
 
-    return null;
+    return { phoneNumber: null, jid: null };
+  }
+
+  private async syncInstanceIdentityFromEvolution(
+    entity: WhatsappInstanceEntity,
+    instanceName: string,
+  ): Promise<{ phoneNumber: string | null; jid: string | null }> {
+    const status = await this.evolutionService.getInstanceStatus(instanceName).catch(() => null);
+    const identity = status ? this.extractInstanceIdentity(this.readMap(status.raw)) : { phoneNumber: null, jid: null };
+
+    if (identity.phoneNumber) {
+      entity.phoneNumber = identity.phoneNumber;
+    }
+    if (identity.jid) {
+      entity.jid = identity.jid;
+    }
+
+    await this.syncChannelInstanceIdentity(entity.tenantId, entity.instanceName, identity.phoneNumber ?? entity.phoneNumber);
+    return identity;
+  }
+
+  private async syncChannelInstanceIdentity(
+    companyId: string,
+    instanceName: string,
+    phoneNumber: string | null,
+  ): Promise<void> {
+    const config = await this.whatsappChannelConfigRepository.findOne({
+      where: { companyId, provider: 'evolution', instanceName },
+    });
+    if (!config) {
+      return;
+    }
+
+    if (phoneNumber) {
+      config.instancePhone = phoneNumber;
+      config.lastSyncAt = new Date();
+      await this.whatsappChannelConfigRepository.save(config);
+    }
   }
 
   private readFirstMessageEntry(data: Record<string, unknown>): Record<string, unknown> {
@@ -1078,6 +1121,7 @@ export class WhatsappInstancesService {
       status: entity.status,
       qrCode: entity.qrCode,
       phoneNumber: entity.phoneNumber,
+      jid: entity.jid,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

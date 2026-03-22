@@ -2,6 +2,11 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
 import { EvolutionApiClientService } from './evolution-api-client.service';
+import {
+  extractDigitsFromWhatsappJid,
+  normalizeWhatsappJid,
+  normalizeWhatsappPhoneNumber,
+} from './whatsapp-normalization.util';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -29,14 +34,15 @@ export class WhatsappJidResolverService {
   constructor(private readonly evolutionApiClient: EvolutionApiClientService) {}
 
   normalizeRemoteJid(value: string, options?: { throwOnEmpty?: boolean }): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
+    const normalized = normalizeWhatsappJid(value, { allowGroup: true, allowLid: true });
+    if (!normalized) {
       if (options?.throwOnEmpty) {
         throw new BadRequestException('remoteJid es obligatorio.');
       }
       return '';
     }
-    return trimmed.includes('@') ? trimmed : `${trimmed.replace(/\D/g, '')}@s.whatsapp.net`;
+
+    return normalized;
   }
 
   normalizeJid(value: string, options?: { throwOnEmpty?: boolean }): string {
@@ -44,24 +50,15 @@ export class WhatsappJidResolverService {
   }
 
   normalizeReplyJid(value: string, options?: { throwOnEmpty?: boolean }): string {
-    const normalizedJid = this.normalizeRemoteJid(value, options);
+    const normalizedJid = normalizeWhatsappJid(value, { allowGroup: false, allowLid: false });
     if (!normalizedJid) {
-      return normalizedJid;
-    }
-
-    if (!normalizedJid.endsWith('@lid')) {
-      return normalizedJid;
-    }
-
-    const digits = this.extractPhoneFromJid(normalizedJid);
-    if (!digits) {
       if (options?.throwOnEmpty) {
         throw new BadRequestException('remoteJid no contiene digitos para responder.');
       }
       return '';
     }
 
-    return `${digits}@s.whatsapp.net`;
+    return normalizedJid;
   }
 
   describeJid(originalJid: string, canonicalJid?: string | null): JidDescriptor {
@@ -89,14 +86,7 @@ export class WhatsappJidResolverService {
     if (!trimmed) {
       return null;
     }
-    if (!trimmed.endsWith('@s.whatsapp.net')) {
-      return null;
-    }
-    const digits = this.normalizeOutboundNumber(this.jidToNumber(trimmed));
-    if (!digits) {
-      return null;
-    }
-    return `${digits}@s.whatsapp.net`;
+    return normalizeWhatsappJid(trimmed, { allowGroup: false, allowLid: false });
   }
 
   jidToNumber(jid: string): string {
@@ -104,24 +94,11 @@ export class WhatsappJidResolverService {
   }
 
   extractPhoneFromJid(jid: string): string {
-    return jid.replace(/@.+$/, '').replace(/\D/g, '');
+    return extractDigitsFromWhatsappJid(jid);
   }
 
   normalizeOutboundNumber(value: string): string {
-    const digits = value.replace(/\D/g, '');
-    if (!digits) {
-      return '';
-    }
-
-    if (digits.length === 10) {
-      return `1${digits}`;
-    }
-
-    if (digits.length === 11 && digits.startsWith('1')) {
-      return digits;
-    }
-
-    return digits;
+    return normalizeWhatsappPhoneNumber(value) ?? '';
   }
 
   detectJidType(remoteJid: string): 'lid' | 'pn' | 'group' | 'unknown' {

@@ -457,7 +457,7 @@ test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensaje
         messages: [
           {
             key: {
-              remoteJid: '1111111111@s.whatsapp.net',
+              remoteJid: '11111111111@s.whatsapp.net',
               id: 'wamid-user-a',
               fromMe: false,
             },
@@ -475,7 +475,7 @@ test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensaje
         messages: [
           {
             key: {
-              remoteJid: '2222222222@s.whatsapp.net',
+              remoteJid: '12222222222@s.whatsapp.net',
               id: 'wamid-user-b',
               fromMe: false,
             },
@@ -490,10 +490,10 @@ test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensaje
       id: 'chat-user-a',
       companyId: 'company-1',
       channelConfigId: 'config-1',
-      remoteJid: '1111111111@s.whatsapp.net',
-      originalRemoteJid: '1111111111@s.whatsapp.net',
-      rawRemoteJid: '1111111111@s.whatsapp.net',
-      canonicalRemoteJid: '1111111111@s.whatsapp.net',
+      remoteJid: '11111111111@s.whatsapp.net',
+      originalRemoteJid: '11111111111@s.whatsapp.net',
+      rawRemoteJid: '11111111111@s.whatsapp.net',
+      canonicalRemoteJid: '11111111111@s.whatsapp.net',
       canonicalNumber: '1111111111',
       sendTarget: '1111111111',
       lastInboundJidType: 'pn',
@@ -509,10 +509,10 @@ test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensaje
       id: 'chat-user-b',
       companyId: 'company-1',
       channelConfigId: 'config-1',
-      remoteJid: '2222222222@s.whatsapp.net',
-      originalRemoteJid: '2222222222@s.whatsapp.net',
-      rawRemoteJid: '2222222222@s.whatsapp.net',
-      canonicalRemoteJid: '2222222222@s.whatsapp.net',
+      remoteJid: '12222222222@s.whatsapp.net',
+      originalRemoteJid: '12222222222@s.whatsapp.net',
+      rawRemoteJid: '12222222222@s.whatsapp.net',
+      canonicalRemoteJid: '12222222222@s.whatsapp.net',
       canonicalNumber: '2222222222',
       sendTarget: '2222222222',
       lastInboundJidType: 'pn',
@@ -531,10 +531,10 @@ test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensaje
     await service.processNow('company-1', payloadUserB as never);
 
     const storedChatA = await chatsRepository.findOne({
-      where: { companyId: 'company-1', remoteJid: '1111111111@s.whatsapp.net' },
+      where: { companyId: 'company-1', remoteJid: '11111111111@s.whatsapp.net' },
     });
     const storedChatB = await chatsRepository.findOne({
-      where: { companyId: 'company-1', remoteJid: '2222222222@s.whatsapp.net' },
+      where: { companyId: 'company-1', remoteJid: '12222222222@s.whatsapp.net' },
     });
     const storedMessageA = await messagesRepository.findOne({
       where: { companyId: 'company-1', evolutionMessageId: 'wamid-user-a' },
@@ -546,24 +546,19 @@ test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensaje
     assert.ok(storedChatA);
     assert.ok(storedChatB);
     assert.notEqual(storedChatA?.id, storedChatB?.id);
-    assert.equal(storedChatA?.remoteJid, '1111111111@s.whatsapp.net');
-    assert.equal(storedChatB?.remoteJid, '2222222222@s.whatsapp.net');
-    assert.equal(storedMessageA?.remoteJid, '1111111111@s.whatsapp.net');
-    assert.equal(storedMessageB?.remoteJid, '2222222222@s.whatsapp.net');
+    assert.equal(storedChatA?.remoteJid, '11111111111@s.whatsapp.net');
+    assert.equal(storedChatB?.remoteJid, '12222222222@s.whatsapp.net');
+    assert.equal(storedMessageA?.remoteJid, '11111111111@s.whatsapp.net');
+    assert.equal(storedMessageB?.remoteJid, '12222222222@s.whatsapp.net');
 
-    assert.deepEqual(savedContactPhones, ['1111111111', '2222222222']);
+    assert.deepEqual(savedContactPhones, ['11111111111', '12222222222']);
     assert.equal(createdConversations.length, 2);
     assert.notEqual(createdConversations[0]['id'], createdConversations[1]['id']);
-    assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['conversationId'], 'conversation-contact-1111111111');
-    assert.equal((queuedJobs[1]['data'] as Record<string, unknown>)['conversationId'], 'conversation-contact-2222222222');
+    assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['conversationId'], 'conversation-contact-11111111111');
+    assert.equal((queuedJobs[1]['data'] as Record<string, unknown>)['conversationId'], 'conversation-contact-12222222222');
 
     const relevantLogs = logLines.filter((line) => line.startsWith('REMOTE:') || line.startsWith('USED:'));
-    assert.deepEqual(relevantLogs, [
-      'REMOTE: 1111111111@s.whatsapp.net',
-      'USED: 1111111111@s.whatsapp.net',
-      'REMOTE: 2222222222@s.whatsapp.net',
-      'USED: 2222222222@s.whatsapp.net',
-    ]);
+    assert.deepEqual(relevantLogs, []);
   } finally {
     console.log = originalConsoleLog;
   }
@@ -2164,7 +2159,7 @@ test('WhatsappMessagingService bloquea envio cuando chat.remoteJid apunta al num
       remoteJid: '18295319442@s.whatsapp.net',
       text: 'hola',
     }),
-    /coincide con el numero de la instancia/,
+    /coincide con la instancia|coincide con el numero de la instancia/,
   );
   assert.equal(capturedPayloads.length, 0);
 });

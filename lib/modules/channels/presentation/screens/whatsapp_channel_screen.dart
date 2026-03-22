@@ -22,6 +22,25 @@ enum WhatsappChannelUiStatus {
   disconnected,
 }
 
+enum _ChannelIssueTarget {
+  provider,
+  link,
+  status,
+  actions,
+}
+
+class _ChannelIssue {
+  const _ChannelIssue({
+    required this.title,
+    required this.message,
+    required this.target,
+  });
+
+  final String title;
+  final String message;
+  final _ChannelIssueTarget target;
+}
+
 class WhatsappChannelScreen extends ConsumerStatefulWidget {
   const WhatsappChannelScreen({super.key});
 
@@ -33,14 +52,21 @@ class WhatsappChannelScreen extends ConsumerStatefulWidget {
 class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   static const Duration _operationalPollInterval = Duration(seconds: 1);
 
+  final _scrollController = ScrollController();
+  final _providerSectionKey = GlobalKey();
+  final _linkSectionKey = GlobalKey();
+  final _statusSectionKey = GlobalKey();
+  final _actionsSectionKey = GlobalKey();
   final _instanceController = TextEditingController();
   final _api = WhatsappInstancesApiClient();
   final _configurationApi = BotConfigurationCenterApiClient();
   final _evolutionUrlController = TextEditingController();
   final _evolutionKeyController = TextEditingController();
+  final _evolutionConnectedNumberController = TextEditingController();
 
   WhatsappChannelUiStatus _status = WhatsappChannelUiStatus.notConfigured;
   String? _activeInstanceName;
+  String? _instancePhoneNumber;
   String? _qrBase64;
   String? _fieldError;
   String? _requestError;
@@ -80,9 +106,11 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _scrollController.dispose();
     _instanceController.dispose();
     _evolutionUrlController.dispose();
     _evolutionKeyController.dispose();
+    _evolutionConnectedNumberController.dispose();
     super.dispose();
   }
 
@@ -113,6 +141,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
 
       _evolutionUrlController.text = _readString(evolution, 'baseUrl');
       _evolutionKeyController.text = _readString(evolution, 'apiKey');
+      _evolutionConnectedNumberController.text =
+          _readString(evolution, 'connectedNumber');
     } on BotConfigurationCenterApiException catch (error) {
       _providerMessageIsError = true;
       _providerMessage = error.message;
@@ -143,6 +173,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         {
           'baseUrl': _evolutionUrlController.text.trim(),
           'apiKey': _evolutionKeyController.text.trim(),
+          'connectedNumber': _evolutionConnectedNumberController.text.trim(),
         },
         token: token,
       );
@@ -196,6 +227,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         {
           'baseUrl': _evolutionUrlController.text.trim(),
           'apiKey': _evolutionKeyController.text.trim(),
+          'connectedNumber': _evolutionConnectedNumberController.text.trim(),
         },
         token: token,
       );
@@ -322,6 +354,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       }
       setState(() {
         _channelHealth = null;
+        _instancePhoneNumber = null;
         _isLoadingHealth = false;
       });
       return;
@@ -473,6 +506,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         setState(() {
           _status = WhatsappChannelUiStatus.notConfigured;
           _activeInstanceName = null;
+          _instancePhoneNumber = null;
           _qrBase64 = null;
           _loadingExisting = false;
         });
@@ -487,6 +521,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         _instanceController.text = instanceName;
         _activeInstanceName = instanceName;
       }
+
+      _instancePhoneNumber = (latest['phoneNumber'] as String?)?.trim();
 
       final uiStatus = _mapStatus(rawStatus);
 
@@ -553,6 +589,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
       _requestError = null;
       _qrBase64 = null;
       _activeInstanceName = instanceName;
+      _instancePhoneNumber = null;
       _isMutatingInstance = true;
     });
 
@@ -824,6 +861,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
         _activeInstanceName = null;
         _instanceController.clear();
         _status = WhatsappChannelUiStatus.notConfigured;
+        _instancePhoneNumber = null;
         _qrBase64 = null;
         _channelHealth = null;
         _isMutatingInstance = false;
@@ -942,6 +980,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final primaryIssue = _derivePrimaryIssue();
     final badge = _buildStatusBadge(theme);
     final qrBytes = _decodeQrBytes(_qrBase64);
     final statusColor = _statusColor(theme);
@@ -960,12 +999,15 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     final activityLabel = _healthString('activityLabel') ??
         'Aún estamos validando la actividad del canal';
     final activityBadge = _healthString('activityBadge') ?? 'inactive';
+    final configuredConnectedNumber =
+        _evolutionConnectedNumberController.text.trim();
 
     return Scaffold(
       body: Stack(
         children: [
           _buildAmbientBackground(theme),
           SingleChildScrollView(
+            controller: _scrollController,
             padding: const EdgeInsets.only(bottom: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1025,7 +1067,11 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                         children: [
                                           badge,
                                           _buildActivityBadge(theme,
-                                              activityBadge, activityLabel),
+                                              activityBadge, activityLabel,
+                                              onTap: primaryIssue == null
+                                                  ? null
+                                                  : () => _openIssueLocation(
+                                                      primaryIssue)),
                                         ],
                                       ),
                                       const SizedBox(height: 14),
@@ -1078,7 +1124,8 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                             ),
                                             const SizedBox(height: 6),
                                             Text(
-                                              activityLabel,
+                                              primaryIssue?.title ??
+                                                  activityLabel,
                                               style: theme.textTheme.titleMedium
                                                   ?.copyWith(
                                                 fontWeight: FontWeight.w900,
@@ -1086,9 +1133,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                             ),
                                             const SizedBox(height: 6),
                                             Text(
-                                              healthReady
-                                                  ? 'La vinculación y el webhook están listos. Solo necesitas confirmar actividad reciente.'
-                                                  : 'Si el canal ya está conectado pero no ves actividad, actualiza el estado o reaplica el webhook.',
+                                              primaryIssue?.message ??
+                                                  (healthReady
+                                                      ? 'La vinculación y el webhook están listos. Solo necesitas confirmar actividad reciente.'
+                                                      : 'Si el canal ya está conectado pero no ves actividad, actualiza el estado o reaplica el webhook.'),
                                               style: theme.textTheme.bodySmall
                                                   ?.copyWith(
                                                 color: theme
@@ -1096,6 +1144,21 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                                     .withValues(alpha: 0.68),
                                               ),
                                             ),
+                                            if (primaryIssue != null) ...[
+                                              const SizedBox(height: 10),
+                                              Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: OutlinedButton.icon(
+                                                  onPressed: () =>
+                                                      _openIssueLocation(
+                                                          primaryIssue),
+                                                  icon: const Icon(Icons
+                                                      .arrow_downward_rounded),
+                                                  label: const Text(
+                                                      'Ir al problema'),
+                                                ),
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       ),
@@ -1145,6 +1208,10 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                         const SizedBox(height: 16),
                         _buildErrorBanner(theme),
                       ],
+                      if (primaryIssue != null) ...[
+                        const SizedBox(height: 16),
+                        _buildActionableIssueBanner(theme, primaryIssue),
+                      ],
                       if (_loadingExisting ||
                           _isLoadingHealth ||
                           _isCheckingWebhookStatus) ...[
@@ -1157,6 +1224,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                 if (_showAdvancedProviderPanel) ...[
                   const SizedBox(height: 14),
                   ExecutiveGlassCard(
+                    key: _providerSectionKey,
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1296,6 +1364,14 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                           enabled: !_isSavingProviderSettings &&
                                               !_loadingProviderSettings,
                                         ),
+                                        _buildConfigField(
+                                          controller:
+                                              _evolutionConnectedNumberController,
+                                          label: 'Número conectado',
+                                          hint: '+57 300 123 4567',
+                                          enabled: !_isSavingProviderSettings &&
+                                              !_loadingProviderSettings,
+                                        ),
                                         const SizedBox(height: 6),
                                         Container(
                                           width: double.infinity,
@@ -1402,6 +1478,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                               ? constraints.maxWidth
                               : (constraints.maxWidth - 14) * 0.56,
                           child: ExecutiveGlassCard(
+                            key: _linkSectionKey,
                             padding: const EdgeInsets.all(20),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1553,6 +1630,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                           child: Column(
                             children: [
                               ExecutiveGlassCard(
+                                key: _statusSectionKey,
                                 padding: const EdgeInsets.all(20),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1599,6 +1677,26 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                                         'Último error',
                                         healthError ?? 'Sin errores recientes',
                                         healthError == null),
+                                    _buildSummaryRow(
+                                        theme,
+                                        'Número configurado',
+                                        configuredConnectedNumber.isEmpty
+                                            ? 'No definido'
+                                            : configuredConnectedNumber,
+                                        configuredConnectedNumber.isNotEmpty),
+                                    _buildSummaryRow(
+                                        theme,
+                                        'Número detectado por Evolution',
+                                        _instancePhoneNumber == null ||
+                                                _instancePhoneNumber!
+                                                    .trim()
+                                                    .isEmpty
+                                            ? 'Aún no reportado'
+                                            : _instancePhoneNumber!,
+                                        _instancePhoneNumber != null &&
+                                            _instancePhoneNumber!
+                                                .trim()
+                                                .isNotEmpty),
                                     const SizedBox(height: 16),
                                     Container(
                                       width: double.infinity,
@@ -1641,6 +1739,7 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                               ),
                               const SizedBox(height: 14),
                               ExecutiveGlassCard(
+                                key: _actionsSectionKey,
                                 padding: const EdgeInsets.all(20),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1810,28 +1909,226 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
     }
   }
 
-  Widget _buildActivityBadge(ThemeData theme, String badge, String label) {
+  String _normalizedDigits(String value) {
+    return value.replaceAll(RegExp(r'\D'), '');
+  }
+
+  bool _containsAny(String text, List<String> values) {
+    for (final value in values) {
+      if (text.contains(value)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  _ChannelIssueTarget _targetFromMessage(String message) {
+    final normalized = message.toLowerCase();
+    if (_containsAny(normalized, [
+      'webhook',
+      'hook',
+    ])) {
+      return _ChannelIssueTarget.actions;
+    }
+    if (_containsAny(normalized, [
+      'telefono',
+      'teléfono',
+      'phone',
+      'numero',
+      'número',
+      'api key',
+      'baseurl',
+      'url',
+      'evolution',
+    ])) {
+      return _ChannelIssueTarget.provider;
+    }
+    if (_containsAny(normalized, [
+      'instancia',
+      'qr',
+      'escaneo',
+      'nombre de instancia',
+    ])) {
+      return _ChannelIssueTarget.link;
+    }
+    return _ChannelIssueTarget.status;
+  }
+
+  _ChannelIssue? _derivePrimaryIssue() {
+    final configuredNumber = _evolutionConnectedNumberController.text.trim();
+    final configuredDigits = _normalizedDigits(configuredNumber);
+    final instanceNumber = _instancePhoneNumber?.trim() ?? '';
+    final instanceDigits = _normalizedDigits(instanceNumber);
+    final providerMessage = _providerMessage?.trim();
+    final webhookMessage = _webhookStatusMessage?.trim();
+    final requestError = _requestError?.trim();
+    final fieldError = _fieldError?.trim();
+    final healthError = _healthString('lastError')?.trim();
+
+    if (providerMessage != null &&
+        providerMessage.isNotEmpty &&
+        _providerMessageIsError) {
+      return _ChannelIssue(
+        title: 'Problema en la configuración de Evolution',
+        message: providerMessage,
+        target: _targetFromMessage(providerMessage),
+      );
+    }
+
+    if (fieldError != null && fieldError.isNotEmpty) {
+      return _ChannelIssue(
+        title: 'Falta completar la vinculación',
+        message: fieldError,
+        target: _ChannelIssueTarget.link,
+      );
+    }
+
+    if (requestError != null && requestError.isNotEmpty) {
+      return _ChannelIssue(
+        title: 'El canal necesita atención',
+        message: requestError,
+        target: _targetFromMessage(requestError),
+      );
+    }
+
+    if (webhookMessage != null &&
+        webhookMessage.isNotEmpty &&
+        _webhookStatusIsError) {
+      return _ChannelIssue(
+        title: 'Webhook fuera de sincronía',
+        message: webhookMessage,
+        target: _ChannelIssueTarget.actions,
+      );
+    }
+
+    if (_status == WhatsappChannelUiStatus.connected &&
+        configuredDigits.isEmpty) {
+      return const _ChannelIssue(
+        title: 'Falta el número conectado',
+        message:
+            'La instancia ya está conectada, pero todavía no guardaste el número conectado en Evolution. Complétalo en la configuración del proveedor.',
+        target: _ChannelIssueTarget.provider,
+      );
+    }
+
+    if (_status == WhatsappChannelUiStatus.connected &&
+        instanceDigits.isEmpty) {
+      return const _ChannelIssue(
+        title: 'Evolution no reportó el número de la instancia',
+        message:
+            'La conexión aparece activa, pero Evolution aún no devolvió el número vinculado. Actualiza el estado o reconecta la instancia para refrescarlo.',
+        target: _ChannelIssueTarget.status,
+      );
+    }
+
+    if (_status == WhatsappChannelUiStatus.connected &&
+        configuredDigits.isNotEmpty &&
+        instanceDigits.isNotEmpty &&
+        configuredDigits != instanceDigits) {
+      return _ChannelIssue(
+        title: 'El número configurado no coincide',
+        message:
+            'El número guardado ($configuredNumber) no coincide con el número que Evolution reporta para la instancia (${_instancePhoneNumber!.trim()}). Corrige ese dato para evitar confusión operativa.',
+        target: _ChannelIssueTarget.provider,
+      );
+    }
+
+    if (healthError != null && healthError.isNotEmpty) {
+      return _ChannelIssue(
+        title: 'Se detectó un problema reciente en el canal',
+        message: healthError,
+        target: _targetFromMessage(healthError),
+      );
+    }
+
+    if (_status == WhatsappChannelUiStatus.disconnected) {
+      return const _ChannelIssue(
+        title: 'La instancia perdió conexión',
+        message:
+            'El canal existe, pero quedó desconectado. Revisa el estado y vuelve a generar el QR si hace falta.',
+        target: _ChannelIssueTarget.link,
+      );
+    }
+
+    return null;
+  }
+
+  GlobalKey _sectionKeyForTarget(_ChannelIssueTarget target) {
+    switch (target) {
+      case _ChannelIssueTarget.provider:
+        return _showAdvancedProviderPanel
+            ? _providerSectionKey
+            : _statusSectionKey;
+      case _ChannelIssueTarget.link:
+        return _linkSectionKey;
+      case _ChannelIssueTarget.status:
+        return _statusSectionKey;
+      case _ChannelIssueTarget.actions:
+        return _actionsSectionKey;
+    }
+  }
+
+  Future<void> _openIssueLocation(_ChannelIssue issue) async {
+    final targetKey = _sectionKeyForTarget(issue.target);
+    final targetContext = targetKey.currentContext;
+    if (targetContext == null) {
+      return;
+    }
+
+    await Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      alignment: 0.08,
+    );
+  }
+
+  Widget _buildActivityBadge(
+    ThemeData theme,
+    String badge,
+    String label, {
+    VoidCallback? onTap,
+  }) {
     final color = _activityToneColor(badge);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: color.withValues(alpha: 0.14),
-        border: Border.all(color: color.withValues(alpha: 0.24)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.insights_rounded, size: 15, color: color),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w800,
+    final badgeChild = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 260),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: color.withValues(alpha: 0.14),
+          border: Border.all(color: color.withValues(alpha: 0.24)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.insights_rounded, size: 15, color: color),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+
+    if (onTap == null) {
+      return badgeChild;
+    }
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: badgeChild,
       ),
     );
   }
@@ -2254,6 +2551,60 @@ class _WhatsappChannelScreenState extends ConsumerState<WhatsappChannelScreen> {
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.84),
                 fontWeight: FontWeight.w700,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionableIssueBanner(ThemeData theme, _ChannelIssue issue) {
+    const accent = Color(0xFFEF4444);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: accent.withValues(alpha: 0.10),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(Icons.error_outline_rounded, color: accent),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  issue.title,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  issue.message,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.82),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => _openIssueLocation(issue),
+                  icon: const Icon(Icons.open_in_full_rounded),
+                  label: const Text('Ver dónde corregirlo'),
+                ),
+              ],
             ),
           ),
         ],

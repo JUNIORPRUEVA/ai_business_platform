@@ -34,6 +34,9 @@ export class WhatsappInstanceEntity extends BaseEntity {
   @Column({ type: 'text', name: 'phone_number', nullable: true })
   phoneNumber!: string | null;
 
+  @Column({ type: 'text', name: 'jid', nullable: true })
+  jid!: string | null;
+
   @Column({ type: 'jsonb', name: 'session_data', nullable: true })
   sessionData!: Record<string, unknown> | null;
 

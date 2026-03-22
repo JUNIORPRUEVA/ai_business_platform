@@ -1229,7 +1229,6 @@ class _MessageBubble extends StatelessWidget {
                                   color: isOutgoing
                                       ? const Color(0xFF00A884)
                                       : const Color(0xFF00A884),
-        
                                 ),
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
@@ -1488,7 +1487,7 @@ class _MessageMediaState extends State<_MessageMedia> {
                                           Colors.white.withValues(alpha: 0.02),
                                           Colors.black.withValues(alpha: 0.08),
                                         ],
-                                        stops: const [0.66, 1],
+                                        stops: const [0.0, 0.66, 1.0],
                                       ),
                                     ),
                                   ),
@@ -3467,7 +3466,9 @@ String _resolveSelectedContactDisplayName(
   BotConversation conversation,
 ) {
   final fromContact = controller.selectedContact.name.trim();
-  if (fromContact.isNotEmpty && fromContact != '-' && fromContact != 'No disponible') {
+  if (fromContact.isNotEmpty &&
+      fromContact != '-' &&
+      fromContact != 'No disponible') {
     return fromContact;
   }
 
@@ -3484,7 +3485,8 @@ Future<void> _copyContactSummary(
   required String contactName,
   required String? contactPhoneNumber,
 }) async {
-  final sanitizedName = contactName.trim().isEmpty ? 'Contacto' : contactName.trim();
+  final sanitizedName =
+      contactName.trim().isEmpty ? 'Contacto' : contactName.trim();
   final sanitizedPhone =
       contactPhoneNumber == null || contactPhoneNumber.trim().isEmpty
           ? 'No disponible'

@@ -12,15 +12,13 @@ import { SaveWhatsappChannelConfigDto } from '../dto/save-whatsapp-channel-confi
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
 import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappSecretService } from './whatsapp-secret.service';
+import {
+  normalizeEvolutionWebhookEvent,
+  normalizeEvolutionWebhookEvents,
+  normalizeWhatsappPhoneNumber,
+} from './whatsapp-normalization.util';
 
-const DEFAULT_WEBHOOK_EVENTS = [
-  'QRCODE_UPDATED',
-  'CONNECTION_UPDATE',
-  'MESSAGES_UPSERT',
-  'MESSAGES_UPDATE',
-  'MESSAGES_DELETE',
-  'SEND_MESSAGE',
-];
+const DEFAULT_WEBHOOK_EVENTS = normalizeEvolutionWebhookEvents();
 
 @Injectable()
 export class WhatsappChannelConfigService {
@@ -278,7 +276,7 @@ export class WhatsappChannelConfigService {
         instanceName: normalizedInstanceName,
         webhookEnabled: true,
         webhookUrl,
-        webhookByEvents: false,
+        webhookByEvents: true,
         webhookBase64: false,
         webhookEventsJson: [...DEFAULT_WEBHOOK_EVENTS],
         isActive: true,
@@ -295,6 +293,7 @@ export class WhatsappChannelConfigService {
     entity.instanceName = normalizedInstanceName;
     entity.webhookEnabled = true;
     entity.webhookUrl = webhookUrl;
+    entity.webhookByEvents = true;
     entity.isActive = true;
     if (!entity.webhookEventsJson || entity.webhookEventsJson.length === 0) {
       entity.webhookEventsJson = [...DEFAULT_WEBHOOK_EVENTS];
@@ -343,13 +342,11 @@ export class WhatsappChannelConfigService {
 
   private buildWebhookPayload(entity: WhatsappChannelConfigEntity): Record<string, unknown> {
     return {
-      webhook: {
-        enabled: entity.webhookEnabled,
-        url: entity.webhookUrl,
-        webhookByEvents: entity.webhookByEvents,
-        webhookBase64: entity.webhookBase64,
-        events: entity.webhookEventsJson.map((event) => this.normalizeWebhookEvent(event)),
-      },
+      enabled: entity.webhookEnabled,
+      url: entity.webhookUrl,
+      webhookByEvents: true,
+      webhookBase64: entity.webhookBase64,
+      events: entity.webhookEventsJson.map((event) => this.normalizeWebhookEvent(event)),
     };
   }
 
@@ -403,30 +400,7 @@ export class WhatsappChannelConfigService {
   }
 
   private normalizeWebhookEvent(event: string): string {
-    const normalized = event.trim().toUpperCase();
-    switch (normalized) {
-      case 'MESSAGES_UPSERT':
-      case 'MESSAGES.UPSERT':
-        return 'MESSAGES_UPSERT';
-      case 'MESSAGES_UPDATE':
-      case 'MESSAGES.UPDATE':
-        return 'MESSAGES_UPDATE';
-      case 'MESSAGES_DELETE':
-      case 'MESSAGES.DELETE':
-        return 'MESSAGES_DELETE';
-      case 'SEND_MESSAGE':
-      case 'SEND.MESSAGE':
-        return 'SEND_MESSAGE';
-      case 'CONNECTION_UPDATE':
-      case 'CONNECTION.UPDATE':
-        return 'CONNECTION_UPDATE';
-      case 'QRCODE_UPDATED':
-      case 'QR_UPDATED':
-      case 'QR.UPDATED':
-        return 'QRCODE_UPDATED';
-      default:
-        return normalized;
-    }
+    return normalizeEvolutionWebhookEvent(event) ?? event.trim().toUpperCase();
   }
 
   private normalizeInstanceName(value: string): string {
@@ -438,18 +412,7 @@ export class WhatsappChannelConfigService {
   }
 
   private normalizeWebhookEvents(value?: string[]): string[] {
-    if (value == null || value.length === 0) {
-      return [...DEFAULT_WEBHOOK_EVENTS];
-    }
-    const normalized = [...new Set(
-      value
-        .map((event) => event.trim())
-        .filter((event) => event.length > 0),
-    )];
-    if (normalized.length === 0) {
-      return [...DEFAULT_WEBHOOK_EVENTS];
-    }
-    return normalized;
+    return normalizeEvolutionWebhookEvents(value);
   }
 
   private applyWebhookOverrides(
@@ -497,8 +460,11 @@ export class WhatsappChannelConfigService {
   private extractPhone(payload: Record<string, unknown>): string | null {
     const direct = this.readString(payload['number']) ||
       this.readString(payload['phone']) ||
-      this.readString(this.readMap(payload['instance'])['number']);
-    return direct.length === 0 ? null : direct;
+      this.readString(payload['owner']) ||
+      this.readString(this.readMap(payload['instance'])['number']) ||
+      this.readString(this.readMap(payload['instance'])['phone']) ||
+      this.readString(this.readMap(payload['instance'])['owner']);
+    return direct.length === 0 ? null : normalizeWhatsappPhoneNumber(direct);
   }
 
   private readString(value: unknown): string {
