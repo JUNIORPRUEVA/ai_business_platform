@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 
 import { JsonFileStoreService } from '../../../common/persistence/json-file-store.service';
@@ -15,6 +16,7 @@ import { UpdateOpenAiSettingsDto } from '../dto/update-openai-settings.dto';
 import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settings.dto';
 import { UpdatePromptTemplateDto } from '../dto/update-prompt-template.dto';
 import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
+import { TestOpenAiConnectionDto } from '../dto/test-openai-connection.dto';
 import { UpdateToolDto } from '../dto/update-tool.dto';
 import { UpdateWhatsappSettingsDto } from '../dto/update-whatsapp-settings.dto';
 import { BotConfigurationEntity } from '../entities/bot-configuration.entity';
@@ -30,11 +32,13 @@ import {
 @Injectable()
 export class BotConfigurationService implements OnModuleInit {
   private static constScope = 'default';
+  private readonly logger = new Logger(BotConfigurationService.name);
   private state!: BotConfigurationBundle;
   private snapshotId: string | null = null;
 
   constructor(
     private readonly fileStore: JsonFileStoreService,
+    private readonly configService: ConfigService,
     @InjectRepository(BotConfigurationEntity)
     private readonly configurationRepository: Repository<BotConfigurationEntity>,
     private readonly channelsService: ChannelsService,
@@ -208,6 +212,110 @@ export class BotConfigurationService implements OnModuleInit {
     return structuredClone(this.state.openai);
   }
 
+  getResolvedOpenAiRuntimeSettings(overrides?: {
+    apiKey?: string | null;
+    model?: string | null;
+  }): {
+    apiKey: string;
+    model: string;
+    apiUrl: string;
+    source: 'request_override' | 'configuration' | 'environment';
+    runtimeEnabled: boolean;
+  } {
+    const overrideApiKey = overrides?.apiKey?.trim() || '';
+    const configurationApiKey = this.state.openai.apiKey?.trim() || '';
+    const environmentApiKey = this.configService.get<string>('OPENAI_API_KEY')?.trim() || '';
+    const source: 'request_override' | 'configuration' | 'environment' = overrideApiKey
+      ? 'request_override'
+      : configurationApiKey
+        ? 'configuration'
+        : 'environment';
+    const apiKey = overrideApiKey || configurationApiKey || environmentApiKey;
+
+    return {
+      apiKey,
+      model: overrides?.model?.trim() || this.state.openai.model,
+      apiUrl:
+        this.configService.get<string>('OPENAI_API_URL')?.trim() ||
+        'https://api.openai.com/v1/chat/completions',
+      source,
+      runtimeEnabled: this.state.openai.isEnabled,
+    };
+  }
+
+  async testOpenAiConnection(payload: TestOpenAiConnectionDto): Promise<{
+    ok: true;
+    provider: 'openai';
+    model: string;
+    source: 'request_override' | 'configuration' | 'environment';
+    runtimeEnabled: boolean;
+  }> {
+    const runtime = this.getResolvedOpenAiRuntimeSettings({
+      apiKey: payload.apiKey,
+      model: payload.model,
+    });
+
+    if (!this.hasUsableOpenAiCredentials(runtime.apiKey)) {
+      throw new BadRequestException(
+        'La API key de OpenAI no es válida o está vacía. Debe comenzar con sk-.',
+      );
+    }
+
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const response = await fetch(runtime.apiUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: runtime.model,
+          temperature: 0,
+          max_tokens: 5,
+          messages: [
+            {
+              role: 'user',
+              content: 'Reply only with OK.',
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const detail = await this.extractOpenAiError(response);
+        throw new ServiceUnavailableException(
+          `No se pudo validar la API key de OpenAI. ${detail}`,
+        );
+      }
+
+      this.logger.log(
+        `[OPENAI TEST] success model=${runtime.model} source=${runtime.source} runtimeEnabled=${runtime.runtimeEnabled}`,
+      );
+
+      return {
+        ok: true,
+        provider: 'openai',
+        model: runtime.model,
+        source: runtime.source,
+        runtimeEnabled: runtime.runtimeEnabled,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
+        throw error;
+      }
+
+      throw new ServiceUnavailableException(
+        `No se pudo conectar con OpenAI para validar la API key. ${error instanceof Error ? error.message : 'Error desconocido.'}`,
+      );
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   async updateIntegrationsSettings(
     payload: UpdateIntegrationsSettingsDto,
   ): Promise<BotConfigurationBundle['integrations']> {
@@ -217,6 +325,32 @@ export class BotConfigurationService implements OnModuleInit {
     };
     await this.persist();
     return structuredClone(this.state.integrations);
+  }
+
+  private hasUsableOpenAiCredentials(apiKey: string): boolean {
+    return Boolean(apiKey && !apiKey.includes('*') && apiKey.startsWith('sk-'));
+  }
+
+  private async extractOpenAiError(response: Response): Promise<string> {
+    const text = (await response.text()).trim();
+    if (!text) {
+      return `OpenAI devolvió estado ${response.status}.`;
+    }
+
+    try {
+      const parsed = JSON.parse(text) as {
+        error?: { message?: string };
+        message?: string;
+      };
+      const message = parsed.error?.message?.trim() || parsed.message?.trim();
+      if (message) {
+        return message;
+      }
+    } catch (_) {
+      // Preserve raw text below.
+    }
+
+    return text.length > 280 ? `${text.slice(0, 277)}...` : text;
   }
 
   async updateWhatsappSettings(

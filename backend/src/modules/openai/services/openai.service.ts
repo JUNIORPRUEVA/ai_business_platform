@@ -21,21 +21,21 @@ export class OpenAiService {
     request: OpenAiDraftRequest,
   ): Promise<OpenAiDraftResponse> {
     const configuration = this.botConfigurationService.getConfiguration();
-    const model = request.model?.trim() || configuration.openai.model;
+    const runtime = this.botConfigurationService.getResolvedOpenAiRuntimeSettings({
+      model: request.model,
+    });
+    const model = runtime.model;
     const temperature = request.temperature ?? configuration.openai.temperature;
     const maxTokens = request.maxTokens ?? configuration.openai.maxTokens;
-    const apiKey =
-      configuration.openai.apiKey ||
-      this.configService.get<string>('OPENAI_API_KEY') ||
-      '';
+    const apiKey = runtime.apiKey;
     const messages = this.buildMessages(request);
     const systemPrompt =
       messages.find((message) => message.role === 'system')?.content ??
       this.buildSystemPrompt(request.systemPrompt, request.memoryContext);
 
-    if (!this.hasUsableCredentials(apiKey) || !configuration.openai.isEnabled) {
+    if (!this.hasUsableCredentials(apiKey) || !runtime.runtimeEnabled) {
       this.logger.warn(
-        `OpenAI mock fallback enabled reason=${!configuration.openai.isEnabled ? 'openai_disabled' : 'missing_or_invalid_api_key'} model=${model}`,
+        `OpenAI mock fallback enabled reason=${!runtime.runtimeEnabled ? 'openai_disabled' : 'missing_or_invalid_api_key'} model=${model} source=${runtime.source}`,
       );
       return this.buildMockDraft(model, systemPrompt, request);
     }
@@ -46,8 +46,7 @@ export class OpenAiService {
 
     try {
       const response = await fetch(
-        this.configService.get<string>('OPENAI_API_URL') ??
-          'https://api.openai.com/v1/chat/completions',
+        runtime.apiUrl,
         {
           method: 'POST',
           signal: controller.signal,

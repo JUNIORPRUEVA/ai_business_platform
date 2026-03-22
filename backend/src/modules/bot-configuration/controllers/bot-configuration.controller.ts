@@ -16,6 +16,7 @@ import { UpdateOpenAiSettingsDto } from '../dto/update-openai-settings.dto';
 import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settings.dto';
 import { UpdatePromptTemplateDto } from '../dto/update-prompt-template.dto';
 import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
+import { TestOpenAiConnectionDto } from '../dto/test-openai-connection.dto';
 import { UpdateToolDto } from '../dto/update-tool.dto';
 import { UpdateWhatsappSettingsDto } from '../dto/update-whatsapp-settings.dto';
 import { BotConfigurationService } from '../services/bot-configuration.service';
@@ -65,6 +66,12 @@ export class BotConfigurationController {
   @Put('openai')
   updateOpenAi(@Body() payload: UpdateOpenAiSettingsDto) {
     return this.botConfigurationService.updateOpenAiSettings(payload);
+  }
+
+  @Roles('admin', 'operator')
+  @Post('openai/test')
+  testOpenAiConnection(@Body() payload: TestOpenAiConnectionDto) {
+    return this.botConfigurationService.testOpenAiConnection(payload);
   }
 
   @Roles('admin', 'operator')

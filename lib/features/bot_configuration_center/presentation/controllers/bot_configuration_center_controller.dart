@@ -556,19 +556,34 @@ class BotConfigurationCenterController extends ChangeNotifier {
 
     _clearBanners();
     _isTesting = true;
+    _syncDraftsIntoState();
     notifyListeners();
 
-    await Future<void>.delayed(const Duration(milliseconds: 850));
-
-    _isTesting = false;
-    _successMessage = switch (section) {
-      BotConfigurationSection.evolutionApi =>
-        'Conexión de Evolution API verificada correctamente.',
-      BotConfigurationSection.openAi =>
-        'Credenciales del runtime de OpenAI validadas correctamente.',
-      _ => 'Prueba de conectividad completada correctamente.',
-    };
-    notifyListeners();
+    try {
+      if (section == BotConfigurationSection.openAi) {
+        final token = await _requireToken();
+        final result = await _apiClient.postJson(
+          '/bot-configuration/openai/test',
+          {
+            'apiKey': _bundle.openAi.apiKey,
+            'model': _bundle.openAi.model,
+          },
+          token: token,
+        );
+        final source = (result['source'] as String?) ?? 'configuration';
+        _successMessage =
+            'API key de OpenAI validada correctamente. Fuente usada: $source.';
+      } else {
+        _successMessage = 'Prueba de conectividad completada correctamente.';
+      }
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isTesting = false;
+      notifyListeners();
+    }
   }
 
   Future<void> saveSection(BotConfigurationSection section) async {

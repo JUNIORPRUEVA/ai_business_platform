@@ -24,6 +24,7 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
 
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isTestingOpenAi = false;
   String? banner;
   bool bannerIsError = false;
 
@@ -145,6 +146,58 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
     }
   }
 
+  Future<void> _testOpenAiKey() async {
+    setState(() {
+      _isTestingOpenAi = true;
+      banner = null;
+    });
+
+    try {
+      final token = await _requireToken();
+      final result = await _apiClient.postJson(
+        '/bot-configuration/openai/test',
+        {
+          'apiKey': openAiKey.text.trim(),
+        },
+        token: token,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final source = (result['source'] as String?) ?? 'request_override';
+      setState(() {
+        bannerIsError = false;
+        banner =
+            'API key de OpenAI validada correctamente. Fuente usada: $source.';
+      });
+    } on BotConfigurationCenterApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        bannerIsError = true;
+        banner = error.message;
+      });
+    } on AuthApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        bannerIsError = true;
+        banner = error.message;
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isTestingOpenAi = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -241,6 +294,22 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
                           color: theme.colorScheme.onSurface
                               .withValues(alpha: 0.62),
                         ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      onPressed: _isLoading || _isSaving || _isTestingOpenAi
+                          ? null
+                          : _testOpenAiKey,
+                      icon: _isTestingOpenAi
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.bolt_rounded),
+                      label: Text(
+                        _isTestingOpenAi ? 'Probando...' : 'Probar API key',
                       ),
                     ),
                     const SizedBox(width: 10),
