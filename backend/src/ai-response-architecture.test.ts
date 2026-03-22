@@ -209,3 +209,158 @@ test('ai brain rejects openai payloads when the last message is not the latest u
     /latest user message mismatch/i,
   );
 });
+
+test('ai brain sends whatsapp reply to inbound remoteJid before contactPhone fallback', async () => {
+  const sendTargets: Array<{ remoteJid: string; text: string }> = [];
+  const aiBrainLogs: Array<Record<string, unknown>> = [];
+
+  const service = new AiBrainService(
+    {
+      getConfiguration: () => ({
+        memory: {
+          recentMessageWindowSize: 10,
+          summaryRefreshThreshold: 3,
+          enableShortTermMemory: false,
+          enableOperationalMemory: false,
+          summaryEnabled: false,
+        },
+        orchestrator: {
+          automaticMode: true,
+          enableToolExecution: false,
+        },
+        general: {
+          isEnabled: true,
+        },
+        openai: {
+          temperature: 0.7,
+          maxTokens: 500,
+          systemPromptPreview: 'Vende con contexto.',
+        },
+        prompts: [],
+      }),
+    } as never,
+    {
+      getMyCompany: async () => ({
+        name: 'Demo Company',
+        plan: 'pro',
+        status: 'active',
+        phone: '',
+        email: '',
+        website: '',
+        city: '',
+        state: '',
+        country: '',
+        description: '',
+      }),
+    } as never,
+    {
+      get: async () => ({
+        id: 'channel-1',
+        companyId: 'company-1',
+        type: 'whatsapp',
+        status: 'active',
+        config: {},
+      }),
+    } as never,
+    {
+      get: async () => ({ id: 'contact-1', name: 'Cliente', phone: '18295319442', tags: [] }),
+    } as never,
+    {
+      get: async () => ({ id: 'conversation-1', contactId: 'contact-1' }),
+    } as never,
+    {
+      getById: async () => ({
+        id: 'message-1',
+        sender: 'client',
+        content: 'Hola',
+      }),
+      listRecent: async () => [
+        {
+          id: 'message-1',
+          sender: 'client',
+          content: 'Hola',
+          createdAt: new Date('2026-03-22T10:00:00.000Z'),
+        },
+      ],
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'bot-message-1',
+        ...payload,
+      }),
+    } as never,
+    {
+      getDefaultActiveBot: async () => ({
+        id: 'bot-1',
+        status: 'active',
+        model: 'gpt-5.4-mini',
+        temperature: null,
+        systemPrompt: 'Vende con contexto.',
+        name: 'Sales Bot',
+        language: 'es',
+      }),
+    } as never,
+    {
+      list: async () => [],
+    } as never,
+    {
+      listActive: async () => [],
+    } as never,
+    {
+      extractClientMemories: () => [],
+      assembleContext: async () => ({
+        keyFacts: [],
+        operationalState: [],
+        summary: null,
+        recentWindow: [],
+        contextText: '',
+      }),
+      getContactMemoryMap: async () => ({}),
+      persistAiConversationLog: async () => undefined,
+    } as never,
+    {
+      draftResponse: async () => ({
+        provider: 'mock',
+        model: 'gpt-5.4-mini',
+        content: 'Respuesta al cliente',
+        usedMockFallback: false,
+        systemPrompt: 'Vende con contexto.',
+      }),
+    } as never,
+    {
+      listAvailable: async () => [],
+    } as never,
+    new AiBrainContextBuilderService(),
+    {
+      tryParse: () => null,
+    } as never,
+    {
+      sendText: async (_companyId: string, payload: { remoteJid: string; text: string }) => {
+        sendTargets.push(payload);
+        return { message: { id: 'wa-message-1' } };
+      },
+    } as never,
+    {
+      create: (payload: Record<string, unknown>) => payload,
+      save: async (payload: Record<string, unknown>) => {
+        aiBrainLogs.push(payload);
+        return payload;
+      },
+    } as never,
+  );
+
+  await service.processInboundMessage({
+    companyId: 'company-1',
+    channelId: 'channel-1',
+    conversationId: 'conversation-1',
+    contactPhone: '18295319442',
+    remoteJid: '234840490270800@lid',
+    messageId: 'message-1',
+  });
+
+  assert.deepEqual(sendTargets, [
+    {
+      remoteJid: '234840490270800@lid',
+      text: 'Respuesta al cliente',
+    },
+  ]);
+  assert.equal(aiBrainLogs.at(-1)?.['status'], 'processed');
+});

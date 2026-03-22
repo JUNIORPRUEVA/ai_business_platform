@@ -1739,7 +1739,8 @@ test('WhatsappWebhookService encola auto reply al numero del inbound actual aunq
   await service.processNow('company-1', payload as never);
 
   assert.equal(queuedJobs.length, 1);
-  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['contactPhone'], '18295344286');
+  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['contactPhone'], '234840490270800');
+  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['remoteJid'], '234840490270800@lid');
 });
 
 test('WhatsappWebhookService crea o reutiliza bridge de canal cuando no existe uno exacto por instanceName', async () => {
@@ -1974,7 +1975,7 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   assert.equal(updatedChat?.replyTargetUnresolved, false);
 });
 
-test('EvolutionWebhookService usa el numero canonico para contacts.phone cuando remoteJid es @lid', async () => {
+test('EvolutionWebhookService usa el remoteJid inbound para contacts.phone y el job AI cuando remoteJid es @lid', async () => {
   const capturedContactPhones: string[] = [];
   const queuedJobs: Array<Record<string, unknown>> = [];
 
@@ -2031,9 +2032,10 @@ test('EvolutionWebhookService usa el numero canonico para contacts.phone cuando 
     } as never,
   });
 
-  assert.equal(result.normalizedMessage.senderId, '18295344286');
-  assert.equal(capturedContactPhones[0], '18295344286');
-  assert.equal(queuedJobs[0]['contactPhone'], '18295344286');
+  assert.equal(result.normalizedMessage.senderId, '234840490270800');
+  assert.equal(capturedContactPhones[0], '234840490270800');
+  assert.equal(queuedJobs[0]['contactPhone'], '234840490270800');
+  assert.equal(queuedJobs[0]['remoteJid'], '234840490270800@lid');
 });
 
 test('WhatsappJidResolverService extrae canonicalRemoteJid desde payload.sender en raiz', () => {

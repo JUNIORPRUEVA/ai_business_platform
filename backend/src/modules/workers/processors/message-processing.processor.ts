@@ -7,6 +7,7 @@ export interface MessageProcessingJob {
   companyId: string;
   channelId: string;
   contactPhone: string;
+  remoteJid?: string;
   conversationId: string;
   messageId: string;
 }

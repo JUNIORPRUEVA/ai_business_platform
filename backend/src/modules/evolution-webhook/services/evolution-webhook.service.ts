@@ -70,7 +70,13 @@ export class EvolutionWebhookService {
     }
 
     const companyId = channel.companyId;
-    const contactPhone = normalized.senderId;
+    const rawRemoteJid =
+      typeof normalized.metadata?.['rawRemoteJid'] === 'string'
+        ? (normalized.metadata['rawRemoteJid'] as string).trim()
+        : '';
+    const contactPhone = rawRemoteJid
+      ? this.jidResolver.extractPhoneFromJid(rawRemoteJid)
+      : normalized.senderId;
     const eventKey = this.memoryDeduplicationService.buildEventKey({
       channel: normalized.channel,
       senderId: normalized.senderId,
@@ -144,6 +150,7 @@ export class EvolutionWebhookService {
         companyId,
         channelId: channel.id,
         contactPhone,
+        remoteJid: rawRemoteJid || undefined,
         conversationId: conversation.id,
         messageId: message.id,
       },
@@ -174,7 +181,10 @@ export class EvolutionWebhookService {
     const canonicalSenderNumber = canonicalSenderJid
       ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(canonicalSenderJid))
       : '';
-    const senderId = canonicalSenderNumber || rawRemoteJid;
+    const rawRemoteNumber = rawRemoteJid
+      ? this.jidResolver.extractPhoneFromJid(rawRemoteJid)
+      : '';
+    const senderId = rawRemoteNumber || canonicalSenderNumber;
     const normalizedContent = this.extractNormalizedContent(payload);
 
     if (!senderId || !normalizedContent.message) {

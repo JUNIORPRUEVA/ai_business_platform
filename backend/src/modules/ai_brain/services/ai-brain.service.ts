@@ -58,6 +58,7 @@ export class AiBrainService {
     channelId: string;
     conversationId: string;
     contactPhone: string;
+    remoteJid?: string;
     messageId: string;
   }): Promise<{ ok: true }> {
     const startedAt = Date.now();
@@ -113,6 +114,7 @@ export class AiBrainService {
       );
       const userMessage = currentInboundMessage?.content?.trim() || '';
       const contactPhone = (params.contactPhone || contact.phone || '').trim();
+      const outboundRemoteJid = (params.remoteJid || '').trim();
 
       bot = await this.resolveActiveBot(params.companyId, channel);
       this.logger.log(
@@ -444,22 +446,25 @@ export class AiBrainService {
 
       let outboundTransportMessageId: string | null = null;
       if (channel.type === 'whatsapp') {
-        if (!contactPhone) {
+        const targetRemoteJid = outboundRemoteJid || contactPhone;
+        if (!targetRemoteJid) {
           this.logger.warn(
-            `[AI BRAIN] whatsapp send skipped conversationId=${params.conversationId} reason=missing_contact_phone`,
+            `[AI BRAIN] whatsapp send skipped conversationId=${params.conversationId} reason=missing_response_target`,
           );
         } else {
+          console.log('SENDING TO:', targetRemoteJid);
+          console.log('MESSAGE:', botMessage.content);
           const outboundDispatch = await this.whatsappMessagingService.sendText(
             params.companyId,
             {
-              remoteJid: contactPhone,
+              remoteJid: targetRemoteJid,
               text: botMessage.content,
             },
           );
           const outboundMessageView = this.readRecord(outboundDispatch['message']);
           outboundTransportMessageId = this.readString(outboundMessageView['id']) || null;
           this.logger.log(
-            `[AI BRAIN] whatsapp send success conversationId=${params.conversationId} whatsappMessageId=${outboundTransportMessageId ?? 'n/a'}`,
+            `[AI BRAIN] whatsapp send success conversationId=${params.conversationId} target=${targetRemoteJid} whatsappMessageId=${outboundTransportMessageId ?? 'n/a'}`,
           );
         }
       }

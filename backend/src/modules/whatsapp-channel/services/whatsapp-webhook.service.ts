@@ -525,6 +525,7 @@ export class WhatsappWebhookService {
         companyId: config.companyId,
         channelId,
         contactPhone,
+        remoteJid: chat.remoteJid,
         conversationId: conversation.id,
         messageId: createdMessage.id,
       },
@@ -546,12 +547,12 @@ export class WhatsappWebhookService {
     canonicalRemoteJid?: string | null,
   ): string {
     const candidates = [
-      canonicalRemoteJid,
       remoteJid,
-      chat.sendTarget,
-      chat.canonicalNumber,
-      chat.canonicalRemoteJid,
       chat.remoteJid,
+      chat.sendTarget,
+      canonicalRemoteJid,
+      chat.canonicalRemoteJid,
+      chat.canonicalNumber,
     ];
 
     for (const raw of candidates) {
