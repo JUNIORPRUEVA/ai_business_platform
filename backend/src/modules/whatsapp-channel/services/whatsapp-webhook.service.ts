@@ -386,7 +386,9 @@ export class WhatsappWebhookService {
       conversation.id,
       {
         sender: 'client',
-        content: textBody?.trim().isNotEmpty == true ? textBody!.trim() : 'Mensaje recibido por WhatsApp.',
+        content: textBody?.trim().isNotEmpty == false || textBody == null
+            ? 'Mensaje recibido por WhatsApp.'
+            : textBody.trim(),
         type: 'text',
         metadata: {
           source: 'whatsapp-channel-auto-reply',

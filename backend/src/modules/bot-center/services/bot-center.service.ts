@@ -162,7 +162,7 @@ export class BotCenterService {
 
     return {
       customerName: this.resolveContactName(chat),
-      phone: this.toPhoneDisplay(chat.remoteJid),
+      phone: this.toConversationPhoneDisplay(chat),
       role: 'Contacto de WhatsApp',
       businessType: 'No identificado',
       city: 'No disponible',
@@ -990,7 +990,7 @@ export class BotCenterService {
   ): BotContactContextResponse {
     return {
       customerName: this.resolveContactName(chat),
-      phone: this.toPhoneDisplay(chat.remoteJid),
+      phone: this.toConversationPhoneDisplay(chat),
       role: 'Contacto de WhatsApp',
       businessType: 'No disponible',
       city: 'No disponible',
@@ -1082,7 +1082,7 @@ export class BotCenterService {
     return {
       id: chat.id,
       contactName: this.resolveContactName(chat),
-      phone: this.toPhoneDisplay(chat.remoteJid),
+      phone: this.toConversationPhoneDisplay(chat),
       autoReplyEnabled: chat.autoReplyEnabled,
       lastMessagePreview: preview,
       unreadCount: chat.unreadCount,
@@ -1253,7 +1253,15 @@ export class BotCenterService {
   }
 
   private resolveContactName(chat: WhatsappChatEntity): string {
-    return chat.pushName?.trim() || chat.profileName?.trim() || this.toPhoneDisplay(chat.remoteJid);
+    return (
+      chat.pushName?.trim() ||
+      chat.profileName?.trim() ||
+      this.toConversationPhoneDisplay(chat)
+    );
+  }
+
+  private toConversationPhoneDisplay(chat: WhatsappChatEntity): string {
+    return this.toPhoneDisplay(this.resolveConversationContactPhone(chat));
   }
 
   private toPhoneDisplay(remoteJid: string): string {

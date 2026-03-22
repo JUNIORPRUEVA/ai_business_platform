@@ -456,7 +456,7 @@ class _ConversationHeader extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  autoReplyEnabled ? 'IA activa' : 'IA pausada',
+                  'Modo agente',
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: autoReplyEnabled
                         ? const Color(0xFF166534)

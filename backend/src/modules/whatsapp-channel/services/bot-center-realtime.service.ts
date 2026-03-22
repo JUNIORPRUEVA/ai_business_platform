@@ -95,6 +95,7 @@ export class BotCenterRealtimeService {
       id: chat.id,
       contactName: this.resolveContactName(chat),
       phone: this.toPhoneDisplay(chat.remoteJid),
+      autoReplyEnabled: chat.autoReplyEnabled,
       lastMessagePreview: this.describeMessage(latestMessage),
       unreadCount: chat.unreadCount,
       stage: this.resolveConversationStage(chat, latestMessage),

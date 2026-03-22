@@ -135,6 +135,54 @@ const botCenterRealtimeStub = {
   streamCompanyEvents: () => ({ subscribe: () => ({ unsubscribe: () => undefined }) }),
 };
 
+function createWhatsappWebhookService(params: {
+  configsRepository: unknown;
+  configService?: unknown;
+  logsService?: unknown;
+  messagingService: unknown;
+  botCenterRealtimeService?: unknown;
+  attachmentsService?: unknown;
+  evolutionApiClient?: unknown;
+  jidResolver?: unknown;
+  webhookQueue?: unknown;
+  messageProcessingQueue?: unknown;
+  chatsRepository?: unknown;
+  channelsService?: unknown;
+  contactsService?: unknown;
+  conversationsService?: unknown;
+  appMessagesService?: unknown;
+}) {
+  return new WhatsappWebhookService(
+    (params.webhookQueue ?? { add: async () => undefined }) as never,
+    (params.messageProcessingQueue ?? { add: async () => undefined }) as never,
+    params.configsRepository as never,
+    (params.chatsRepository ?? new InMemoryRepository([])) as never,
+    (params.channelsService ?? {
+      getByInstanceNameUnsafe: async () => ({ id: 'channel-1', companyId: 'company-1' }),
+    }) as never,
+    (params.contactsService ?? {
+      findOrCreateByPhone: async () => ({ id: 'contact-1' }),
+    }) as never,
+    (params.conversationsService ?? {
+      findOrCreateOpen: async () => ({ id: 'conversation-1' }),
+    }) as never,
+    (params.appMessagesService ?? {
+      findByMetadataValue: async () => null,
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'app-message-1',
+        ...payload,
+      }),
+    }) as never,
+    (params.configService ?? { getEntity: async () => null }) as never,
+    (params.logsService ?? { create: async (entry: Record<string, unknown>) => entry }) as never,
+    params.messagingService as never,
+    (params.botCenterRealtimeService ?? botCenterRealtimeStub) as never,
+    (params.attachmentsService ?? { downloadRemoteToStorage: async () => null }) as never,
+    (params.evolutionApiClient ?? emptyEvolutionApiClient) as never,
+    (params.jidResolver ?? jidResolverStub) as never,
+  );
+}
+
 Object.assign(emptyEvolutionApiClient, {
   normalizeRemoteJid: jidResolverStub.normalizeRemoteJid,
   extractCanonicalRemoteJid: jidResolverStub.extractCanonicalRemoteJid,
@@ -246,12 +294,11 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
   const logs: Array<Record<string, unknown>> = [];
   const savedMessages: Array<Record<string, unknown>> = [];
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async (entry: Record<string, unknown>) => { logs.push(entry); return entry; } } as never,
-    {
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async (entry: Record<string, unknown>) => { logs.push(entry); return entry; } },
+    messagingService: {
       upsertInboundMessage: async (params: Record<string, unknown>) => {
         savedMessages.push(params);
         return {
@@ -263,12 +310,8 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
         };
       },
       updateStoredMedia: async () => undefined,
-    } as never,
-    botCenterRealtimeStub as never,
-    { downloadRemoteToStorage: async () => null } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+    },
+  });
 
   const payload = {
     event: 'messages.upsert',
@@ -373,17 +416,12 @@ test('WhatsappWebhookService procesa message-receipt sin fromMe y normaliza ack 
     jidResolverStub as never,
   );
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async (entry: Record<string, unknown>) => entry } as never,
-    messagingService as never,
-    botCenterRealtimeStub as never,
-    { downloadRemoteToStorage: async () => null } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async (entry: Record<string, unknown>) => entry },
+    messagingService,
+  });
 
   await service.processNow('company-1', {
     event: 'message-receipt',
@@ -419,12 +457,11 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
   const attachmentDownloads: Array<Record<string, unknown>> = [];
   const realtimeMessages: Array<Record<string, unknown>> = [];
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async () => ({}) } as never,
-    {
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
       upsertInboundMessage: async (params: Record<string, unknown>) => {
         savedMessages.push(params);
         return {
@@ -452,14 +489,14 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
           thumbnailUrl: params['thumbnailUrl'],
         };
       },
-    } as never,
-    {
+    },
+    botCenterRealtimeService: {
       ...botCenterRealtimeStub,
       publishMessageUpsert: async (message: Record<string, unknown>) => {
         realtimeMessages.push(message);
       },
-    } as never,
-    {
+    },
+    attachmentsService: {
       downloadRemoteToStorage: async (params: Record<string, unknown>) => {
         attachmentDownloads.push(params);
         return {
@@ -473,10 +510,8 @@ test('WhatsappWebhookService persiste imagen inbound en storage y actualiza thum
           },
         };
       },
-    } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+    },
+  });
 
   await service.processNow('company-1', {
     event: 'messages.upsert',
@@ -525,12 +560,11 @@ test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion a
   const attachmentDownloads: Array<Record<string, unknown>> = [];
   const realtimeMessages: Array<Record<string, unknown>> = [];
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async () => ({}) } as never,
-    {
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
       upsertInboundMessage: async (params: Record<string, unknown>) => {
         savedMessages.push(params);
         return {
@@ -558,14 +592,14 @@ test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion a
           durationSeconds: params['durationSeconds'],
         };
       },
-    } as never,
-    {
+    },
+    botCenterRealtimeService: {
       ...botCenterRealtimeStub,
       publishMessageUpsert: async (message: Record<string, unknown>) => {
         realtimeMessages.push(message);
       },
-    } as never,
-    {
+    },
+    attachmentsService: {
       downloadRemoteToStorage: async (params: Record<string, unknown>) => {
         attachmentDownloads.push(params);
         return {
@@ -578,10 +612,8 @@ test('WhatsappWebhookService procesa pttMessage como audio y persiste duracion a
           },
         };
       },
-    } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+    },
+  });
 
   await service.processNow('company-1', {
     event: 'messages.upsert',
@@ -685,17 +717,12 @@ test('WhatsappWebhookService no regresa de read a delivered cuando llegan update
     jidResolverStub as never,
   );
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async (entry: Record<string, unknown>) => entry } as never,
-    messagingService as never,
-    botCenterRealtimeStub as never,
-    { downloadRemoteToStorage: async () => null } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async (entry: Record<string, unknown>) => entry },
+    messagingService,
+  });
 
   await service.processNow('company-1', {
     event: 'messages.update',
@@ -828,12 +855,11 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
   const configsRepository = new InMemoryRepository([config]);
   const savedMessages: Array<Record<string, unknown>> = [];
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async () => ({}) } as never,
-    {
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
       upsertInboundMessage: async (params: Record<string, unknown>) => {
         savedMessages.push(params);
         return {
@@ -845,12 +871,8 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
         };
       },
       updateStoredMedia: async () => undefined,
-    } as never,
-    botCenterRealtimeStub as never,
-    { downloadRemoteToStorage: async () => null } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+    },
+  });
 
   const payload = {
     event: 'messages.upsert',
@@ -890,12 +912,11 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numeric
   const configsRepository = new InMemoryRepository([config]);
   const savedMessages: Array<Record<string, unknown>> = [];
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async () => ({}) } as never,
-    {
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
       upsertInboundMessage: async (params: Record<string, unknown>) => {
         savedMessages.push(params);
         return {
@@ -907,12 +928,8 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numeric
         };
       },
       updateStoredMedia: async () => undefined,
-    } as never,
-    botCenterRealtimeStub as never,
-    { downloadRemoteToStorage: async () => null } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+    },
+  });
 
   const payload = {
     event: 'messages.upsert',
@@ -1008,12 +1025,11 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
   const configsRepository = new InMemoryRepository([config]);
   const savedMessages: Array<Record<string, unknown>> = [];
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async () => ({}) } as never,
-    {
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
       upsertInboundMessage: async (params: Record<string, unknown>) => {
         savedMessages.push(params);
         return {
@@ -1091,10 +1107,8 @@ test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution
         };
       },
       updateStoredMedia: async () => undefined,
-    } as never,
-    botCenterRealtimeStub as never,
-    { downloadRemoteToStorage: async () => null } as never,
-    {
+    },
+    evolutionApiClient: {
       findContacts: async () => ({
         data: [
           {
@@ -1105,12 +1119,12 @@ test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution
         ],
       }),
       findChats: async () => ({}),
-    } as never,
-    {
+    },
+    jidResolver: {
       ...jidResolverStub,
       lookupCanonicalRemoteJidFromEvolution: async () => '18295344286@s.whatsapp.net',
-    } as never,
-  );
+    },
+  });
 
   const payload = {
     event: 'messages.upsert',
