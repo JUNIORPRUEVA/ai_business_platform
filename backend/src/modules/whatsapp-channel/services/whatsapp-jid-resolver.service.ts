@@ -157,9 +157,6 @@ export class WhatsappJidResolverService {
       this.readString(payload['from']),
       this.readString(payload['fromJid']),
       this.readString(payload['fromPn']),
-      this.readString(payload['owner']),
-      this.readString(payload['ownerJid']),
-      this.readString(payload['ownerPn']),
       this.readString(payload['phone']),
       this.readString(payload['phoneNumber']),
       this.readString(payload['wa_id']),
@@ -216,9 +213,6 @@ export class WhatsappJidResolverService {
       this.readString(data['from']),
       this.readString(data['fromJid']),
       this.readString(data['fromPn']),
-      this.readString(data['owner']),
-      this.readString(data['ownerJid']),
-      this.readString(data['ownerPn']),
       this.readString(data['phone']),
       this.readString(data['phoneNumber']),
       this.readString(data['wa_id']),
@@ -445,8 +439,6 @@ export class WhatsappJidResolverService {
       this.readString(value['jid']),
       this.readString(value['contactJid']),
       this.readString(value['contact_jid']),
-      this.readString(value['ownerJid']),
-      this.readString(value['owner_jid']),
       this.readString(value['participantJid']),
       this.readString(value['participant_jid']),
       this.readString(value['phone']),
@@ -573,7 +565,6 @@ export class WhatsappJidResolverService {
     return normalized.includes('sender') ||
       normalized.includes('participant') ||
       normalized.includes('author') ||
-      normalized.includes('owner') ||
       normalized.includes('contact') ||
       normalized.includes('phone') ||
       normalized.includes('number') ||

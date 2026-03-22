@@ -1382,9 +1382,9 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   assert.equal(result.safeToSend, true);
   assert.equal(result.canonicalJid, '18295344286@s.whatsapp.net');
   assert.equal(result.canonicalNumber, '18295344286');
-  assert.equal(result.finalSendTarget, '234840490270800');
+  assert.equal(result.finalSendTarget, '18295344286');
   assert.equal(result.chatRemoteJid, '234840490270800@lid');
-  assert.equal(result.outboundRemoteJid, '234840490270800@s.whatsapp.net');
+  assert.equal(result.outboundRemoteJid, '18295344286@s.whatsapp.net');
   assert.equal(result.source, 'last_inbound_payload');
   assert.equal(updatedChat?.canonicalRemoteJid, '18295344286@s.whatsapp.net');
   assert.equal(updatedChat?.canonicalNumber, '18295344286');
@@ -2169,13 +2169,13 @@ test('WhatsappMessagingService bloquea envio cuando chat.remoteJid apunta al num
   assert.equal(capturedPayloads.length, 0);
 });
 
-test('WhatsappMessagingService envia al telefono extraido de chat.remoteJid y no al canonical', async () => {
+test('WhatsappMessagingService no envia a un chat @lid si el unico canonical guardado coincide con la instancia', async () => {
   const capturedPayloads: Array<Record<string, unknown>> = [];
   const config = {
     id: 'config-1',
     companyId: 'company-1',
     instanceName: 'demo-instance',
-    instancePhone: '9999999999',
+    instancePhone: '18295319442',
   };
   const chatsRepository = new InMemoryRepository([
     {
@@ -2212,17 +2212,19 @@ test('WhatsappMessagingService envia al telefono extraido de chat.remoteJid y no
     jidResolverStub as never,
   );
 
-  await service.sendText('company-1', {
-    channelConfigId: 'config-1',
-    remoteJid: '234840490270800@lid',
-    text: 'hola',
-  });
+  await assert.rejects(
+    service.sendText('company-1', {
+      channelConfigId: 'config-1',
+      remoteJid: '234840490270800@lid',
+      text: 'hola',
+    }),
+    /No se pudo resolver un destinatario WhatsApp válido para este chat @lid/,
+  );
 
-  assert.equal(capturedPayloads.length, 1);
-  assert.equal(capturedPayloads[0]['number'], '234840490270800');
+  assert.equal(capturedPayloads.length, 0);
 });
 
-test('WhatsappMessagingService normaliza remoteJid @lid a reply JID @s.whatsapp.net sin perder el chat original', async () => {
+test('WhatsappMessagingService usa el canonical telefonico real para responder un chat @lid', async () => {
   const chatsRepository = new InMemoryRepository([
     {
       id: 'chat-1',
@@ -2231,9 +2233,9 @@ test('WhatsappMessagingService normaliza remoteJid @lid a reply JID @s.whatsapp.
       remoteJid: '234840490270800@lid',
       originalRemoteJid: '234840490270800@lid',
       rawRemoteJid: '234840490270800@lid',
-      canonicalRemoteJid: '18295319442@s.whatsapp.net',
-      canonicalNumber: '18295319442',
-      sendTarget: '18295319442',
+      canonicalRemoteJid: '18295344286@s.whatsapp.net',
+      canonicalNumber: '18295344286',
+      sendTarget: '18295344286',
       createdAt: new Date('2026-03-18T18:00:00.000Z'),
       updatedAt: new Date('2026-03-18T18:00:00.000Z'),
     },
@@ -2256,8 +2258,8 @@ test('WhatsappMessagingService normaliza remoteJid @lid a reply JID @s.whatsapp.
   const result = await service.diagnoseRecipientResolution('company-1', '234840490270800@lid');
 
   assert.equal(result.chatRemoteJid, '234840490270800@lid');
-  assert.equal(result.outboundRemoteJid, '234840490270800@s.whatsapp.net');
-  assert.equal(result.finalSendTarget, '234840490270800');
+  assert.equal(result.outboundRemoteJid, '18295344286@s.whatsapp.net');
+  assert.equal(result.finalSendTarget, '18295344286');
 });
 
 test('EvolutionWebhookService ignora mensajes fromMe para prevenir self loop', async () => {

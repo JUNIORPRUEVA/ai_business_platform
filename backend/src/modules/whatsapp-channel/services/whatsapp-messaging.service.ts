@@ -795,38 +795,26 @@ export class WhatsappMessagingService {
     sendTarget: string;
     chatRemoteJid: string;
     remoteJid: string;
-    source: 'remoteJid' | 'chat' | 'last_inbound_payload';
+    source: 'remoteJid' | 'chat' | 'last_inbound_payload' | 'evolution_lookup';
   }> {
     const chat = await this.chatsRepository.findOne({ where: { companyId, remoteJid } });
     const chatRemoteJid = this.readString(chat?.remoteJid) || remoteJid;
-    const outboundRemoteJid = this.jidResolver.normalizeReplyJid(chatRemoteJid, { throwOnEmpty: true });
-    const sendTarget = this.extractPhoneFromRemoteJid(outboundRemoteJid);
-    if (!sendTarget) {
-      throw new BadRequestException(`remoteJid no contiene digitos para envío: ${outboundRemoteJid}`);
-    }
-
     const config = await this.resolveOutboundConfig(companyId, remoteJid, chat?.channelConfigId);
-    if (this.isInstanceSendTarget(config, sendTarget)) {
-      const instancePhone = this.readString(config.instancePhone) || '(none)';
-      this.logger.error(
-        `[WHATSAPP OUTBOUND] blocked instance target companyId=${companyId} instanceName=${config.instanceName} chatRemoteJid=${chatRemoteJid} outboundRemoteJid=${outboundRemoteJid} sendTarget=${sendTarget} instancePhone=${instancePhone}`,
-      );
-      throw new BadRequestException(
-        `Destino bloqueado: el target ${sendTarget} coincide con el numero de la instancia. chat.remoteJid=${chatRemoteJid}`,
-      );
-    }
+    let source: 'remoteJid' | 'chat' | 'last_inbound_payload' | 'evolution_lookup' = chat ? 'chat' : 'remoteJid';
+    let canonicalJid = this.sanitizeOutboundCanonicalRemoteJid(
+      config,
+      this.jidResolver.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid),
+    );
 
-    let source: 'remoteJid' | 'chat' | 'last_inbound_payload' = chat ? 'chat' : 'remoteJid';
-    let canonicalJid = this.jidResolver.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid);
-
-    if (!canonicalJid && remoteJid.endsWith('@lid')) {
+    if (!canonicalJid && chatRemoteJid.endsWith('@lid')) {
       const lastInbound = await this.messagesRepository.findOne({
-        where: { companyId, remoteJid, direction: 'inbound' },
+        where: { companyId, remoteJid: chatRemoteJid, direction: 'inbound' },
         order: { createdAt: 'DESC' },
       });
 
       const extracted = lastInbound
-        ? this.jidResolver.normalizeCanonicalRemoteJid(
+        ? this.sanitizeOutboundCanonicalRemoteJid(
+            config,
             this.jidResolver.extractCanonicalRemoteJidFromPayload(lastInbound.rawPayloadJson),
           )
         : null;
@@ -844,8 +832,52 @@ export class WhatsappMessagingService {
       }
     }
 
-    if (!canonicalJid && remoteJid.endsWith('@s.whatsapp.net')) {
-      canonicalJid = this.jidResolver.normalizeCanonicalRemoteJid(remoteJid);
+    if (!canonicalJid && chatRemoteJid.endsWith('@lid')) {
+      const lookedUp = this.sanitizeOutboundCanonicalRemoteJid(
+        config,
+        await this.jidResolver.lookupCanonicalRemoteJidFromEvolution(config, chatRemoteJid),
+      );
+
+      if (lookedUp) {
+        canonicalJid = lookedUp;
+        source = 'evolution_lookup';
+
+        if (chat) {
+          chat.canonicalRemoteJid = lookedUp;
+          chat.canonicalNumber = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(lookedUp));
+          chat.replyTargetUnresolved = false;
+          await this.chatsRepository.save(chat);
+        }
+      }
+    }
+
+    if (!canonicalJid && chatRemoteJid.endsWith('@s.whatsapp.net')) {
+      canonicalJid = this.sanitizeOutboundCanonicalRemoteJid(config, chatRemoteJid);
+    }
+
+    const outboundRemoteJid = chatRemoteJid.endsWith('@lid')
+      ? canonicalJid
+      : chatRemoteJid;
+
+    if (!outboundRemoteJid) {
+      throw new BadRequestException(
+        `No se pudo resolver un destinatario WhatsApp válido para este chat @lid. remoteJid=${chatRemoteJid}`,
+      );
+    }
+
+    const sendTarget = this.extractPhoneFromRemoteJid(outboundRemoteJid);
+    if (!sendTarget) {
+      throw new BadRequestException(`remoteJid no contiene digitos para envío: ${outboundRemoteJid}`);
+    }
+
+    if (this.isInstanceSendTarget(config, sendTarget)) {
+      const instancePhone = this.readString(config.instancePhone) || '(none)';
+      this.logger.error(
+        `[WHATSAPP OUTBOUND] blocked instance target companyId=${companyId} instanceName=${config.instanceName} chatRemoteJid=${chatRemoteJid} outboundRemoteJid=${outboundRemoteJid} sendTarget=${sendTarget} instancePhone=${instancePhone}`,
+      );
+      throw new BadRequestException(
+        `Destino bloqueado: el target ${sendTarget} coincide con el numero de la instancia. chat.remoteJid=${chatRemoteJid}`,
+      );
     }
 
     const canonicalNumber = canonicalJid
@@ -874,6 +906,28 @@ export class WhatsappMessagingService {
 
     return this.jidResolver.normalizeOutboundNumber(sendTarget) ===
       this.jidResolver.normalizeOutboundNumber(instancePhone);
+  }
+
+  private sanitizeOutboundCanonicalRemoteJid(
+    config: WhatsappChannelConfigEntity,
+    canonicalRemoteJid?: string | null,
+  ): string | null {
+    const normalizedCanonical = this.jidResolver.normalizeCanonicalRemoteJid(canonicalRemoteJid);
+    if (!normalizedCanonical) {
+      return null;
+    }
+
+    if (!this.isInstanceSendTarget(
+      config,
+      this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(normalizedCanonical)),
+    )) {
+      return normalizedCanonical;
+    }
+
+    this.logger.warn(
+      `[WHATSAPP OUTBOUND] ignoring canonical recipient because it matches instance phone companyId=${config.companyId} instanceName=${config.instanceName} canonicalJid=${normalizedCanonical}`,
+    );
+    return null;
   }
 
   private extractCanonicalRemoteJidFromPayload(payload: Record<string, unknown>): string | null {
