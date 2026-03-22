@@ -162,7 +162,7 @@ export class EvolutionApiClientService {
     if (expectsStructuredBody) {
       const text = await response.text().catch(() => '');
       const payload = this.parseJson(text);
-      const base64Payload = this.extractBase64Payload(payload);
+      const base64Payload = this.extractBase64Payload(payload) ?? this.extractBase64Payload(text);
       if (!base64Payload) {
         return null;
       }
@@ -177,7 +177,10 @@ export class EvolutionApiClientService {
 
       return {
         buffer,
-        contentType: this.extractContentType(payload, base64Payload) ?? contentTypeHeader,
+        contentType:
+          this.extractContentType(payload, base64Payload) ??
+          this.detectBinaryContentType(buffer) ??
+          contentTypeHeader,
       };
     }
 
@@ -188,7 +191,7 @@ export class EvolutionApiClientService {
 
     return {
       buffer,
-      contentType: contentTypeHeader,
+      contentType: this.detectBinaryContentType(buffer) ?? contentTypeHeader,
     };
   }
 
@@ -494,6 +497,52 @@ export class EvolutionApiClientService {
     const dataUrlMatch = /^data:([^;]+);base64,/i.exec(base64Payload);
     if (dataUrlMatch?.[1]) {
       return dataUrlMatch[1];
+    }
+
+    return null;
+  }
+
+  private detectBinaryContentType(buffer: Buffer): string | null {
+    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return 'image/jpeg';
+    }
+
+    if (
+      buffer.length >= 8 &&
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47
+    ) {
+      return 'image/png';
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+    ) {
+      return 'image/webp';
+    }
+
+    if (buffer.length >= 4 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+      return 'video/mp4';
+    }
+
+    if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === 'OggS') {
+      return 'audio/ogg';
+    }
+
+    if (buffer.length >= 3 && buffer.subarray(0, 3).toString('ascii') === 'ID3') {
+      return 'audio/mpeg';
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WAVE'
+    ) {
+      return 'audio/wav';
     }
 
     return null;

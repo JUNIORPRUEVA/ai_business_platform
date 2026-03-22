@@ -10,6 +10,7 @@ import { StorageFolder } from './dto/presign-upload.dto';
 @Injectable()
 export class StorageService {
   private readonly s3: S3Client;
+  private static readonly defaultContentDisposition = 'inline';
 
   constructor(private readonly configService: ConfigService) {
     const region = this.configService.get<string>('S3_REGION') ?? 'auto';
@@ -50,6 +51,7 @@ export class StorageService {
     folder: StorageFolder;
     filename: string;
     contentType?: string;
+    contentDisposition?: string;
     expiresInSeconds?: number;
   }): Promise<{ key: string; url: string; expiresInSeconds: number }> {
     const key = this.buildObjectKey(params.companyId, params.folder, params.filename);
@@ -60,6 +62,7 @@ export class StorageService {
       Bucket: bucket,
       Key: key,
       ContentType: params.contentType,
+      ContentDisposition: this.resolveContentDisposition(params.contentDisposition),
     });
 
     const url = await getSignedUrl(this.s3, command, { expiresIn: expiresInSeconds });
@@ -119,6 +122,7 @@ export class StorageService {
     folder: StorageFolder;
     filename: string;
     contentType?: string;
+    contentDisposition?: string;
     buffer: Buffer;
   }): Promise<{ key: string }> {
     const key = this.buildObjectKey(params.companyId, params.folder, params.filename);
@@ -130,6 +134,7 @@ export class StorageService {
         Key: key,
         Body: params.buffer,
         ContentType: params.contentType,
+        ContentDisposition: this.resolveContentDisposition(params.contentDisposition),
       }),
     );
 
@@ -140,6 +145,7 @@ export class StorageService {
     companyId: string;
     key: string;
     contentType?: string;
+    contentDisposition?: string;
     buffer: Buffer;
   }): Promise<{ key: string }> {
     this.assertCompanyKeyOwnership(params.companyId, params.key);
@@ -151,9 +157,100 @@ export class StorageService {
         Key: params.key,
         Body: params.buffer,
         ContentType: params.contentType,
+        ContentDisposition: this.resolveContentDisposition(params.contentDisposition),
       }),
     );
 
     return { key: params.key };
+  }
+
+  async verifyObjectDownload(params: {
+    companyId: string;
+    key: string;
+    expectedContentType?: string | null;
+    expectedContentDisposition?: string | null;
+    rangeBytes?: number;
+  }): Promise<{ url: string; contentType: string | null; contentDisposition: string | null }> {
+    const signed = await this.presignDownload({
+      companyId: params.companyId,
+      key: params.key,
+      expiresInSeconds: 300,
+    });
+
+    this.assertHttpUrl(signed.url);
+
+    const rangeBytes = Math.max(512, params.rangeBytes ?? 4096);
+    const response = await fetch(signed.url, {
+      method: 'GET',
+      headers: {
+        Range: `bytes=0-${rangeBytes - 1}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new BadRequestException(`Stored object is not accessible (${response.status}).`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) {
+      throw new BadRequestException('Stored object is empty.');
+    }
+
+    const contentType = response.headers.get('content-type');
+    const contentDisposition = response.headers.get('content-disposition');
+    const expectedContentType = this.normalizeContentType(params.expectedContentType ?? null);
+    const resolvedContentType = this.normalizeContentType(contentType);
+    if (
+      expectedContentType &&
+      resolvedContentType &&
+      expectedContentType !== resolvedContentType
+    ) {
+      throw new BadRequestException(
+        `Stored object content type mismatch. expected=${expectedContentType} actual=${resolvedContentType}`,
+      );
+    }
+
+    const expectedDisposition = (params.expectedContentDisposition?.trim() || StorageService.defaultContentDisposition).toLowerCase();
+    if (
+      contentDisposition &&
+      !contentDisposition.toLowerCase().includes(expectedDisposition)
+    ) {
+      throw new BadRequestException(
+        `Stored object content disposition mismatch. expected=${expectedDisposition} actual=${contentDisposition}`,
+      );
+    }
+
+    return {
+      url: signed.url,
+      contentType,
+      contentDisposition,
+    };
+  }
+
+  private resolveContentDisposition(value?: string | null): string {
+    const trimmed = value?.trim() ?? '';
+    return trimmed || StorageService.defaultContentDisposition;
+  }
+
+  private normalizeContentType(value: string | null): string | null {
+    const trimmed = value?.trim().toLowerCase() ?? '';
+    if (!trimmed) {
+      return null;
+    }
+
+    return trimmed.split(';')[0]?.trim() ?? null;
+  }
+
+  private assertHttpUrl(value: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new BadRequestException('Generated storage URL is invalid.');
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new BadRequestException('Generated storage URL must use HTTP/HTTPS.');
+    }
   }
 }

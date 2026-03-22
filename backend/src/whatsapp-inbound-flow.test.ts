@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { EvolutionApiClientService } from './modules/whatsapp-channel/services/evolution-api-client.service';
 import { WhatsappAttachmentService } from './modules/whatsapp-channel/services/whatsapp-attachment.service';
 import { WhatsappMessagingService } from './modules/whatsapp-channel/services/whatsapp-messaging.service';
 import { WhatsappJidResolverService } from './modules/whatsapp-channel/services/whatsapp-jid-resolver.service';
@@ -151,6 +152,61 @@ test('WhatsappAttachmentService normaliza extensiones truncadas usando el mime t
   assert.equal(resolveExtension('foto.j', 'image/jpeg', 'image'), 'jpg');
   assert.equal(resolveExtension('clip.vid', 'video/mp4', 'video'), 'mp4');
   assert.equal(resolveExtension('voice.a', 'audio/ogg; codecs=opus', 'audio'), 'ogg');
+});
+
+test('WhatsappAttachmentService decodifica payload base64 antes de persistir media', async () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const prepareUploadPayload = (
+    service as unknown as {
+      prepareUploadPayload: (params: {
+        buffer: Buffer;
+        originalName: string;
+        mimeType: string | null;
+        fileType: string;
+      }) => Promise<{
+        buffer: Buffer;
+        originalName: string;
+        mimeType: string | null;
+        durationSeconds: number | null;
+      }>;
+    }
+  ).prepareUploadPayload.bind(service);
+
+  const jpegHeader = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43]);
+  const payload = Buffer.from(`data:image/jpeg;base64,${jpegHeader.toString('base64')}`, 'utf8');
+  const prepared = await prepareUploadPayload({
+    buffer: payload,
+    originalName: 'foto.jiff',
+    mimeType: 'image/jpeg',
+    fileType: 'image',
+  });
+
+  assert.equal(prepared.originalName, 'foto.jpg');
+  assert.equal(prepared.mimeType, 'image/jpeg');
+  assert.equal(prepared.durationSeconds, null);
+  assert.deepEqual(prepared.buffer, jpegHeader);
+});
+
+test('EvolutionApiClientService decodifica texto base64 plano en descargas media', async () => {
+  const service = Object.create(EvolutionApiClientService.prototype) as EvolutionApiClientService;
+  const readMediaDownloadBody = (
+    service as unknown as {
+      readMediaDownloadBody: (
+        response: Response,
+        contentTypeHeader: string | null,
+      ) => Promise<{ buffer: Buffer; contentType: string | null } | null>;
+    }
+  ).readMediaDownloadBody.bind(service);
+
+  const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const response = new Response(pngHeader.toString('base64'), {
+    headers: { 'content-type': 'text/plain' },
+  });
+
+  const resolved = await readMediaDownloadBody(response, 'text/plain');
+  assert.ok(resolved);
+  assert.equal(resolved?.contentType, 'image/png');
+  assert.deepEqual(resolved?.buffer, pngHeader);
 });
 
 test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guarda en el flujo de la UI', async () => {

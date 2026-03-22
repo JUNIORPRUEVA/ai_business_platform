@@ -65,6 +65,7 @@ export class WhatsappAttachmentService {
           companyId: params.companyId,
           key: draftKey,
           contentType: preparedUpload.mimeType ?? undefined,
+          contentDisposition: 'inline',
           buffer: preparedUpload.buffer,
         })
       : await this.storageService.uploadBuffer({
@@ -72,8 +73,16 @@ export class WhatsappAttachmentService {
           folder: 'media',
           filename: preparedUpload.originalName,
           contentType: preparedUpload.mimeType ?? undefined,
+          contentDisposition: 'inline',
           buffer: preparedUpload.buffer,
         });
+
+    await this.storageService.verifyObjectDownload({
+      companyId: params.companyId,
+      key: uploaded.key,
+      expectedContentType: preparedUpload.mimeType,
+      expectedContentDisposition: 'inline',
+    });
 
     const thumbnailStoragePath = await this.createUploadThumbnail(
       params.companyId,
@@ -153,7 +162,15 @@ export class WhatsappAttachmentService {
         companyId: params.companyId,
         key: mediaKey,
         contentType: resolvedMimeType ?? undefined,
+        contentDisposition: 'inline',
         buffer: preparedUpload.buffer,
+      });
+
+      await this.storageService.verifyObjectDownload({
+        companyId: params.companyId,
+        key: mediaKey,
+        expectedContentType: resolvedMimeType,
+        expectedContentDisposition: 'inline',
       });
 
       const thumbnailStoragePath = await this.createUploadThumbnail(
@@ -256,6 +273,135 @@ export class WhatsappAttachmentService {
       sizeBytes: entity.sizeBytes,
       originalName: entity.originalName,
       durationSeconds: this.readOptionalNumber(entity.metadataJson['durationSeconds']),
+    };
+  }
+
+  async repairStoredMessageMedia(params: {
+    companyId: string;
+    conversationId: string;
+    messageId: string;
+    fileType: string;
+    mimeType?: string | null;
+    originalName?: string | null;
+  }): Promise<{
+    storagePath: string;
+    thumbnailStoragePath: string | null;
+    mimeType: string | null;
+    sizeBytes: string | null;
+    originalName: string | null;
+    durationSeconds: number | null;
+  } | null> {
+    const entity = await this.attachmentsRepository.findOne({
+      where: { companyId: params.companyId, messageId: params.messageId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!entity) {
+      return null;
+    }
+
+    let storedObject: { buffer: Buffer; contentType: string | null };
+    try {
+      storedObject = await this.storageService.getObjectBuffer({
+        companyId: params.companyId,
+        key: entity.storagePath,
+      });
+    } catch (_error) {
+      return null;
+    }
+
+    const declaredMimeType = storedObject.contentType ?? entity.mimeType ?? params.mimeType ?? null;
+    const originalName = entity.originalName ?? params.originalName ?? `${params.fileType}-${params.messageId}`;
+    const currentExtension = extname(entity.storagePath).replace('.', '').trim().toLowerCase();
+    const decodedBase64 = this.tryDecodeBase64Payload(storedObject.buffer);
+    const containsStructuredText = this.looksLikeStructuredTextPayload(storedObject.buffer, declaredMimeType);
+
+    const preparedUpload = await this.prepareUploadPayload({
+      buffer: storedObject.buffer,
+      originalName,
+      mimeType: declaredMimeType,
+      fileType: params.fileType,
+    });
+
+    const resolvedExtension = this.resolveExtension(
+      preparedUpload.originalName,
+      preparedUpload.mimeType,
+      params.fileType,
+    );
+    const nextStoragePath = this.buildMessageStorageKey(
+      params.companyId,
+      params.conversationId,
+      params.messageId,
+      resolvedExtension,
+    );
+
+    const needsRepair =
+      entity.storagePath !== nextStoragePath ||
+      currentExtension !== resolvedExtension ||
+      decodedBase64 != null ||
+      containsStructuredText ||
+      (preparedUpload.mimeType ?? null) !== (declaredMimeType ?? null) ||
+      (entity.originalName ?? null) !== preparedUpload.originalName;
+
+    if (!needsRepair) {
+      return {
+        storagePath: entity.storagePath,
+        thumbnailStoragePath: this.readString(entity.metadataJson['thumbnailStoragePath']) || null,
+        mimeType: entity.mimeType,
+        sizeBytes: entity.sizeBytes,
+        originalName: entity.originalName,
+        durationSeconds: this.readOptionalNumber(entity.metadataJson['durationSeconds']),
+      };
+    }
+
+    await this.storageService.uploadBufferToKey({
+      companyId: params.companyId,
+      key: nextStoragePath,
+      contentType: preparedUpload.mimeType ?? undefined,
+      contentDisposition: 'inline',
+      buffer: preparedUpload.buffer,
+    });
+
+    await this.storageService.verifyObjectDownload({
+      companyId: params.companyId,
+      key: nextStoragePath,
+      expectedContentType: preparedUpload.mimeType,
+      expectedContentDisposition: 'inline',
+    });
+
+    const thumbnailStoragePath = await this.createUploadThumbnail(
+      params.companyId,
+      params.conversationId,
+      params.messageId,
+      params.fileType,
+      preparedUpload.mimeType,
+      preparedUpload.buffer,
+      nextStoragePath,
+      preparedUpload.originalName,
+      null,
+    );
+
+    entity.storagePath = nextStoragePath;
+    entity.mimeType = preparedUpload.mimeType;
+    entity.originalName = preparedUpload.originalName;
+    entity.sizeBytes = String(preparedUpload.buffer.length);
+    entity.metadataJson = {
+      ...entity.metadataJson,
+      thumbnailStoragePath,
+      repairedAt: new Date().toISOString(),
+      ...(preparedUpload.durationSeconds != null
+        ? { durationSeconds: preparedUpload.durationSeconds }
+        : {}),
+    };
+
+    const saved = await this.attachmentsRepository.save(entity);
+
+    return {
+      storagePath: saved.storagePath,
+      thumbnailStoragePath: this.readString(saved.metadataJson['thumbnailStoragePath']) || null,
+      mimeType: saved.mimeType,
+      sizeBytes: saved.sizeBytes,
+      originalName: saved.originalName,
+      durationSeconds: this.readOptionalNumber(saved.metadataJson['durationSeconds']),
     };
   }
 
@@ -435,25 +581,32 @@ export class WhatsappAttachmentService {
     mimeType: string | null;
     durationSeconds: number | null;
   }> {
+    const normalizedSource = this.normalizeInboundPayload({
+      buffer: params.buffer,
+      originalName: params.originalName,
+      mimeType: params.mimeType,
+      fileType: params.fileType,
+    });
+
     if (params.fileType !== 'audio') {
       return {
-        buffer: params.buffer,
-        originalName: params.originalName,
-        mimeType: params.mimeType,
+        buffer: normalizedSource.buffer,
+        originalName: normalizedSource.originalName,
+        mimeType: normalizedSource.mimeType,
         durationSeconds: null,
       };
     }
 
     const normalizedAudio = await this.normalizeAudioBuffer({
-      buffer: params.buffer,
-      originalName: params.originalName,
-      mimeType: params.mimeType,
+      buffer: normalizedSource.buffer,
+      originalName: normalizedSource.originalName,
+      mimeType: normalizedSource.mimeType,
     });
     if (!normalizedAudio) {
       return {
-        buffer: params.buffer,
-        originalName: this.ensureAudioFileName(params.originalName, params.mimeType),
-        mimeType: params.mimeType,
+        buffer: normalizedSource.buffer,
+        originalName: this.ensureAudioFileName(normalizedSource.originalName, normalizedSource.mimeType),
+        mimeType: normalizedSource.mimeType,
         durationSeconds: null,
       };
     }
@@ -495,10 +648,49 @@ export class WhatsappAttachmentService {
       companyId,
       key: thumbnailKey,
       contentType: 'image/jpeg',
+      contentDisposition: 'inline',
       buffer: thumbnailBuffer,
     });
 
     return thumbnailKey;
+  }
+
+  private normalizeInboundPayload(params: {
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+    fileType: string;
+  }): {
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string | null;
+  } {
+    const normalizedMimeType = this.normalizeMimeType(params.mimeType);
+    const decodedBase64 = this.tryDecodeBase64Payload(params.buffer);
+    const resolvedBuffer = decodedBase64?.buffer ?? params.buffer;
+    const resolvedMimeType = this.resolveMimeType(
+      resolvedBuffer,
+      decodedBase64?.mimeType ?? normalizedMimeType,
+      params.fileType,
+    );
+    const resolvedOriginalName = this.ensureCanonicalFileName(
+      params.originalName,
+      resolvedMimeType,
+      params.fileType,
+    );
+
+    if (
+      ['image', 'video', 'audio'].includes(params.fileType) &&
+      this.looksLikeStructuredTextPayload(resolvedBuffer, resolvedMimeType)
+    ) {
+      throw new BadRequestException('El archivo multimedia no contiene datos binarios validos.');
+    }
+
+    return {
+      buffer: resolvedBuffer,
+      originalName: resolvedOriginalName,
+      mimeType: resolvedMimeType,
+    };
   }
 
   private async normalizeAudioBuffer(params: {
@@ -759,6 +951,168 @@ export class WhatsappAttachmentService {
         return fromName === 'opus' ? 'ogg' : fromName;
       default:
         return fromName.length >= 2 ? fromName : null;
+    }
+  }
+
+  private ensureCanonicalFileName(
+    originalName: string,
+    mimeType: string | null,
+    fileType: string,
+  ): string {
+    const trimmed = originalName.trim();
+    const fallbackBaseName = fileType === 'audio' ? 'voice-note' : `${fileType}-file`;
+    const baseName = trimmed.replace(/\.[^.]+$/, '').trim() || fallbackBaseName;
+    const extension = this.resolveExtension(trimmed || fallbackBaseName, mimeType, fileType);
+    return `${baseName}.${extension}`;
+  }
+
+  private normalizeMimeType(value: string | null): string | null {
+    const trimmed = value?.trim() ?? '';
+    if (!trimmed) {
+      return null;
+    }
+
+    return trimmed.split(';')[0]?.trim().toLowerCase() ?? null;
+  }
+
+  private resolveMimeType(buffer: Buffer, mimeType: string | null, fileType: string): string | null {
+    const normalized = this.normalizeMimeType(mimeType);
+    if (this.isMimeTypeCompatible(normalized, fileType)) {
+      switch (normalized) {
+        case 'image/jpg':
+          return 'image/jpeg';
+        case 'audio/mp3':
+          return 'audio/mpeg';
+        case 'audio/opus':
+          return 'audio/ogg';
+        case 'audio/x-wav':
+          return 'audio/wav';
+        default:
+          return normalized;
+      }
+    }
+
+    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return 'image/jpeg';
+    }
+
+    if (
+      buffer.length >= 8 &&
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47
+    ) {
+      return 'image/png';
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+    ) {
+      return 'image/webp';
+    }
+
+    if (buffer.length >= 6) {
+      const gifHeader = buffer.subarray(0, 6).toString('ascii');
+      if (gifHeader === 'GIF87a' || gifHeader === 'GIF89a') {
+        return 'image/gif';
+      }
+    }
+
+    if (buffer.length >= 4 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+      return fileType === 'audio' ? 'audio/mp4' : 'video/mp4';
+    }
+
+    if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === 'OggS') {
+      return 'audio/ogg';
+    }
+
+    if (buffer.length >= 3 && buffer.subarray(0, 3).toString('ascii') === 'ID3') {
+      return 'audio/mpeg';
+    }
+
+    if (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) {
+      return 'audio/mpeg';
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WAVE'
+    ) {
+      return 'audio/wav';
+    }
+
+    if (fileType === 'image') {
+      return 'image/jpeg';
+    }
+    if (fileType === 'video') {
+      return 'video/mp4';
+    }
+    if (fileType === 'audio') {
+      return 'audio/mpeg';
+    }
+
+    return normalized;
+  }
+
+  private isMimeTypeCompatible(mimeType: string | null, fileType: string): boolean {
+    if (!mimeType) {
+      return false;
+    }
+
+    switch (fileType) {
+      case 'image':
+        return mimeType.startsWith('image/');
+      case 'video':
+        return mimeType.startsWith('video/');
+      case 'audio':
+        return mimeType.startsWith('audio/');
+      default:
+        return true;
+    }
+  }
+
+  private tryDecodeBase64Payload(
+    buffer: Buffer,
+  ): { buffer: Buffer; mimeType: string | null } | null {
+    if (!buffer.length) {
+      return null;
+    }
+
+    const text = buffer.toString('utf8').trim();
+    if (!text) {
+      return null;
+    }
+
+    let mimeType: string | null = null;
+    let normalized = text;
+    const dataUrlMatch = /^data:([^;]+);base64,([\s\S]+)$/i.exec(text);
+    if (dataUrlMatch) {
+      mimeType = this.normalizeMimeType(dataUrlMatch[1] ?? null);
+      normalized = dataUrlMatch[2] ?? '';
+    }
+
+    normalized = normalized.replace(/\s+/g, '');
+    const minimumLength = dataUrlMatch ? 8 : 32;
+    if (normalized.length < minimumLength || !/^[A-Za-z0-9+/=]+$/.test(normalized)) {
+      return null;
+    }
+
+    try {
+      const decoded = Buffer.from(normalized, 'base64');
+      if (!decoded.length || decoded.equals(buffer)) {
+        return null;
+      }
+
+      return {
+        buffer: decoded,
+        mimeType,
+      };
+    } catch {
+      return null;
     }
   }
 

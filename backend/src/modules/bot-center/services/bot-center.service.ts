@@ -1253,11 +1253,15 @@ export class BotCenterService {
     variant: 'media' | 'thumbnail',
   ): Promise<{ buffer: Buffer; contentType: string; fileName: string } | null> {
     let hydratedMessage = message;
-    if (!message.mediaStoragePath) {
-      const storedAttachment = await this.attachmentsService.findStoredByMessageId(
+    if (['image', 'video', 'audio'].includes(message.messageType)) {
+      const storedAttachment = await this.attachmentsService.repairStoredMessageMedia({
         companyId,
-        message.id,
-      );
+        conversationId: message.chatId,
+        messageId: message.id,
+        fileType: message.messageType,
+        mimeType: message.mimeType,
+        originalName: message.mediaOriginalName,
+      });
       if (storedAttachment) {
         hydratedMessage = await this.whatsappMessagingService.updateStoredMedia(companyId, message.id, {
           mediaStoragePath: storedAttachment.storagePath,
