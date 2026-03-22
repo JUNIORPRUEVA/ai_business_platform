@@ -13,6 +13,7 @@ export type ChannelType =
 @Index(['companyId'])
 @Index(['companyId', 'type'])
 @Index(['instanceName'])
+@Index(['companyId', 'instanceName'])
 export class ChannelEntity extends BaseEntity {
   @Column({ type: 'uuid', name: 'company_id' })
   companyId!: string;

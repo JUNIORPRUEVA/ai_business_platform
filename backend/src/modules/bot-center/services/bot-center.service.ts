@@ -1028,10 +1028,10 @@ export class BotCenterService {
     }
 
     try {
-      const channel = await this.channelsService.getByInstanceNameUnsafe(config.instanceName);
-      if (channel.companyId !== companyId) {
-        return null;
-      }
+      const channel = await this.channelsService.getByCompanyAndInstanceName(
+        companyId,
+        config.instanceName,
+      );
       return { id: channel.id };
     } catch {
       const channels = await this.channelsService.list(companyId);

@@ -128,14 +128,18 @@ export class WhatsappWebhookService {
         await this.handleMessageDelete(job.companyId, job.payload);
         break;
       case 'MESSAGES_UPSERT':
-      case 'SEND_MESSAGE':
-      default:
         for (const payload of canonicalPayloads) {
           const result = await this.handleMessageUpsert(config, payload);
           if (result) {
             savedMessages.push(result);
           }
         }
+        break;
+      case 'SEND_MESSAGE':
+      default:
+        this.logger.log(
+          `[EVOLUTION INBOUND] ignored event=${eventName} companyId=${job.companyId} reason=non_upsert_event`,
+        );
         break;
     }
 
@@ -206,6 +210,7 @@ export class WhatsappWebhookService {
     config: WhatsappChannelConfigEntity,
     payload: Record<string, unknown>,
   ): Promise<WhatsappWebhookProcessResult['savedMessages'][number] | null> {
+    const eventName = this.normalizeEventName(payload['event']);
     const data = this.readMap(payload['data']);
     const key = this.readMap(data['key']);
     const rawRemoteJid = this.readString(key['remoteJid']);
@@ -217,11 +222,45 @@ export class WhatsappWebhookService {
 
     const messageId = this.readString(key['id']) || null;
     const fromMe = this.readBoolean(key['fromMe']);
+    console.log('EVENT:', eventName);
+    console.log('PROCESSING MESSAGE ID:', messageId ?? '(missing)');
+    console.log('FROM ME:', fromMe);
+
+    if (eventName !== 'MESSAGES_UPSERT') {
+      this.logger.log(
+        `[EVOLUTION INBOUND] message ignored reason=event_not_supported companyId=${config.companyId} event=${eventName}`,
+      );
+      return null;
+    }
+
+    if (fromMe) {
+      this.logger.log(
+        `[EVOLUTION INBOUND] message ignored reason=from_me companyId=${config.companyId} messageId=${messageId ?? '(none)'}`,
+      );
+      return null;
+    }
+
+    const existingMessage =
+      typeof this.messagingService.findByEvolutionMessageId === 'function'
+        ? await this.messagingService.findByEvolutionMessageId(
+            config.companyId,
+            messageId,
+          )
+        : null;
+    if (existingMessage) {
+      this.logger.log(
+        `[EVOLUTION INBOUND] message ignored reason=duplicate_message companyId=${config.companyId} messageId=${messageId} chatId=${existingMessage.chatId}`,
+      );
+      return null;
+    }
+
     const message = this.readMap(data['message']);
     const type = this.detectType(message);
     const content = this.extractContent(type, message);
 
-    const canonicalRemoteJid = await this.resolveCanonicalRemoteJid(
+    const canonicalRemoteJid = this.sanitizeCanonicalRemoteJid(
+      config,
+      await this.resolveCanonicalRemoteJid(
       config,
       data,
       key,
@@ -229,15 +268,16 @@ export class WhatsappWebhookService {
       payload,
       remoteJid,
       messageId,
+      ),
     );
     const chatIdentityJid = this.resolveChatIdentityJid({
-      config,
       remoteJid,
       canonicalRemoteJid,
       fromMe,
     });
 
-    console.log('FROM ME:', fromMe);
+    console.log('REMOTE:', remoteJid);
+    console.log('USED:', chatIdentityJid ?? '(unresolved)');
     console.log('REMOTE JID:', remoteJid);
     console.log('CHAT JID USED:', chatIdentityJid ?? '(unresolved)');
 
@@ -280,7 +320,7 @@ export class WhatsappWebhookService {
       thumbnailUrl: content.thumbnailUrl,
       durationSeconds: content.durationSeconds,
       rawPayloadJson: payload,
-      status: fromMe ? 'sent' : 'received',
+      status: 'received',
     });
 
     this.logger.log(
@@ -322,16 +362,14 @@ export class WhatsappWebhookService {
 
     await this.botCenterRealtimeService.publishMessageUpsert(messageForRealtime);
 
-    if (!fromMe) {
-      await this.triggerAiAutoReply(
-        config,
-        messageForRealtime.chatId,
-        messageForRealtime.id,
-        content.textBody,
-        chatIdentityJid,
-        canonicalRemoteJid,
-      );
-    }
+    await this.triggerAiAutoReply(
+      config,
+      messageForRealtime.chatId,
+      messageForRealtime.id,
+      content.textBody,
+      chatIdentityJid,
+      canonicalRemoteJid,
+    );
 
     return {
       messageId: saved.id,
@@ -343,28 +381,44 @@ export class WhatsappWebhookService {
   }
 
   private resolveChatIdentityJid(params: {
-    config: WhatsappChannelConfigEntity;
     remoteJid: string;
     canonicalRemoteJid?: string | null;
     fromMe: boolean;
   }): string | null {
-    const canonicalRemoteJid = this.jidResolver.normalizeCanonicalRemoteJid(params.canonicalRemoteJid);
-    if (canonicalRemoteJid && !this.isInstanceJid(params.config, canonicalRemoteJid)) {
-      return canonicalRemoteJid;
-    }
-
     const normalizedRemoteJid = this.jidResolver.normalizeJid(params.remoteJid);
-    if (!params.fromMe && normalizedRemoteJid && !this.isInstanceJid(params.config, normalizedRemoteJid)) {
-      return normalizedRemoteJid;
-    }
-
-    if (params.fromMe) {
+    if (!normalizedRemoteJid) {
       return null;
     }
 
-    return normalizedRemoteJid && !this.isInstanceJid(params.config, normalizedRemoteJid)
-      ? normalizedRemoteJid
-      : null;
+    if (!params.fromMe) {
+      return normalizedRemoteJid;
+    }
+
+    const canonicalRemoteJid = this.jidResolver.normalizeCanonicalRemoteJid(params.canonicalRemoteJid);
+    if (canonicalRemoteJid) {
+      return canonicalRemoteJid;
+    }
+
+    return normalizedRemoteJid;
+  }
+
+  private sanitizeCanonicalRemoteJid(
+    config: WhatsappChannelConfigEntity,
+    canonicalRemoteJid?: string | null,
+  ): string | null {
+    const normalizedCanonical = this.jidResolver.normalizeCanonicalRemoteJid(canonicalRemoteJid);
+    if (!normalizedCanonical) {
+      return null;
+    }
+
+    if (!this.isInstanceJid(config, normalizedCanonical)) {
+      return normalizedCanonical;
+    }
+
+    this.logger.warn(
+      `[EVOLUTION INBOUND] ignoring canonical recipient because it matches instance phone companyId=${config.companyId} instanceName=${config.instanceName} canonicalJid=${normalizedCanonical}`,
+    );
+    return null;
   }
 
   private isInstanceJid(config: WhatsappChannelConfigEntity, jid: string): boolean {

@@ -537,10 +537,8 @@ export class WhatsappInstancesService {
     }
 
     if (event === 'MESSAGES_UPSERT') {
-      const channel = await this.findChannelByInstanceName(entity.instanceName);
       const expandedPayloads = this.expandInboundPayloads(payload);
       let mirroredMessages = 0;
-      let botCenterMessages = 0;
 
       for (const entryPayload of expandedPayloads) {
         const entryData = this.readMap(entryPayload['data']);
@@ -559,24 +557,9 @@ export class WhatsappInstancesService {
             bodyPreview,
             remoteJid,
             messageId,
-            channelId: channel?.id ?? null,
+            channelId: null,
           },
         };
-
-        if (channel && key['fromMe'] !== true) {
-          try {
-            await this.evolutionWebhookService.processIncomingMessage({
-              channelId: channel.id,
-              payload: entryPayload as never,
-            });
-            botCenterMessages += 1;
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown Bot Center mirror error.';
-            this.logger.warn(
-              `[EVOLUTION INBOUND] bot center mirror failed instance=${instanceName} remoteJid=${remoteJid} messageId=${messageId} error=${message}`,
-            );
-          }
-        }
 
         mirroredMessages += 1;
       }
@@ -584,7 +567,7 @@ export class WhatsappInstancesService {
       await this.repo.save(entity);
 
       this.logger.log(
-        `[EVOLUTION INBOUND] processed event=${event} instance=${instanceName} companyId=${entity.tenantId} mirroredMessages=${mirroredMessages} botCenterMessages=${botCenterMessages} channelId=${channel?.id ?? '(none)'}`,
+        `[EVOLUTION INBOUND] processed event=${event} instance=${instanceName} companyId=${entity.tenantId} mirroredMessages=${mirroredMessages} botCenterMessages=0 channelId=(handled_by_whatsapp_channel)` ,
       );
 
       return {
@@ -592,8 +575,8 @@ export class WhatsappInstancesService {
         instanceName,
         event,
         mirroredMessages,
-        botCenterMessages,
-        channelId: channel?.id ?? null,
+        botCenterMessages: 0,
+        channelId: null,
       };
     }
 
@@ -766,9 +749,9 @@ export class WhatsappInstancesService {
     };
   }
 
-  private async findChannelByInstanceName(instanceName: string) {
+  private async findChannelByInstanceName(companyId: string, instanceName: string) {
     try {
-      return await this.channelsService.getByInstanceNameUnsafe(instanceName);
+      return await this.channelsService.getByCompanyAndInstanceName(companyId, instanceName);
     } catch {
       return null;
     }

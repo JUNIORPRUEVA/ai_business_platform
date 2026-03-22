@@ -165,6 +165,14 @@ function createWhatsappWebhookService(params: {
   conversationsService?: unknown;
   appMessagesService?: unknown;
 }) {
+  const messagingService = (params.messagingService ?? {}) as Record<string, unknown>;
+  if (typeof messagingService['findByEvolutionMessageId'] !== 'function') {
+    messagingService['findByEvolutionMessageId'] = async () => null;
+  }
+  if (typeof messagingService['applyStatusUpdate'] !== 'function') {
+    messagingService['applyStatusUpdate'] = async () => null;
+  }
+
   return new WhatsappWebhookService(
     (params.webhookQueue ?? { add: async () => undefined }) as never,
     (params.messageProcessingQueue ?? { add: async () => undefined }) as never,
@@ -189,7 +197,7 @@ function createWhatsappWebhookService(params: {
     }) as never,
     (params.configService ?? { getEntity: async () => null }) as never,
     (params.logsService ?? { create: async (entry: Record<string, unknown>) => entry }) as never,
-    params.messagingService as never,
+    messagingService as never,
     (params.botCenterRealtimeService ?? botCenterRealtimeStub) as never,
     (params.attachmentsService ?? { downloadRemoteToStorage: async () => null }) as never,
     (params.evolutionApiClient ?? emptyEvolutionApiClient) as never,
@@ -363,7 +371,195 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
   assert.equal(logs[0]['eventName'], 'MESSAGES_UPSERT');
 });
 
-test('WhatsappWebhookService usa el jid del cliente cuando fromMe llega con el numero de la instancia', async () => {
+test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensajes correctos y registra logs REMOTE/USED iguales', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const chatsRepository = new InMemoryRepository([]);
+  const messagesRepository = new InMemoryRepository([]);
+  const savedContactPhones: string[] = [];
+  const createdConversations: Array<Record<string, string>> = [];
+  const queuedJobs: Array<Record<string, unknown>> = [];
+  const logLines: string[] = [];
+
+  const messagingService = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    { getEntity: async () => config } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  const originalConsoleLog = console.log;
+  console.log = (...args: unknown[]) => {
+    logLines.push(args.map((arg) => String(arg)).join(' '));
+  };
+
+  try {
+    const service = createWhatsappWebhookService({
+      configsRepository,
+      chatsRepository,
+      configService: { getEntity: async () => config },
+      logsService: { create: async () => ({}) },
+      messagingService,
+      contactsService: {
+        findOrCreateByPhone: async (_companyId: string, phone: string) => {
+          savedContactPhones.push(phone);
+          return { id: `contact-${phone}` };
+        },
+      },
+      conversationsService: {
+        findOrCreateOpen: async (_companyId: string, _channelId: string, contactId: string) => {
+          const conversation = { id: `conversation-${contactId}`, contactId };
+          createdConversations.push(conversation);
+          return conversation;
+        },
+      },
+      messageProcessingQueue: {
+        add: async (name: string, data: Record<string, unknown>) => {
+          queuedJobs.push({ name, data });
+        },
+      },
+      channelsService: {
+        findOrCreateWhatsappBridge: async () => ({ id: 'channel-1', companyId: 'company-1' }),
+      },
+      appMessagesService: {
+        findByMetadataValue: async () => null,
+        create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+          id: `app-message-${queuedJobs.length + 1}`,
+          ...payload,
+        }),
+      },
+    });
+
+    const payloadUserA = {
+      event: 'messages.upsert',
+      instance: 'demo-instance',
+      data: {
+        messages: [
+          {
+            key: {
+              remoteJid: '1111111111@s.whatsapp.net',
+              id: 'wamid-user-a',
+              fromMe: false,
+            },
+            pushName: 'User A',
+            message: { conversation: 'Hola desde A' },
+          },
+        ],
+      },
+    };
+
+    const payloadUserB = {
+      event: 'messages.upsert',
+      instance: 'demo-instance',
+      data: {
+        messages: [
+          {
+            key: {
+              remoteJid: '2222222222@s.whatsapp.net',
+              id: 'wamid-user-b',
+              fromMe: false,
+            },
+            pushName: 'User B',
+            message: { conversation: 'Hola desde B' },
+          },
+        ],
+      },
+    };
+
+    const chatA = chatsRepository.create({
+      id: 'chat-user-a',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '1111111111@s.whatsapp.net',
+      originalRemoteJid: '1111111111@s.whatsapp.net',
+      rawRemoteJid: '1111111111@s.whatsapp.net',
+      canonicalRemoteJid: '1111111111@s.whatsapp.net',
+      canonicalNumber: '1111111111',
+      sendTarget: '1111111111',
+      lastInboundJidType: 'pn',
+      replyTargetUnresolved: false,
+      autoReplyEnabled: true,
+      pushName: 'User A',
+      profileName: null,
+      profilePictureUrl: null,
+      lastMessageAt: null,
+      unreadCount: 0,
+    });
+    const chatB = chatsRepository.create({
+      id: 'chat-user-b',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '2222222222@s.whatsapp.net',
+      originalRemoteJid: '2222222222@s.whatsapp.net',
+      rawRemoteJid: '2222222222@s.whatsapp.net',
+      canonicalRemoteJid: '2222222222@s.whatsapp.net',
+      canonicalNumber: '2222222222',
+      sendTarget: '2222222222',
+      lastInboundJidType: 'pn',
+      replyTargetUnresolved: false,
+      autoReplyEnabled: true,
+      pushName: 'User B',
+      profileName: null,
+      profilePictureUrl: null,
+      lastMessageAt: null,
+      unreadCount: 0,
+    });
+    await chatsRepository.save(chatA);
+    await chatsRepository.save(chatB);
+
+    await service.processNow('company-1', payloadUserA as never);
+    await service.processNow('company-1', payloadUserB as never);
+
+    const storedChatA = await chatsRepository.findOne({
+      where: { companyId: 'company-1', remoteJid: '1111111111@s.whatsapp.net' },
+    });
+    const storedChatB = await chatsRepository.findOne({
+      where: { companyId: 'company-1', remoteJid: '2222222222@s.whatsapp.net' },
+    });
+    const storedMessageA = await messagesRepository.findOne({
+      where: { companyId: 'company-1', evolutionMessageId: 'wamid-user-a' },
+    });
+    const storedMessageB = await messagesRepository.findOne({
+      where: { companyId: 'company-1', evolutionMessageId: 'wamid-user-b' },
+    });
+
+    assert.ok(storedChatA);
+    assert.ok(storedChatB);
+    assert.notEqual(storedChatA?.id, storedChatB?.id);
+    assert.equal(storedChatA?.remoteJid, '1111111111@s.whatsapp.net');
+    assert.equal(storedChatB?.remoteJid, '2222222222@s.whatsapp.net');
+    assert.equal(storedMessageA?.remoteJid, '1111111111@s.whatsapp.net');
+    assert.equal(storedMessageB?.remoteJid, '2222222222@s.whatsapp.net');
+
+    assert.deepEqual(savedContactPhones, ['1111111111', '2222222222']);
+    assert.equal(createdConversations.length, 2);
+    assert.notEqual(createdConversations[0]['id'], createdConversations[1]['id']);
+    assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['conversationId'], 'conversation-contact-1111111111');
+    assert.equal((queuedJobs[1]['data'] as Record<string, unknown>)['conversationId'], 'conversation-contact-2222222222');
+
+    const relevantLogs = logLines.filter((line) => line.startsWith('REMOTE:') || line.startsWith('USED:'));
+    assert.deepEqual(relevantLogs, [
+      'REMOTE: 1111111111@s.whatsapp.net',
+      'USED: 1111111111@s.whatsapp.net',
+      'REMOTE: 2222222222@s.whatsapp.net',
+      'USED: 2222222222@s.whatsapp.net',
+    ]);
+  } finally {
+    console.log = originalConsoleLog;
+  }
+});
+
+test('WhatsappWebhookService ignora mensajes propios aunque lleguen con el numero de la instancia', async () => {
   const config = {
     id: 'config-1',
     companyId: 'company-1',
@@ -420,10 +616,8 @@ test('WhatsappWebhookService usa el jid del cliente cuando fromMe llega con el n
 
   const result = await service.processNow('company-1', payload);
 
-  assert.equal(result.savedMessages.length, 1);
-  assert.equal(savedMessages.length, 1);
-  assert.equal(savedMessages[0]['remoteJid'], '5511999999999@s.whatsapp.net');
-  assert.equal(savedMessages[0]['canonicalRemoteJid'], '5511999999999@s.whatsapp.net');
+  assert.equal(result.savedMessages.length, 0);
+  assert.equal(savedMessages.length, 0);
 });
 
 test('WhatsappWebhookService procesa message-receipt sin fromMe y normaliza ack numerico a delivered', async () => {
@@ -903,21 +1097,113 @@ test('WhatsappInstancesService normaliza payloads inbound con data.messages[] y 
   assert.equal(result['updated'], true);
   assert.equal(result['instanceName'], 'demo-instance');
   assert.equal(result['mirroredMessages'], 1);
-  assert.equal(result['botCenterMessages'], 1);
+  assert.equal(result['botCenterMessages'], 0);
   assert.equal(mirroredPayloads.length, 1);
-  assert.equal(botCenterPayloads.length, 1);
+  assert.equal(botCenterPayloads.length, 0);
   assert.equal(
     ((mirroredPayloads[0]['data'] as Record<string, unknown>)['messages'] as Array<unknown>).length,
     1,
   );
-  assert.equal(
-    (((botCenterPayloads[0]['payload'] as Record<string, unknown>)['data'] as Record<string, unknown>)['pushName']),
-    'Lucia',
-  );
-  assert.equal(
-    ((((botCenterPayloads[0]['payload'] as Record<string, unknown>)['data'] as Record<string, unknown>)['key'] as Record<string, unknown>)['id']),
-    'wamid-2',
-  );
+});
+
+test('WhatsappWebhookService no procesa ni responde dos veces al mismo evolution message id', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const queuedJobs: Array<Record<string, unknown>> = [];
+  const savedMessages: Array<Record<string, unknown>> = [];
+  let existingLookupCount = 0;
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    messageProcessingQueue: {
+      add: async (name: string, data: Record<string, unknown>, options: Record<string, unknown>) => {
+        queuedJobs.push({ name, data, options });
+      },
+    },
+    messagingService: {
+      findByEvolutionMessageId: async (_companyId: string, evolutionMessageId: string | null) => {
+        existingLookupCount += 1;
+        if (existingLookupCount === 1) {
+          return null;
+        }
+
+        return {
+          id: 'wa-message-1',
+          chatId: 'chat-1',
+          evolutionMessageId,
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: false,
+        };
+      },
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'wa-message-1',
+          chatId: 'chat-1',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async () => undefined,
+    },
+    chatsRepository: new InMemoryRepository([
+      {
+        id: 'chat-1',
+        companyId: 'company-1',
+        channelConfigId: 'config-1',
+        remoteJid: '5511999999999@s.whatsapp.net',
+        canonicalRemoteJid: '5511999999999@s.whatsapp.net',
+        canonicalNumber: '5511999999999',
+        sendTarget: '5511999999999',
+        replyTargetUnresolved: false,
+        autoReplyEnabled: true,
+        pushName: 'Lucia',
+        profileName: 'Lucia',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]),
+    appMessagesService: {
+      findByMetadataValue: async () => null,
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: `app-message-${queuedJobs.length + 1}`,
+        ...payload,
+      }),
+    },
+  });
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      messages: [
+        {
+          key: {
+            remoteJid: '5511999999999@s.whatsapp.net',
+            id: 'wamid-duplicate-1',
+            fromMe: false,
+          },
+          pushName: 'Lucia',
+          message: { conversation: 'Hola una vez' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(savedMessages.length, 1);
+  assert.equal(queuedJobs.length, 1);
 });
 
 test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_id cuando remoteJid es @lid', async () => {
@@ -973,7 +1259,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.contacts[].wa_
   await service.processNow('company-1', payload as never);
 
   assert.equal(savedMessages.length, 1);
-  assert.equal(savedMessages[0]['remoteJid'], '18295344286@s.whatsapp.net');
+  assert.equal(savedMessages[0]['remoteJid'], '203040820879420@lid');
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
 });
 
@@ -1030,7 +1316,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde data.sender numeric
   await service.processNow('company-1', payload as never);
 
   assert.equal(savedMessages.length, 1);
-  assert.equal(savedMessages[0]['remoteJid'], '18295344286@s.whatsapp.net');
+  assert.equal(savedMessages[0]['remoteJid'], '234840490270800@lid');
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
 });
 
@@ -1145,8 +1431,67 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
   await service.processNow('company-1', payload as never);
 
   assert.equal(savedMessages.length, 1);
-  assert.equal(savedMessages[0]['remoteJid'], '18295344286@s.whatsapp.net');
+  assert.equal(savedMessages[0]['remoteJid'], '234840490270800@lid');
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
+
+});
+
+test('WhatsappWebhookService descarta canonicalRemoteJid cuando coincide con el numero de la instancia y conserva el remoteJid original', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    instancePhone: '18295319442',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-instance-canonical',
+          chatId: 'chat-instance-canonical',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async () => undefined,
+    },
+  });
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      sender: '+1 (829) 531-9442',
+      messages: [
+        {
+          key: {
+            remoteJid: '234840490270800@lid',
+            id: 'wamid-instance-canonical',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          message: { conversation: 'hola' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(savedMessages.length, 1);
+  assert.equal(savedMessages[0]['remoteJid'], '234840490270800@lid');
+  assert.equal(savedMessages[0]['canonicalRemoteJid'], null);
 });
 
 test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution cuando el payload solo trae @lid', async () => {

@@ -122,6 +122,15 @@ export class ChannelsService {
     return channel;
   }
 
+  async getByCompanyAndInstanceName(companyId: string, instanceName: string): Promise<ChannelEntity> {
+    const normalizedInstanceName = instanceName.trim();
+    const channel = await this.channelsRepository.findOne({
+      where: { companyId, instanceName: normalizedInstanceName },
+    });
+    if (!channel) throw new NotFoundException('Channel not found.');
+    return channel;
+  }
+
   async findOrCreateWhatsappBridge(companyId: string, instanceName: string): Promise<ChannelEntity> {
     const normalizedInstanceName = instanceName.trim();
     const direct = await this.channelsRepository.findOne({

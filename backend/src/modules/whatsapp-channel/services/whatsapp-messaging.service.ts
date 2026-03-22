@@ -69,6 +69,20 @@ export class WhatsappMessagingService {
     }
   }
 
+  async findByEvolutionMessageId(
+    companyId: string,
+    evolutionMessageId: string | null,
+  ): Promise<WhatsappMessageEntity | null> {
+    const normalizedMessageId = this.readString(evolutionMessageId);
+    if (!normalizedMessageId) {
+      return null;
+    }
+
+    return this.messagesRepository.findOne({
+      where: { companyId, evolutionMessageId: normalizedMessageId },
+    });
+  }
+
   async sendText(companyId: string, payload: SendWhatsappTextDto): Promise<Record<string, unknown>> {
     const rawRemoteJid = payload.remoteJid;
     const normalizedJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid, { throwOnEmpty: true });
