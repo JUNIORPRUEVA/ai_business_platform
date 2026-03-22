@@ -275,7 +275,7 @@ export class BotConfigurationService implements OnModuleInit {
         body: JSON.stringify({
           model: runtime.model,
           temperature: 0,
-          max_tokens: 5,
+          max_completion_tokens: 5,
           messages: [
             {
               role: 'user',

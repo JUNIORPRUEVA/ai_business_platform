@@ -57,7 +57,7 @@ export class OpenAiService {
           body: JSON.stringify({
             model,
             temperature,
-            max_tokens: maxTokens,
+            max_completion_tokens: maxTokens,
             messages,
           }),
         },
