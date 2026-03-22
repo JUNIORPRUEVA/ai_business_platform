@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import * as assert from 'node:assert/strict';
+import { test } from 'node:test';
 
 import { AiBrainContextBuilderService } from './modules/ai_brain/services/ai-brain-context-builder.service';
 import { AiBrainService } from './modules/ai_brain/services/ai-brain.service';
@@ -87,6 +87,9 @@ test('openai mock fallback responds naturally for greetings', async () => {
 
 test('ai brain replaces generic repetitive replies with a human sales reply', () => {
   const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
