@@ -32,6 +32,7 @@ import {
 @Injectable()
 export class BotConfigurationService implements OnModuleInit {
   private static constScope = 'default';
+  private static readonly defaultOpenAiModel = process.env.OPENAI_MODEL ?? 'gpt-5.4-mini';
   private readonly logger = new Logger(BotConfigurationService.name);
   private state!: BotConfigurationBundle;
   private snapshotId: string | null = null;
@@ -234,7 +235,10 @@ export class BotConfigurationService implements OnModuleInit {
 
     return {
       apiKey,
-      model: overrides?.model?.trim() || this.state.openai.model,
+      model:
+        overrides?.model?.trim() ||
+        this.state.openai.model.trim() ||
+        BotConfigurationService.defaultOpenAiModel,
       apiUrl:
         this.configService.get<string>('OPENAI_API_URL')?.trim() ||
         'https://api.openai.com/v1/chat/completions',

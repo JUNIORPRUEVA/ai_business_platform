@@ -16,6 +16,8 @@ class SettingsApiKeysPanel extends ConsumerStatefulWidget {
 }
 
 class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
+  static const _defaultOpenAiModel = 'gpt-5.4-mini';
+
   final openAiKey = TextEditingController();
   final metaToken = TextEditingController();
   final metaPhoneNumberId = TextEditingController();
@@ -25,6 +27,7 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isTestingOpenAi = false;
+  String _openAiModel = _defaultOpenAiModel;
   String? banner;
   bool bannerIsError = false;
 
@@ -66,6 +69,9 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
       final integrations = _asMap(configuration['integrations']);
 
       openAiKey.text = _readString(openAi, 'apiKey');
+        _openAiModel = _readString(openAi, 'model').trim().isEmpty
+          ? _defaultOpenAiModel
+          : _readString(openAi, 'model').trim();
       metaToken.text = _readString(integrations, 'metaCloudApiToken');
       metaPhoneNumberId.text = _readString(integrations, 'metaPhoneNumberId');
       instagramToken.text = _readString(integrations, 'instagramToken');
@@ -98,6 +104,7 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
         '/bot-configuration/openai',
         {
           'apiKey': openAiKey.text.trim(),
+          'model': _openAiModel,
         },
         token: token,
       );
@@ -158,6 +165,7 @@ class _SettingsApiKeysPanelState extends ConsumerState<SettingsApiKeysPanel> {
         '/bot-configuration/openai/test',
         {
           'apiKey': openAiKey.text.trim(),
+          'model': _openAiModel,
         },
         token: token,
       );
