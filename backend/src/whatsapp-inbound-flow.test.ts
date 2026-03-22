@@ -1243,6 +1243,88 @@ test('WhatsappWebhookService encola auto reply cuando el chat tiene modo agente 
   assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['conversationId'], 'conversation-1');
 });
 
+test('WhatsappWebhookService encola auto reply al numero del inbound actual aunque el chat tenga un sendTarget viejo', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '234840490270800@lid',
+      canonicalRemoteJid: '15551230000@s.whatsapp.net',
+      canonicalNumber: '15551230000',
+      sendTarget: '15551230000',
+      autoReplyEnabled: true,
+      pushName: 'Cliente',
+      profileName: 'Cliente',
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const queuedJobs: Array<Record<string, unknown>> = [];
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    chatsRepository,
+    messageProcessingQueue: {
+      add: async (name: string, data: Record<string, unknown>, options: Record<string, unknown>) => {
+        queuedJobs.push({ name, data, options });
+      },
+    },
+    messagingService: {
+      upsertInboundMessage: async (params: Record<string, unknown>) => ({
+        id: 'wa-message-lid-1',
+        chatId: 'chat-1',
+        remoteJid: params['remoteJid'],
+        messageType: params['messageType'],
+        fromMe: params['fromMe'],
+      }),
+      updateStoredMedia: async () => undefined,
+    },
+    appMessagesService: {
+      findByMetadataValue: async () => null,
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'app-message-lid-1',
+        ...payload,
+      }),
+    },
+  });
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      messages: [
+        {
+          key: {
+            remoteJid: '234840490270800@lid',
+            id: 'wamid-auto-current-sender',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          source: {
+            sender: '+1 (829) 534-4286',
+          },
+          message: { conversation: 'hola bot' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(queuedJobs.length, 1);
+  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['contactPhone'], '18295344286');
+});
+
 test('WhatsappWebhookService crea o reutiliza bridge de canal cuando no existe uno exacto por instanceName', async () => {
   const config = {
     id: 'config-1',
@@ -1439,9 +1521,7 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
         data: {
           key: { remoteJid, id: 'wamid-7', fromMe: false },
           source: {
-            owner: {
-              phoneNumber: '+1 (829) 534-4286',
-            },
+              sender: '+1 (829) 534-4286',
           },
           message: { conversation: 'hola' },
         },
@@ -1521,9 +1601,7 @@ test('EvolutionWebhookService usa el numero canonico para contacts.phone cuando 
         },
         pushName: 'Cliente',
         source: {
-          owner: {
-            phoneNumber: '+1 (829) 534-4286',
-          },
+          sender: '+1 (829) 534-4286',
         },
         message: {
           conversation: 'hola',

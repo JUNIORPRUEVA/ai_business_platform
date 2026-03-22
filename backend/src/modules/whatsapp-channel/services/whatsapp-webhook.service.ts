@@ -306,7 +306,14 @@ export class WhatsappWebhookService {
     await this.botCenterRealtimeService.publishMessageUpsert(messageForRealtime);
 
     if (!fromMe) {
-      await this.triggerAiAutoReply(config, messageForRealtime.chatId, messageForRealtime.id, content.textBody);
+      await this.triggerAiAutoReply(
+        config,
+        messageForRealtime.chatId,
+        messageForRealtime.id,
+        content.textBody,
+        remoteJid,
+        canonicalRemoteJid,
+      );
     }
 
     return {
@@ -323,6 +330,8 @@ export class WhatsappWebhookService {
     chatId: string,
     whatsappMessageId: string,
     textBody: string | null,
+    remoteJid: string,
+    canonicalRemoteJid?: string | null,
   ): Promise<void> {
     const chat = await this.chatsRepository.findOne({
       where: { id: chatId, companyId: config.companyId },
@@ -338,7 +347,7 @@ export class WhatsappWebhookService {
       return;
     }
 
-    const contactPhone = this.resolveConversationContactPhone(chat);
+    const contactPhone = this.resolveConversationContactPhone(chat, remoteJid, canonicalRemoteJid);
     if (!contactPhone) {
       this.logger.warn(
         `[AI AUTO REPLY] skipped companyId=${config.companyId} chatId=${chatId} reason=missing_contact_phone`,
@@ -424,8 +433,14 @@ export class WhatsappWebhookService {
     );
   }
 
-  private resolveConversationContactPhone(chat: WhatsappChatEntity): string {
+  private resolveConversationContactPhone(
+    chat: WhatsappChatEntity,
+    remoteJid?: string | null,
+    canonicalRemoteJid?: string | null,
+  ): string {
     const candidates = [
+      canonicalRemoteJid,
+      remoteJid,
       chat.sendTarget,
       chat.canonicalNumber,
       chat.canonicalRemoteJid,

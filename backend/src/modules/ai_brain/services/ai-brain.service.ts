@@ -140,7 +140,7 @@ export class AiBrainService {
         activePrompts,
       );
 
-      if (configuration.memory.enableShortTermMemory && configuration.memory.usePostgreSql) {
+      if (configuration.memory.enableShortTermMemory) {
         await this.backfillConversationMemoryIfNeeded(
           params.companyId,
           params.conversationId,
@@ -182,7 +182,7 @@ export class AiBrainService {
         });
       }
 
-      if (configuration.memory.enableOperationalMemory && configuration.memory.usePostgreSql) {
+      if (configuration.memory.enableOperationalMemory) {
         await this.memoryService.setContactMemory({
           companyId: params.companyId,
           contactId: contact.id,
@@ -289,7 +289,7 @@ export class AiBrainService {
           request: toolRequest,
         });
 
-        if (configuration.memory.enableOperationalMemory && configuration.memory.usePostgreSql) {
+        if (configuration.memory.enableOperationalMemory) {
           await this.memoryService.appendConversationMemory({
             companyId: params.companyId,
             contactId: contact.id,
@@ -355,7 +355,7 @@ export class AiBrainService {
       });
       this.logger.log(`[AI BRAIN] assistant message saved id=${botMessage.id}`);
 
-      if (configuration.memory.enableShortTermMemory && configuration.memory.usePostgreSql) {
+      if (configuration.memory.enableShortTermMemory) {
         await this.memoryService.appendConversationMemory({
           companyId: params.companyId,
           contactId: contact.id,
@@ -395,7 +395,7 @@ export class AiBrainService {
         }
       }
 
-      if (configuration.memory.summaryEnabled && configuration.memory.usePostgreSql) {
+      if (configuration.memory.summaryEnabled) {
         await this.memoryService.refreshConversationSummary({
           companyId: params.companyId,
           contactId: contact.id,
