@@ -531,7 +531,7 @@ export class BotCenterService {
     );
 
     this.logger.log(
-      `[BOT SEND RESOLUTION] companyId=${companyId} conversationId=${payload.conversationId} remoteJidOriginal=${conversation.remoteJid} canonicalJid=${resolution.canonicalJid ?? '(none)'} canonicalPhone=${resolution.canonicalNumber ?? '(none)'} finalSendTarget=${resolution.canonicalNumber ?? '(none)'} source=${resolution.source ?? 'none'} safeToSend=${resolution.safeToSend} reason=${resolution.reason ?? 'ok'}`,
+      `[BOT SEND RESOLUTION] companyId=${companyId} conversationId=${payload.conversationId} remoteJidOriginal=${conversation.remoteJid} canonicalJid=${resolution.canonicalJid ?? '(none)'} canonicalPhone=${resolution.canonicalNumber ?? '(none)'} finalSendTarget=${resolution.finalSendTarget ?? '(none)'} outboundRemoteJid=${resolution.outboundRemoteJid ?? '(none)'} source=${resolution.source ?? 'none'} safeToSend=${resolution.safeToSend} reason=${resolution.reason ?? 'ok'}`,
     );
 
     if (!resolution.safeToSend) {
@@ -955,6 +955,12 @@ export class BotCenterService {
   }
 
   private resolveConversationContactPhone(chat: WhatsappChatEntity): string {
+    const remoteJid = chat.remoteJid?.trim() ?? '';
+    const remoteDigits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+    if (remoteDigits) {
+      return remoteDigits;
+    }
+
     const sendTarget = chat.sendTarget?.trim();
     if (sendTarget) {
       return sendTarget;
@@ -972,15 +978,6 @@ export class BotCenterService {
         return digits;
       }
     }
-
-    const remoteJid = chat.remoteJid?.trim() ?? '';
-    if (remoteJid.endsWith('@s.whatsapp.net')) {
-      const digits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
-      if (digits) {
-        return digits;
-      }
-    }
-
     return remoteJid;
   }
 

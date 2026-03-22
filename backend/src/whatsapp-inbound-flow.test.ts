@@ -1358,7 +1358,10 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   const service = new WhatsappMessagingService(
     chatsRepository as never,
     messagesRepository as never,
-    {} as never,
+    {
+      getEntity: async () => ({ id: 'config-1', companyId: 'company-1', instanceName: 'demo-instance', instancePhone: null }),
+      getEntityById: async () => ({ id: 'config-1', companyId: 'company-1', instanceName: 'demo-instance', instancePhone: null }),
+    } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -1371,10 +1374,12 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   assert.equal(result.safeToSend, true);
   assert.equal(result.canonicalJid, '18295344286@s.whatsapp.net');
   assert.equal(result.canonicalNumber, '18295344286');
+  assert.equal(result.finalSendTarget, '234840490270800');
+  assert.equal(result.outboundRemoteJid, '234840490270800@lid');
   assert.equal(result.source, 'last_inbound_payload');
   assert.equal(updatedChat?.canonicalRemoteJid, '18295344286@s.whatsapp.net');
   assert.equal(updatedChat?.canonicalNumber, '18295344286');
-  assert.equal(updatedChat?.sendTarget, '18295344286');
+  assert.equal(updatedChat?.sendTarget, null);
   assert.equal(updatedChat?.replyTargetUnresolved, false);
 });
 
@@ -1946,7 +1951,10 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   const service = new WhatsappMessagingService(
     chatsRepository as never,
     messagesRepository as never,
-    {} as never,
+    {
+      getEntity: async () => ({ id: 'config-1', companyId: 'company-1', instanceName: 'demo-instance', instancePhone: null }),
+      getEntityById: async () => ({ id: 'config-1', companyId: 'company-1', instanceName: 'demo-instance', instancePhone: null }),
+    } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -1962,7 +1970,7 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   assert.equal(result.source, 'last_inbound_payload');
   assert.equal(updatedChat?.canonicalRemoteJid, '18295344286@s.whatsapp.net');
   assert.equal(updatedChat?.canonicalNumber, '18295344286');
-  assert.equal(updatedChat?.sendTarget, '18295344286');
+  assert.equal(updatedChat?.sendTarget, null);
   assert.equal(updatedChat?.replyTargetUnresolved, false);
 });
 
@@ -2092,8 +2100,115 @@ test('BotCenterService prioriza numeros limpios sobre JIDs al resolver contacts.
     sendTarget: null,
   });
 
-  assert.equal(fromSendTarget, '18295344286');
+  assert.equal(fromSendTarget, '234840490270800');
   assert.equal(fromCanonicalJid, '18295344286');
+});
+
+test('WhatsappMessagingService bloquea envio cuando chat.remoteJid apunta al numero de la instancia', async () => {
+  const capturedPayloads: Array<Record<string, unknown>> = [];
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    instanceName: 'demo-instance',
+    instancePhone: '18295319442',
+  };
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '18295319442@s.whatsapp.net',
+      originalRemoteJid: '18295319442@s.whatsapp.net',
+      rawRemoteJid: '18295319442@s.whatsapp.net',
+      canonicalRemoteJid: '18295319442@s.whatsapp.net',
+      canonicalNumber: '18295319442',
+      sendTarget: '18295319442',
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([]);
+
+  const service = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    {
+      getEntity: async () => config,
+      getEntityById: async () => config,
+    } as never,
+    {
+      sendText: async (_config: unknown, body: Record<string, unknown>) => {
+        capturedPayloads.push(body);
+        return { key: { id: 'wamid-outbound-1' }, status: 'sent' };
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  await assert.rejects(
+    service.sendText('company-1', {
+      channelConfigId: 'config-1',
+      remoteJid: '18295319442@s.whatsapp.net',
+      text: 'hola',
+    }),
+    /coincide con el numero de la instancia/,
+  );
+  assert.equal(capturedPayloads.length, 0);
+});
+
+test('WhatsappMessagingService envia al telefono extraido de chat.remoteJid y no al canonical', async () => {
+  const capturedPayloads: Array<Record<string, unknown>> = [];
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    instanceName: 'demo-instance',
+    instancePhone: '9999999999',
+  };
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '234840490270800@lid',
+      originalRemoteJid: '234840490270800@lid',
+      rawRemoteJid: '234840490270800@lid',
+      canonicalRemoteJid: '18295319442@s.whatsapp.net',
+      canonicalNumber: '18295319442',
+      sendTarget: '18295319442',
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([]);
+
+  const service = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    {
+      getEntity: async () => config,
+      getEntityById: async () => config,
+    } as never,
+    {
+      sendText: async (_config: unknown, body: Record<string, unknown>) => {
+        capturedPayloads.push(body);
+        return { key: { id: 'wamid-outbound-1' }, status: 'sent' };
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  await service.sendText('company-1', {
+    channelConfigId: 'config-1',
+    remoteJid: '234840490270800@lid',
+    text: 'hola',
+  });
+
+  assert.equal(capturedPayloads.length, 1);
+  assert.equal(capturedPayloads[0]['number'], '234840490270800');
 });
 
 test('BotCenterService resuelve canal por fallback cuando no existe bridge exacto por instanceName', async () => {

@@ -40,19 +40,23 @@ export class WhatsappMessagingService {
     reason?: string;
     canonicalJid: string | null;
     canonicalNumber: string | null;
+    finalSendTarget: string | null;
+    outboundRemoteJid: string | null;
     source: 'remoteJid' | 'chat' | 'last_inbound_payload' | null;
   }> {
     const rawRemoteJid = remoteJid;
     const normalizedRemoteJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid, { throwOnEmpty: true });
 
     try {
-      const resolved = await this.resolveCanonicalRecipientWithSource(companyId, normalizedRemoteJid);
+      const resolved = await this.resolveOutboundRecipientWithSource(companyId, normalizedRemoteJid);
       return {
         rawRemoteJid,
         normalizedRemoteJid,
         safeToSend: true,
         canonicalJid: resolved.jid,
         canonicalNumber: resolved.number,
+        finalSendTarget: resolved.sendTarget,
+        outboundRemoteJid: resolved.remoteJid,
         source: resolved.source,
       };
     } catch (error) {
@@ -64,6 +68,8 @@ export class WhatsappMessagingService {
         reason: message,
         canonicalJid: null,
         canonicalNumber: null,
+        finalSendTarget: null,
+        outboundRemoteJid: null,
         source: null,
       };
     }
@@ -86,27 +92,35 @@ export class WhatsappMessagingService {
   async sendText(companyId: string, payload: SendWhatsappTextDto): Promise<Record<string, unknown>> {
     const rawRemoteJid = payload.remoteJid;
     const normalizedJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid, { throwOnEmpty: true });
+    const resolution = await this.diagnoseRecipientResolution(companyId, normalizedJid);
     const config = await this.resolveOutboundConfig(
       companyId,
       normalizedJid,
       payload.channelConfigId,
     );
 
-    const resolution = await this.diagnoseRecipientResolution(companyId, normalizedJid);
-    if (!resolution.safeToSend || !resolution.canonicalNumber || !resolution.canonicalJid) {
+    if (!resolution.safeToSend || !resolution.finalSendTarget || !resolution.outboundRemoteJid) {
       this.logger.warn(
-        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=(none) canonicalPhone=(none) finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
+        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${resolution.canonicalJid ?? '(none)'} canonicalPhone=${resolution.canonicalNumber ?? '(none)'} finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
       );
       throw new BadRequestException(
         resolution.reason ??
-          `No se encontró destinatario canónico para este chat. remoteJid original=${rawRemoteJid}`,
+          `No se encontró un destino válido para este chat. remoteJid original=${rawRemoteJid}`,
       );
     }
 
-    const recipient = { jid: resolution.canonicalJid, number: resolution.canonicalNumber };
+    const recipient = {
+      jid: resolution.outboundRemoteJid,
+      number: resolution.finalSendTarget,
+      canonicalJid: resolution.canonicalJid,
+      canonicalNumber: resolution.canonicalNumber,
+    };
+
+    console.log('CHAT REMOTE JID:', recipient.jid);
+    console.log('OUTBOUND TARGET:', recipient.number);
 
     this.logger.log(
-      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.jid} canonicalPhone=${recipient.number} finalSendTarget=${recipient.number} source=${resolution.source} safeToSend=true`,
+      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.canonicalJid ?? '(none)'} canonicalPhone=${recipient.canonicalNumber ?? '(none)'} finalSendTarget=${recipient.number} outboundRemoteJid=${recipient.jid} source=${resolution.source} safeToSend=true`,
     );
     const evolutionPayload: Record<string, unknown> = {
       number: recipient.number,
@@ -115,7 +129,7 @@ export class WhatsappMessagingService {
     };
 
     this.logger.log(
-      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} rawRemoteJid=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} messageLength=${payload.text?.trim().length ?? 0}`,
+      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} rawRemoteJid=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} outboundRemoteJid=${recipient.jid} finalSendTarget=${recipient.number} messageLength=${payload.text?.trim().length ?? 0}`,
     );
     this.logger.log(
       `[WHATSAPP OUTBOUND] send payload instanceName=${config.instanceName} endpoint=/message/sendText payload=${JSON.stringify(evolutionPayload)}`,
@@ -126,7 +140,7 @@ export class WhatsappMessagingService {
       response = await this.evolutionApiClient.sendText(config, evolutionPayload);
     } catch (error) {
       this.logger.error(
-        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} rawRemoteJid=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} error=${this.formatErrorForLog(error)}`,
+        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} rawRemoteJid=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} outboundRemoteJid=${recipient.jid} finalSendTarget=${recipient.number} error=${this.formatErrorForLog(error)}`,
       );
       throw error;
     }
@@ -135,7 +149,7 @@ export class WhatsappMessagingService {
       `[WHATSAPP OUTBOUND] send success instanceName=${config.instanceName} endpoint=/message/sendText response=${this.safeJsonForLog(response)}`,
     );
 
-    const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
+    const chat = await this.findOrCreateChat(config, recipient.jid, undefined, recipient.canonicalJid);
     const message = await this.createOutboundMessage({
       companyId,
       config,
@@ -163,20 +177,28 @@ export class WhatsappMessagingService {
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.mediaUrl);
 
     const resolution = await this.diagnoseRecipientResolution(companyId, normalizedJid);
-    if (!resolution.safeToSend || !resolution.canonicalNumber || !resolution.canonicalJid) {
+    if (!resolution.safeToSend || !resolution.finalSendTarget || !resolution.outboundRemoteJid) {
       this.logger.warn(
-        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=(none) canonicalPhone=(none) finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
+        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${resolution.canonicalJid ?? '(none)'} canonicalPhone=${resolution.canonicalNumber ?? '(none)'} finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
       );
       throw new BadRequestException(
         resolution.reason ??
-          `No se encontró destinatario canónico para este chat. remoteJid original=${payload.remoteJid}`,
+          `No se encontró un destino válido para este chat. remoteJid original=${payload.remoteJid}`,
       );
     }
 
-    const recipient = { jid: resolution.canonicalJid, number: resolution.canonicalNumber };
+    const recipient = {
+      jid: resolution.outboundRemoteJid,
+      number: resolution.finalSendTarget,
+      canonicalJid: resolution.canonicalJid,
+      canonicalNumber: resolution.canonicalNumber,
+    };
+
+    console.log('CHAT REMOTE JID:', recipient.jid);
+    console.log('OUTBOUND TARGET:', recipient.number);
 
     this.logger.log(
-      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.jid} canonicalPhone=${recipient.number} finalSendTarget=${recipient.number} source=${resolution.source} safeToSend=true`,
+      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.canonicalJid ?? '(none)'} canonicalPhone=${recipient.canonicalNumber ?? '(none)'} finalSendTarget=${recipient.number} outboundRemoteJid=${recipient.jid} source=${resolution.source} safeToSend=true`,
     );
 
     const evolutionPayload: Record<string, unknown> = {
@@ -190,7 +212,7 @@ export class WhatsappMessagingService {
     };
 
     this.logger.log(
-      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=${payload.mediaType}`,
+      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} outboundRemoteJid=${recipient.jid} finalSendTarget=${recipient.number} mediaType=${payload.mediaType}`,
     );
     this.logger.log(
       `[WHATSAPP OUTBOUND] send payload instanceName=${config.instanceName} endpoint=/message/sendMedia payload=${this.safeJsonForLog(evolutionPayload)}`,
@@ -201,7 +223,7 @@ export class WhatsappMessagingService {
       response = await this.evolutionApiClient.sendMedia(config, evolutionPayload);
     } catch (error) {
       this.logger.error(
-        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=${payload.mediaType} error=${this.formatErrorForLog(error)}`,
+        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} outboundRemoteJid=${recipient.jid} finalSendTarget=${recipient.number} mediaType=${payload.mediaType} error=${this.formatErrorForLog(error)}`,
       );
       throw error;
     }
@@ -210,7 +232,7 @@ export class WhatsappMessagingService {
       `[WHATSAPP OUTBOUND] send success instanceName=${config.instanceName} endpoint=/message/sendMedia response=${this.safeJsonForLog(response)}`,
     );
 
-    const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
+    const chat = await this.findOrCreateChat(config, recipient.jid, undefined, recipient.canonicalJid);
     const message = await this.createOutboundMessage({
       companyId,
       config,
@@ -245,20 +267,28 @@ export class WhatsappMessagingService {
     const outboundMedia = await this.resolveOutboundMedia(companyId, payload.attachmentId, payload.audioUrl);
 
     const resolution = await this.diagnoseRecipientResolution(companyId, normalizedJid);
-    if (!resolution.safeToSend || !resolution.canonicalNumber || !resolution.canonicalJid) {
+    if (!resolution.safeToSend || !resolution.finalSendTarget || !resolution.outboundRemoteJid) {
       this.logger.warn(
-        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=(none) canonicalPhone=(none) finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
+        `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${resolution.canonicalJid ?? '(none)'} canonicalPhone=${resolution.canonicalNumber ?? '(none)'} finalSendTarget=(none) source=${resolution.source ?? 'none'} safeToSend=false reason=${resolution.reason ?? 'canonical_target_not_found'}`,
       );
       throw new BadRequestException(
         resolution.reason ??
-          `No se encontró destinatario canónico para este chat. remoteJid original=${payload.remoteJid}`,
+          `No se encontró un destino válido para este chat. remoteJid original=${payload.remoteJid}`,
       );
     }
 
-    const recipient = { jid: resolution.canonicalJid, number: resolution.canonicalNumber };
+    const recipient = {
+      jid: resolution.outboundRemoteJid,
+      number: resolution.finalSendTarget,
+      canonicalJid: resolution.canonicalJid,
+      canonicalNumber: resolution.canonicalNumber,
+    };
+
+    console.log('CHAT REMOTE JID:', recipient.jid);
+    console.log('OUTBOUND TARGET:', recipient.number);
 
     this.logger.log(
-      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.jid} canonicalPhone=${recipient.number} finalSendTarget=${recipient.number} source=${resolution.source} safeToSend=true`,
+      `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} canonicalJid=${recipient.canonicalJid ?? '(none)'} canonicalPhone=${recipient.canonicalNumber ?? '(none)'} finalSendTarget=${recipient.number} outboundRemoteJid=${recipient.jid} source=${resolution.source} safeToSend=true`,
     );
 
     const evolutionPayload: Record<string, unknown> = {
@@ -268,7 +298,7 @@ export class WhatsappMessagingService {
     };
 
     this.logger.log(
-      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=audio`,
+      `[WHATSAPP OUTBOUND] preparing send companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} outboundRemoteJid=${recipient.jid} finalSendTarget=${recipient.number} mediaType=audio`,
     );
     this.logger.log(
       `[WHATSAPP OUTBOUND] send payload instanceName=${config.instanceName} endpoint=/message/sendWhatsAppAudio payload=${this.safeJsonForLog(evolutionPayload)}`,
@@ -279,7 +309,7 @@ export class WhatsappMessagingService {
       response = await this.evolutionApiClient.sendWhatsAppAudio(config, evolutionPayload);
     } catch (error) {
       this.logger.error(
-        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} canonicalRemoteJid=${recipient.jid} canonicalNumber=${recipient.number} mediaType=audio error=${this.formatErrorForLog(error)}`,
+        `[WHATSAPP OUTBOUND] send failed companyId=${companyId} channelConfigId=${config.id} instanceName=${config.instanceName} normalizedRemoteJid=${normalizedJid} outboundRemoteJid=${recipient.jid} finalSendTarget=${recipient.number} mediaType=audio error=${this.formatErrorForLog(error)}`,
       );
       throw error;
     }
@@ -288,7 +318,7 @@ export class WhatsappMessagingService {
       `[WHATSAPP OUTBOUND] send success instanceName=${config.instanceName} endpoint=/message/sendWhatsAppAudio response=${this.safeJsonForLog(response)}`,
     );
 
-    const chat = await this.findOrCreateChat(config, normalizedJid, undefined, recipient.jid);
+    const chat = await this.findOrCreateChat(config, recipient.jid, undefined, recipient.canonicalJid);
     const message = await this.createOutboundMessage({
       companyId,
       config,
@@ -413,8 +443,12 @@ export class WhatsappMessagingService {
       if (normalizedCanonical && existing.canonicalRemoteJid !== normalizedCanonical) {
         existing.canonicalRemoteJid = normalizedCanonical;
         existing.canonicalNumber = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(normalizedCanonical));
-        existing.sendTarget = existing.canonicalNumber;
         existing.replyTargetUnresolved = false;
+      }
+
+      const derivedSendTarget = this.extractPhoneFromRemoteJid(existing.remoteJid);
+      if (derivedSendTarget) {
+        existing.sendTarget = derivedSendTarget;
       }
 
       if (rawRemoteJid && (!existing.rawRemoteJid || existing.rawRemoteJid !== rawRemoteJid)) {
@@ -443,6 +477,7 @@ export class WhatsappMessagingService {
       : (remoteJid.endsWith('@s.whatsapp.net')
           ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(remoteJid))
           : null);
+    const derivedSendTarget = this.extractPhoneFromRemoteJid(remoteJid);
 
     const entity = this.chatsRepository.create({
       companyId: config.companyId,
@@ -452,7 +487,7 @@ export class WhatsappMessagingService {
       rawRemoteJid: rawRemoteJid ?? remoteJid,
       canonicalRemoteJid: normalizedCanonical,
       canonicalNumber,
-      sendTarget: canonicalNumber,
+      sendTarget: derivedSendTarget,
       lastInboundJidType: lastInboundJidType ?? this.jidResolver.detectJidType(remoteJid),
       replyTargetUnresolved: replyTargetUnresolved ?? (remoteJid.endsWith('@lid') && !normalizedCanonical),
       pushName: pushName ?? null,
@@ -742,28 +777,38 @@ export class WhatsappMessagingService {
     return jid.replace(/@.+$/, '').replace(/\D/g, '');
   }
 
-  private async resolveCanonicalRecipientWithSource(
+  private async resolveOutboundRecipientWithSource(
     companyId: string,
     remoteJid: string,
-  ): Promise<{ jid: string; number: string; source: 'remoteJid' | 'chat' | 'last_inbound_payload' }> {
-    if (remoteJid.endsWith('@s.whatsapp.net')) {
-      const number = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(remoteJid));
-      if (!number) {
-        throw new BadRequestException('remoteJid no contiene digitos.');
-      }
-      return { jid: `${number}@s.whatsapp.net`, number, source: 'remoteJid' };
+  ): Promise<{
+    jid: string | null;
+    number: string | null;
+    sendTarget: string;
+    remoteJid: string;
+    source: 'remoteJid' | 'chat' | 'last_inbound_payload';
+  }> {
+    const chat = await this.chatsRepository.findOne({ where: { companyId, remoteJid } });
+    const outboundRemoteJid = this.readString(chat?.remoteJid) || remoteJid;
+    const sendTarget = this.extractPhoneFromRemoteJid(outboundRemoteJid);
+    if (!sendTarget) {
+      throw new BadRequestException(`remoteJid no contiene digitos para envío: ${outboundRemoteJid}`);
     }
 
-    if (remoteJid.endsWith('@lid')) {
-      const chat = await this.chatsRepository.findOne({ where: { companyId, remoteJid } });
-      const canonical = this.jidResolver.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid);
-      if (canonical) {
-        const number = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(canonical));
-        if (number) {
-          return { jid: canonical, number, source: 'chat' };
-        }
-      }
+    const config = await this.resolveOutboundConfig(companyId, remoteJid, chat?.channelConfigId);
+    if (this.isInstanceSendTarget(config, sendTarget)) {
+      const instancePhone = this.readString(config.instancePhone) || '(none)';
+      this.logger.error(
+        `[WHATSAPP OUTBOUND] blocked instance target companyId=${companyId} instanceName=${config.instanceName} chatRemoteJid=${outboundRemoteJid} sendTarget=${sendTarget} instancePhone=${instancePhone}`,
+      );
+      throw new BadRequestException(
+        `Destino bloqueado: el target ${sendTarget} coincide con el numero de la instancia. chat.remoteJid=${outboundRemoteJid}`,
+      );
+    }
 
+    let source: 'remoteJid' | 'chat' | 'last_inbound_payload' = chat ? 'chat' : 'remoteJid';
+    let canonicalJid = this.jidResolver.normalizeCanonicalRemoteJid(chat?.canonicalRemoteJid);
+
+    if (!canonicalJid && remoteJid.endsWith('@lid')) {
       const lastInbound = await this.messagesRepository.findOne({
         where: { companyId, remoteJid, direction: 'inbound' },
         order: { createdAt: 'DESC' },
@@ -776,23 +821,47 @@ export class WhatsappMessagingService {
         : null;
 
       if (extracted) {
-        const number = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(extracted));
+        canonicalJid = extracted;
+        source = 'last_inbound_payload';
+
         if (chat) {
           chat.canonicalRemoteJid = extracted;
-          chat.canonicalNumber = number;
-          chat.sendTarget = number;
+          chat.canonicalNumber = this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(extracted));
           chat.replyTargetUnresolved = false;
           await this.chatsRepository.save(chat);
         }
-        return { jid: extracted, number, source: 'last_inbound_payload' };
       }
-
-      throw new BadRequestException(
-        `No se puede responder a este chat (@lid) porque no se encontró un destinatario canónico (@s.whatsapp.net) en los datos recibidos. remoteJid=${remoteJid}`,
-      );
     }
 
-    throw new BadRequestException(`remoteJid no soportado para envío: ${remoteJid}`);
+    if (!canonicalJid && remoteJid.endsWith('@s.whatsapp.net')) {
+      canonicalJid = this.jidResolver.normalizeCanonicalRemoteJid(remoteJid);
+    }
+
+    const canonicalNumber = canonicalJid
+      ? this.jidResolver.normalizeOutboundNumber(this.jidResolver.jidToNumber(canonicalJid))
+      : null;
+
+    return {
+      jid: canonicalJid,
+      number: canonicalNumber,
+      sendTarget,
+      remoteJid: outboundRemoteJid,
+      source,
+    };
+  }
+
+  private extractPhoneFromRemoteJid(remoteJid: string): string {
+    return this.jidResolver.extractPhoneFromJid(remoteJid.trim());
+  }
+
+  private isInstanceSendTarget(config: WhatsappChannelConfigEntity, sendTarget: string): boolean {
+    const instancePhone = this.readString(config.instancePhone);
+    if (!instancePhone) {
+      return false;
+    }
+
+    return this.jidResolver.normalizeOutboundNumber(sendTarget) ===
+      this.jidResolver.normalizeOutboundNumber(instancePhone);
   }
 
   private extractCanonicalRemoteJidFromPayload(payload: Record<string, unknown>): string | null {
