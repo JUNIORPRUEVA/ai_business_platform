@@ -11,6 +11,7 @@ import { WhatsappWebhookService } from './modules/whatsapp-channel/services/what
 import { WhatsappInstancesService } from './modules/whatsapp-instances/services/whatsapp-instances.service';
 import { EvolutionWebhookService } from './modules/evolution-webhook/services/evolution-webhook.service';
 import { BotCenterService } from './modules/bot-center/services/bot-center.service';
+import { EvolutionService } from './modules/evolution/evolution.service';
 
 class InMemoryRepository<T extends { id?: string; createdAt?: Date; updatedAt?: Date }> {
   constructor(private readonly items: T[] = []) {}
@@ -311,6 +312,73 @@ test('EvolutionApiClientService decodifica texto base64 plano en descargas media
   assert.ok(resolved);
   assert.equal(resolved?.contentType, 'image/png');
   assert.deepEqual(resolved?.buffer, pngHeader);
+});
+
+test('EvolutionService usa el payload exacto de Evolution al configurar webhooks', async () => {
+  const service = Object.create(EvolutionService.prototype) as EvolutionService;
+  const captured: {
+    path?: string;
+    init?: RequestInit;
+    trace?: Record<string, unknown>;
+  } = {};
+
+  (
+    service as unknown as {
+      requestJsonWithTracing: (
+        path: string,
+        init: RequestInit,
+        trace: Record<string, unknown>,
+      ) => Promise<Record<string, unknown>>;
+    }
+  ).requestJsonWithTracing = async (path, init, trace) => {
+    captured.path = path;
+    captured.init = init;
+    captured.trace = trace;
+    return { ok: true };
+  };
+
+  await service.setWebhook({
+    instanceName: 'demo-instance',
+    webhookUrl: 'https://app.example.com/webhook/evolution',
+    events: ['messages.upsert', 'CONNECTION_UPDATE'],
+  });
+
+  assert.equal(captured.path, '/webhook/set/demo-instance');
+  assert.ok(captured.init?.body);
+  assert.deepEqual(JSON.parse(String(captured.init?.body)), {
+    enabled: true,
+    url: 'https://app.example.com/webhook/evolution',
+    webhook_by_events: true,
+    webhook_base64: false,
+    events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+  });
+});
+
+test('WhatsappInstancesService lee respuestas anidadas de webhook.find devueltas por Evolution', () => {
+  const service = Object.create(WhatsappInstancesService.prototype) as WhatsappInstancesService;
+  const remote = {
+    webhook: {
+      webhook: {
+        enabled: true,
+        url: 'https://app.example.com/webhook/evolution',
+        events: ['messages.upsert', 'connection.update'],
+      },
+    },
+  };
+
+  const url = (
+    service as unknown as {
+      readWebhookUrl: (value: Record<string, unknown>) => string;
+    }
+  ).readWebhookUrl(remote);
+  const events = (
+    service as unknown as {
+      readWebhookEvents: (value: Record<string, unknown>) => string[];
+    }
+  ).readWebhookEvents(remote);
+
+  assert.equal(url, 'https://app.example.com/webhook/evolution');
+  assert.deepEqual(events, ['MESSAGES_UPSERT', 'CONNECTION_UPDATE']);
 });
 
 test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guarda en el flujo de la UI', async () => {

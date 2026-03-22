@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 
 import { BotConfigurationEntity } from '../bot-configuration/entities/bot-configuration.entity';
 import {
+  buildEvolutionWebhookPayload,
   normalizeEvolutionWebhookEvents,
   VALID_EVOLUTION_WEBHOOK_EVENTS,
 } from '../whatsapp-channel/services/whatsapp-normalization.util';
@@ -250,13 +251,13 @@ export class EvolutionService {
     webhookUrl: string;
     events?: string[];
   }): Promise<unknown> {
-    const flatPayload = {
+    const flatPayload = buildEvolutionWebhookPayload({
       enabled: true,
       url: params.webhookUrl,
       webhookByEvents: true,
       webhookBase64: false,
       events: this.normalizeEventsForApi(params.events ?? this.getDefaultInstanceWebhookEvents()),
-    };
+    });
 
     return this.requestJsonWithTracing(
       `/webhook/set/${encodeURIComponent(params.instanceName)}`,

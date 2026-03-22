@@ -13,9 +13,13 @@ import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config
 import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappSecretService } from './whatsapp-secret.service';
 import {
+  buildEvolutionWebhookPayload,
   normalizeEvolutionWebhookEvent,
   normalizeEvolutionWebhookEvents,
+  normalizeComparableWebhookUrl,
   normalizeWhatsappPhoneNumber,
+  readEvolutionWebhookEvents,
+  readEvolutionWebhookUrl,
 } from './whatsapp-normalization.util';
 
 const DEFAULT_WEBHOOK_EVENTS = normalizeEvolutionWebhookEvents();
@@ -341,13 +345,13 @@ export class WhatsappChannelConfigService {
   }
 
   private buildWebhookPayload(entity: WhatsappChannelConfigEntity): Record<string, unknown> {
-    return {
+    return buildEvolutionWebhookPayload({
       enabled: entity.webhookEnabled,
-      url: entity.webhookUrl,
+      url: entity.webhookUrl ?? '',
       webhookByEvents: true,
       webhookBase64: entity.webhookBase64,
       events: entity.webhookEventsJson.map((event) => this.normalizeWebhookEvent(event)),
-    };
+    });
   }
 
   private compareWebhook(
@@ -356,47 +360,16 @@ export class WhatsappChannelConfigService {
   ): boolean {
     const remoteUrl = this.readWebhookUrl(remote);
     const remoteEvents = this.readWebhookEvents(remote);
-    return remoteUrl === (entity.webhookUrl ?? '') &&
+    return normalizeComparableWebhookUrl(remoteUrl) === normalizeComparableWebhookUrl(entity.webhookUrl ?? '') &&
       JSON.stringify(remoteEvents.sort()) === JSON.stringify(entity.webhookEventsJson.map((event) => this.normalizeWebhookEvent(event)).sort());
   }
 
   private readWebhookUrl(remote: Record<string, unknown>): string {
-    const direct = this.readString(remote['webhook']) ||
-      this.readString(remote['url']) ||
-      this.readString(remote['webhookUrl']);
-    if (direct) {
-      return direct;
-    }
-
-    const nestedCandidates = [remote['data'], remote['instance'], remote['webhookData']];
-    for (const candidate of nestedCandidates) {
-      const map = this.readMap(candidate);
-      const nested = this.readString(map['webhook']) ||
-        this.readString(map['url']) ||
-        this.readString(map['webhookUrl']);
-      if (nested) {
-        return nested;
-      }
-    }
-
-    return '';
+    return readEvolutionWebhookUrl(remote);
   }
 
   private readWebhookEvents(remote: Record<string, unknown>): string[] {
-    const direct = this.readStringArray(remote['events']);
-    if (direct.length > 0) {
-      return direct.map((event) => this.normalizeWebhookEvent(event));
-    }
-
-    const nestedCandidates = [remote['data'], remote['instance'], remote['webhookData']];
-    for (const candidate of nestedCandidates) {
-      const nested = this.readStringArray(this.readMap(candidate)['events']);
-      if (nested.length > 0) {
-        return nested.map((event) => this.normalizeWebhookEvent(event));
-      }
-    }
-
-    return [];
+    return readEvolutionWebhookEvents(remote).map((event) => this.normalizeWebhookEvent(event));
   }
 
   private normalizeWebhookEvent(event: string): string {

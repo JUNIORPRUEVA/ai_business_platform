@@ -64,6 +64,61 @@ export function normalizeEvolutionWebhookEvents(events?: string[] | null): strin
   return [...normalized];
 }
 
+export function buildEvolutionWebhookPayload(params: {
+  enabled?: boolean;
+  url: string;
+  webhookByEvents?: boolean;
+  webhookBase64?: boolean;
+  events?: string[] | null;
+}): {
+  enabled: boolean;
+  url: string;
+  webhook_by_events: boolean;
+  webhook_base64: boolean;
+  events: string[];
+} {
+  return {
+    enabled: params.enabled ?? true,
+    url: params.url.trim(),
+    webhook_by_events: params.webhookByEvents ?? true,
+    webhook_base64: params.webhookBase64 ?? false,
+    events: normalizeEvolutionWebhookEvents(params.events),
+  };
+}
+
+export function readEvolutionWebhookUrl(source: Record<string, unknown>): string {
+  for (const candidate of collectEvolutionWebhookMaps(source)) {
+    const direct =
+      readString(candidate['url']) ||
+      readString(candidate['webhookUrl']) ||
+      readString(candidate['webhook_url']) ||
+      readString(candidate['webhook']);
+    if (direct) {
+      return direct;
+    }
+  }
+
+  return '';
+}
+
+export function readEvolutionWebhookEvents(source: Record<string, unknown>): string[] {
+  for (const candidate of collectEvolutionWebhookMaps(source)) {
+    const direct =
+      readStringArray(candidate['events']) ||
+      readStringArray(candidate['webhookEvents']) ||
+      readStringArray(candidate['webhook_events']);
+    if (direct.length > 0) {
+      return normalizeEvolutionWebhookEvents(direct);
+    }
+  }
+
+  return [];
+}
+
+export function normalizeComparableWebhookUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
 export function normalizeWhatsappPhoneNumber(value: string): string | null {
   const digits = value.replace(/\D/g, '');
   if (!digits) {
@@ -110,4 +165,48 @@ export function normalizeWhatsappJid(
 
 export function extractDigitsFromWhatsappJid(value: string): string {
   return value.replace(/@.+$/, '').replace(/\D/g, '');
+}
+
+function collectEvolutionWebhookMaps(source: Record<string, unknown>): Record<string, unknown>[] {
+  const collected: Record<string, unknown>[] = [];
+  const queue: Record<string, unknown>[] = [source];
+  const seen = new Set<Record<string, unknown>>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || seen.has(current)) {
+      continue;
+    }
+
+    seen.add(current);
+    collected.push(current);
+
+    for (const key of ['data', 'instance', 'webhookData', 'webhook_data', 'webhook']) {
+      const nested = readMap(current[key]);
+      if (Object.keys(nested).length > 0) {
+        queue.push(nested);
+      }
+    }
+  }
+
+  return collected;
+}
+
+function readMap(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }

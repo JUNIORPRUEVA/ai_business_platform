@@ -20,8 +20,11 @@ import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-
 import { WhatsappChannelConfigService } from '../../whatsapp-channel/services/whatsapp-channel-config.service';
 import {
   normalizeEvolutionWebhookEvent,
+  normalizeComparableWebhookUrl,
   normalizeWhatsappJid,
   normalizeWhatsappPhoneNumber,
+  readEvolutionWebhookEvents,
+  readEvolutionWebhookUrl,
 } from '../../whatsapp-channel/services/whatsapp-normalization.util';
 import { WhatsappWebhookService } from '../../whatsapp-channel/services/whatsapp-webhook.service';
 import { WhatsappInstanceEntity, WhatsappInstanceStatus } from '../entities/whatsapp-instance.entity';
@@ -729,10 +732,16 @@ export class WhatsappInstancesService {
     const remote = await this.evolutionService.findWebhook(instanceName);
     const remoteWebhookUrl = this.readWebhookUrl(remote);
     const remoteEvents = this.readWebhookEvents(remote);
-    const matchesExpectedUrl = remoteWebhookUrl === expectedWebhookUrl;
+    const matchesExpectedUrl =
+      normalizeComparableWebhookUrl(remoteWebhookUrl) ===
+      normalizeComparableWebhookUrl(expectedWebhookUrl);
     const matchesExpectedEvents =
       remoteEvents.length > 0 &&
       expectedEvents.every((event) => remoteEvents.includes(this.normalizeWebhookEvent(event)));
+
+    this.logger.log(
+      `[EVOLUTION WEBHOOK STATUS] instanceName=${instanceName} expectedUrl=${expectedWebhookUrl} remoteUrl=${remoteWebhookUrl || '(empty)'} expectedEvents=${JSON.stringify(expectedEvents)} remoteEvents=${JSON.stringify(remoteEvents)} matchesExpectedUrl=${matchesExpectedUrl} matchesExpectedEvents=${matchesExpectedEvents}`,
+    );
 
     return {
       instanceName,
@@ -797,69 +806,12 @@ export class WhatsappInstancesService {
     return typeof value === 'boolean' ? value : fallback;
   }
 
-  private readStringFromMap(source: Record<string, unknown>, key: string): string {
-    return this.readString(source[key]);
-  }
-
   private readWebhookUrl(source: Record<string, unknown>): string {
-    const direct =
-      this.readStringFromMap(source, 'webhook') ||
-      this.readStringFromMap(source, 'url') ||
-      this.readStringFromMap(source, 'webhookUrl');
-    if (direct) {
-      return direct;
-    }
-
-    const nestedCandidates = [
-      source['data'],
-      source['instance'],
-      source['webhookData'],
-      source['webhook_data'],
-    ];
-
-    for (const candidate of nestedCandidates) {
-      if (typeof candidate !== 'object' || candidate == null) {
-        continue;
-      }
-
-      const map = candidate as Record<string, unknown>;
-      const nested =
-        this.readStringFromMap(map, 'webhook') ||
-        this.readStringFromMap(map, 'url') ||
-        this.readStringFromMap(map, 'webhookUrl');
-      if (nested) {
-        return nested;
-      }
-    }
-
-    return '';
+    return readEvolutionWebhookUrl(source);
   }
 
   private readWebhookEvents(source: Record<string, unknown>): string[] {
-    const direct = this.readStringArrayFromMap(source, 'events');
-    if (direct.length > 0) {
-      return direct.map((event) => this.normalizeWebhookEvent(event));
-    }
-
-    const nestedCandidates = [
-      source['data'],
-      source['instance'],
-      source['webhookData'],
-      source['webhook_data'],
-    ];
-
-    for (const candidate of nestedCandidates) {
-      if (typeof candidate !== 'object' || candidate == null) {
-        continue;
-      }
-
-      const nested = this.readStringArrayFromMap(candidate as Record<string, unknown>, 'events');
-      if (nested.length > 0) {
-        return nested.map((event) => this.normalizeWebhookEvent(event));
-      }
-    }
-
-    return [];
+    return readEvolutionWebhookEvents(source).map((event) => this.normalizeWebhookEvent(event));
   }
 
   private normalizeWebhookEvent(event: string): string {
@@ -903,21 +855,6 @@ export class WhatsappInstancesService {
     }
 
     return '';
-  }
-
-  private readStringArrayFromMap(
-    source: Record<string, unknown>,
-    key: string,
-  ): string[] {
-    const value = source[key];
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
-    return value
-      .filter((item): item is string => typeof item === 'string')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
   }
 
   private extractPhoneNumber(data: Record<string, unknown>): string | null {
