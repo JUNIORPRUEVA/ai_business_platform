@@ -43,7 +43,7 @@ export class WhatsappMessagingService {
     finalSendTarget: string | null;
     chatRemoteJid: string | null;
     outboundRemoteJid: string | null;
-    source: 'remoteJid' | 'chat' | 'last_inbound_payload' | null;
+    source: 'remoteJid' | 'chat' | 'last_inbound_payload' | 'evolution_lookup' | null;
   }> {
     const rawRemoteJid = remoteJid;
     const normalizedRemoteJid = this.jidResolver.normalizeRemoteJid(rawRemoteJid, { throwOnEmpty: true });
