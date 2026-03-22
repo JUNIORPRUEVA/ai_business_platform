@@ -354,6 +354,51 @@ test('EvolutionService usa el payload exacto de Evolution al configurar webhooks
   });
 });
 
+test('EvolutionService reaplica webhook con wrapper compat cuando Evolution lo exige', async () => {
+  const service = Object.create(EvolutionService.prototype) as EvolutionService;
+  const calls: Array<{ path: string; init: RequestInit; trace: Record<string, unknown> }> = [];
+
+  (
+    service as unknown as {
+      requestJsonWithTracing: (
+        path: string,
+        init: RequestInit,
+        trace: Record<string, unknown>,
+      ) => Promise<Record<string, unknown>>;
+    }
+  ).requestJsonWithTracing = async (path, init, trace) => {
+    calls.push({ path, init, trace });
+    if (calls.length === 1) {
+      throw new Error('Evolution API error (400): Bad Request | instance requires property "webhook"');
+    }
+
+    return { ok: true };
+  };
+
+  (
+    service as unknown as {
+      logger: { warn: (message: string) => void };
+    }
+  ).logger = { warn: () => undefined };
+
+  await service.setWebhook({
+    instanceName: 'demo-instance',
+    webhookUrl: 'https://app.example.com/webhook/evolution',
+    events: ['messages.upsert', 'CONNECTION_UPDATE'],
+  });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(JSON.parse(String(calls[1].init.body)), {
+    webhook: {
+      enabled: true,
+      url: 'https://app.example.com/webhook/evolution',
+      webhookByEvents: true,
+      webhookBase64: false,
+      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+    },
+  });
+});
+
 test('WhatsappInstancesService lee respuestas anidadas de webhook.find devueltas por Evolution', () => {
   const service = Object.create(WhatsappInstancesService.prototype) as WhatsappInstancesService;
   const remote = {

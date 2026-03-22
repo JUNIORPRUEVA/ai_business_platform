@@ -7,6 +7,10 @@ import {
 
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
 import { WhatsappChannelLogService } from './whatsapp-channel-log.service';
+import {
+  buildEvolutionWebhookCompatPayload,
+  buildEvolutionWebhookPayload,
+} from './whatsapp-normalization.util';
 import { WhatsappSecretService } from './whatsapp-secret.service';
 
 type JsonRecord = Record<string, unknown>;
@@ -28,12 +32,30 @@ export class EvolutionApiClientService {
     config: WhatsappChannelConfigEntity,
     body: JsonRecord,
   ): Promise<JsonRecord> {
-    return this.request(
-      config,
-      `/webhook/set/${encodeURIComponent(config.instanceName)}`,
-      { method: 'POST', body: JSON.stringify(body) },
-      'set-webhook',
-    );
+    try {
+      return await this.request(
+        config,
+        `/webhook/set/${encodeURIComponent(config.instanceName)}`,
+        { method: 'POST', body: JSON.stringify(body) },
+        'set-webhook',
+      );
+    } catch (error) {
+      if (!this.requiresWebhookWrapper(error)) {
+        throw error;
+      }
+
+      const compatPayload = this.toCompatWebhookPayload(body);
+      this.logger.warn(
+        `[EVOLUTION WEBHOOK] switching-to-compat-wrapper instanceName=${config.instanceName} reason=requires_webhook_property`,
+      );
+
+      return this.request(
+        config,
+        `/webhook/set/${encodeURIComponent(config.instanceName)}`,
+        { method: 'POST', body: JSON.stringify(compatPayload) },
+        'set-webhook-compat',
+      );
+    }
   }
 
   async findWebhook(config: WhatsappChannelConfigEntity): Promise<JsonRecord> {
@@ -591,5 +613,60 @@ export class EvolutionApiClientService {
     }
 
     return '';
+  }
+
+  private requiresWebhookWrapper(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : '';
+    return /requires property\s+"webhook"/i.test(message);
+  }
+
+  private toCompatWebhookPayload(body: JsonRecord): JsonRecord {
+    const webhookBody = typeof body['webhook'] === 'object' && body['webhook'] != null
+      ? (body['webhook'] as JsonRecord)
+      : body;
+
+    const enabled = typeof webhookBody['enabled'] === 'boolean' ? webhookBody['enabled'] : true;
+    const url = typeof webhookBody['url'] === 'string' ? webhookBody['url'] : '';
+    const webhookByEvents =
+      typeof webhookBody['webhookByEvents'] === 'boolean'
+        ? webhookBody['webhookByEvents']
+        : typeof webhookBody['webhook_by_events'] === 'boolean'
+          ? (webhookBody['webhook_by_events'] as boolean)
+          : true;
+    const webhookBase64 =
+      typeof webhookBody['webhookBase64'] === 'boolean'
+        ? webhookBody['webhookBase64']
+        : typeof webhookBody['webhook_base64'] === 'boolean'
+          ? (webhookBody['webhook_base64'] as boolean)
+          : false;
+    const events = Array.isArray(webhookBody['events'])
+      ? (webhookBody['events'] as string[])
+      : [];
+
+    if (!url.trim()) {
+      return buildEvolutionWebhookCompatPayload({
+        enabled,
+        url: '',
+        webhookByEvents,
+        webhookBase64,
+        events,
+      });
+    }
+
+    const normalizedFlat = buildEvolutionWebhookPayload({
+      enabled,
+      url,
+      webhookByEvents,
+      webhookBase64,
+      events,
+    });
+
+    return buildEvolutionWebhookCompatPayload({
+      enabled: normalizedFlat.enabled,
+      url: normalizedFlat.url,
+      webhookByEvents,
+      webhookBase64,
+      events: normalizedFlat.events,
+    });
   }
 }

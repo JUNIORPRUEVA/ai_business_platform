@@ -86,6 +86,32 @@ export function buildEvolutionWebhookPayload(params: {
   };
 }
 
+export function buildEvolutionWebhookCompatPayload(params: {
+  enabled?: boolean;
+  url: string;
+  webhookByEvents?: boolean;
+  webhookBase64?: boolean;
+  events?: string[] | null;
+}): {
+  webhook: {
+    enabled: boolean;
+    url: string;
+    webhookByEvents: boolean;
+    webhookBase64: boolean;
+    events: string[];
+  };
+} {
+  return {
+    webhook: {
+      enabled: params.enabled ?? true,
+      url: params.url.trim(),
+      webhookByEvents: params.webhookByEvents ?? true,
+      webhookBase64: params.webhookBase64 ?? false,
+      events: normalizeEvolutionWebhookEvents(params.events),
+    },
+  };
+}
+
 export function readEvolutionWebhookUrl(source: Record<string, unknown>): string {
   for (const candidate of collectEvolutionWebhookMaps(source)) {
     const direct =

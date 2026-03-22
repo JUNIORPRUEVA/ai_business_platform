@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 
 import { BotConfigurationEntity } from '../bot-configuration/entities/bot-configuration.entity';
 import {
+  buildEvolutionWebhookCompatPayload,
   buildEvolutionWebhookPayload,
   normalizeEvolutionWebhookEvents,
   VALID_EVOLUTION_WEBHOOK_EVENTS,
@@ -258,19 +259,51 @@ export class EvolutionService {
       webhookBase64: false,
       events: this.normalizeEventsForApi(params.events ?? this.getDefaultInstanceWebhookEvents()),
     });
+    const path = `/webhook/set/${encodeURIComponent(params.instanceName)}`;
 
-    return this.requestJsonWithTracing(
-      `/webhook/set/${encodeURIComponent(params.instanceName)}`,
-      {
-        method: 'POST',
-        body: JSON.stringify(flatPayload),
-      },
-      {
-        action: 'set-webhook',
-        instanceName: params.instanceName,
-        payload: flatPayload,
-      },
-    );
+    try {
+      return await this.requestJsonWithTracing(
+        path,
+        {
+          method: 'POST',
+          body: JSON.stringify(flatPayload),
+        },
+        {
+          action: 'set-webhook',
+          instanceName: params.instanceName,
+          payload: flatPayload,
+        },
+      );
+    } catch (error) {
+      if (!this.requiresWebhookWrapper(error)) {
+        throw error;
+      }
+
+      const compatPayload = buildEvolutionWebhookCompatPayload({
+        enabled: true,
+        url: params.webhookUrl,
+        webhookByEvents: true,
+        webhookBase64: false,
+        events: this.normalizeEventsForApi(params.events ?? this.getDefaultInstanceWebhookEvents()),
+      });
+
+      this.logger.warn(
+        `[EVOLUTION WEBHOOK] switching-to-compat-wrapper instanceName=${params.instanceName} reason=requires_webhook_property`,
+      );
+
+      return this.requestJsonWithTracing(
+        path,
+        {
+          method: 'POST',
+          body: JSON.stringify(compatPayload),
+        },
+        {
+          action: 'set-webhook-compat',
+          instanceName: params.instanceName,
+          payload: compatPayload,
+        },
+      );
+    }
   }
 
   async reapplyWebhook(instanceName: string): Promise<{
@@ -448,6 +481,11 @@ export class EvolutionService {
     } catch {
       return source.trim();
     }
+  }
+
+  private requiresWebhookWrapper(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : '';
+    return /requires property\s+"webhook"/i.test(message);
   }
 
   private collectMessages(value: unknown): string[] {
