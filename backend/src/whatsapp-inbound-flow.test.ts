@@ -76,6 +76,14 @@ const emptyEvolutionApiClient = {
 const jidResolverStub = {
   normalizeRemoteJid: (value: string) => (value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`),
   normalizeJid: (value: string) => (value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`),
+  normalizeReplyJid: (value: string) => {
+    const normalized = value.includes('@') ? value : `${value.replace(/\D/g, '')}@s.whatsapp.net`;
+    if (!normalized.endsWith('@lid')) {
+      return normalized;
+    }
+    const digits = normalized.replace(/@.+$/, '').replace(/\D/g, '');
+    return `${digits}@s.whatsapp.net`;
+  },
   normalizeCanonicalRemoteJid: (value?: string | null) => {
     const trimmed = typeof value === 'string' ? value.trim() : '';
     if (!trimmed || !trimmed.endsWith('@s.whatsapp.net')) {
@@ -1375,7 +1383,8 @@ test('WhatsappMessagingService resuelve destinatario canonico desde last inbound
   assert.equal(result.canonicalJid, '18295344286@s.whatsapp.net');
   assert.equal(result.canonicalNumber, '18295344286');
   assert.equal(result.finalSendTarget, '234840490270800');
-  assert.equal(result.outboundRemoteJid, '234840490270800@lid');
+  assert.equal(result.chatRemoteJid, '234840490270800@lid');
+  assert.equal(result.outboundRemoteJid, '234840490270800@s.whatsapp.net');
   assert.equal(result.source, 'last_inbound_payload');
   assert.equal(updatedChat?.canonicalRemoteJid, '18295344286@s.whatsapp.net');
   assert.equal(updatedChat?.canonicalNumber, '18295344286');
@@ -2211,6 +2220,98 @@ test('WhatsappMessagingService envia al telefono extraido de chat.remoteJid y no
 
   assert.equal(capturedPayloads.length, 1);
   assert.equal(capturedPayloads[0]['number'], '234840490270800');
+});
+
+test('WhatsappMessagingService normaliza remoteJid @lid a reply JID @s.whatsapp.net sin perder el chat original', async () => {
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '234840490270800@lid',
+      originalRemoteJid: '234840490270800@lid',
+      rawRemoteJid: '234840490270800@lid',
+      canonicalRemoteJid: '18295319442@s.whatsapp.net',
+      canonicalNumber: '18295319442',
+      sendTarget: '18295319442',
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const messagesRepository = new InMemoryRepository([]);
+
+  const service = new WhatsappMessagingService(
+    chatsRepository as never,
+    messagesRepository as never,
+    {
+      getEntity: async () => ({ id: 'config-1', companyId: 'company-1', instanceName: 'demo-instance', instancePhone: '9999999999' }),
+      getEntityById: async () => ({ id: 'config-1', companyId: 'company-1', instanceName: 'demo-instance', instancePhone: '9999999999' }),
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    jidResolverStub as never,
+  );
+
+  const result = await service.diagnoseRecipientResolution('company-1', '234840490270800@lid');
+
+  assert.equal(result.chatRemoteJid, '234840490270800@lid');
+  assert.equal(result.outboundRemoteJid, '234840490270800@s.whatsapp.net');
+  assert.equal(result.finalSendTarget, '234840490270800');
+});
+
+test('EvolutionWebhookService ignora mensajes fromMe para prevenir self loop', async () => {
+  const queuedJobs: Array<Record<string, unknown>> = [];
+
+  const service = new EvolutionWebhookService(
+    {
+      getByIdUnsafe: async () => ({
+        id: 'channel-1',
+        companyId: 'company-1',
+        type: 'whatsapp',
+        config: {},
+      }),
+    } as never,
+    {
+      findOrCreateByPhone: async () => ({ id: 'contact-1', phone: '234840490270800' }),
+    } as never,
+    {
+      findOrCreateOpen: async () => ({ id: 'conversation-1', channelId: 'channel-1', contactId: 'contact-1' }),
+    } as never,
+    {
+      findByMetadataValue: async () => null,
+      create: async () => ({ id: 'message-1' }),
+    } as never,
+    { acquireIdempotency: async () => true, idempotencyKey: () => 'idem-key' } as never,
+    { buildEventKey: () => 'event-key' } as never,
+    jidResolverStub as never,
+    { add: async (_name: string, payload: Record<string, unknown>) => { queuedJobs.push(payload); return undefined; } } as never,
+    {
+      findOne: async () => ({ payload: { whatsapp: { deduplicationEnabled: false, persistMediaMetadata: true } } }),
+    } as never,
+  );
+
+  const result = await service.processIncomingMessage({
+    channelId: 'channel-1',
+    payload: {
+      event: 'messages.upsert',
+      instance: 'demo-instance',
+      data: {
+        key: {
+          remoteJid: '234840490270800@lid',
+          id: 'wamid-fromme-1',
+          fromMe: true,
+        },
+        message: {
+          conversation: 'hola',
+        },
+        messageTimestamp: '1710000001',
+      },
+    } as never,
+  });
+
+  assert.equal(result.orchestration.queued, false);
+  assert.equal(queuedJobs.length, 0);
 });
 
 test('BotCenterService resuelve canal por fallback cuando no existe bridge exacto por instanceName', async () => {

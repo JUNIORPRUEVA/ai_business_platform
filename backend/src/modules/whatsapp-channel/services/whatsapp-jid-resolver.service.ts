@@ -43,6 +43,27 @@ export class WhatsappJidResolverService {
     return this.normalizeRemoteJid(value, options);
   }
 
+  normalizeReplyJid(value: string, options?: { throwOnEmpty?: boolean }): string {
+    const normalizedJid = this.normalizeRemoteJid(value, options);
+    if (!normalizedJid) {
+      return normalizedJid;
+    }
+
+    if (!normalizedJid.endsWith('@lid')) {
+      return normalizedJid;
+    }
+
+    const digits = this.extractPhoneFromJid(normalizedJid);
+    if (!digits) {
+      if (options?.throwOnEmpty) {
+        throw new BadRequestException('remoteJid no contiene digitos para responder.');
+      }
+      return '';
+    }
+
+    return `${digits}@s.whatsapp.net`;
+  }
+
   describeJid(originalJid: string, canonicalJid?: string | null): JidDescriptor {
     const normalizedJid = this.normalizeRemoteJid(originalJid);
     const normalizedCanonical = this.normalizeCanonicalRemoteJid(canonicalJid);

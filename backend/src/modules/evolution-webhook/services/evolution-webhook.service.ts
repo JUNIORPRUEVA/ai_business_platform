@@ -43,6 +43,17 @@ export class EvolutionWebhookService {
     webhookToken?: string;
     payload: EvolutionMessageWebhookDto;
   }): Promise<EvolutionWebhookProcessResponse> {
+    const fromMe = Boolean((params.payload as unknown as { data?: { key?: { fromMe?: boolean } } })?.data?.key?.fromMe);
+    if (fromMe) {
+      return {
+        normalizedMessage: this.normalizePayload(params.payload),
+        orchestration: {
+          queued: false,
+          reason: 'Outbound/self message ignored because fromMe=true.',
+        },
+      };
+    }
+
     const normalized = this.normalizePayload(params.payload);
     const whatsappSettings = await this.getWhatsappSettings();
     const channel = await this.channelsService.getByIdUnsafe(params.channelId);
