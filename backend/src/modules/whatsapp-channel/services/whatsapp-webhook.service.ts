@@ -413,7 +413,7 @@ export class WhatsappWebhookService {
         messageId: createdMessage.id,
       },
       {
-        jobId: `whatsapp-channel-auto-reply:${whatsappMessageId}`,
+        jobId: `whatsapp-channel-auto-reply-${whatsappMessageId}`,
         removeOnComplete: 1000,
         removeOnFail: 1000,
       },

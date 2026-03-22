@@ -97,8 +97,13 @@ const jidResolverStub = {
   ) => {
     const directSender = typeof data['sender'] === 'string' ? data['sender'] : '';
     const source = (data['source'] ?? {}) as Record<string, unknown>;
-    const owner = (source['owner'] ?? {}) as Record<string, unknown>;
-    const sourcePhone = typeof owner['phoneNumber'] === 'string' ? owner['phoneNumber'] : '';
+    const sourcePhone = typeof source['sender'] === 'string'
+      ? source['sender']
+      : typeof source['senderPn'] === 'string'
+        ? source['senderPn']
+        : typeof source['phoneNumber'] === 'string'
+          ? source['phoneNumber']
+          : '';
     const contactWaId = Array.isArray(data['contacts'])
       ? (((data['contacts'] as Array<unknown>)[0] as Record<string, unknown> | undefined)?.['wa_id'] as string | undefined) ?? ''
       : '';
@@ -113,12 +118,18 @@ const jidResolverStub = {
   extractCanonicalRemoteJidFromPayload: (payload: Record<string, unknown>) => {
     const data = (payload['data'] ?? {}) as Record<string, unknown>;
     const source = (data['source'] ?? {}) as Record<string, unknown>;
-    const owner = (source['owner'] ?? {}) as Record<string, unknown>;
     const sender = typeof data['sender'] === 'string' ? data['sender'] : '';
     const waId = Array.isArray(data['contacts'])
       ? (((data['contacts'] as Array<unknown>)[0] as Record<string, unknown> | undefined)?.['wa_id'] as string | undefined) ?? ''
       : '';
-    const phone = typeof owner['phoneNumber'] === 'string' ? owner['phoneNumber'] : sender || waId;
+    const sourceSender = typeof source['sender'] === 'string'
+      ? source['sender']
+      : typeof source['senderPn'] === 'string'
+        ? source['senderPn']
+        : typeof source['phoneNumber'] === 'string'
+          ? source['phoneNumber']
+          : '';
+    const phone = sender || sourceSender || waId;
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 10) {
       return null;
@@ -1050,9 +1061,7 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
     instance: 'demo-instance',
     data: {
       source: {
-        owner: {
-          phoneNumber: '+1 (829) 534-4286',
-        },
+        sender: '+1 (829) 534-4286',
       },
       messages: [
         {

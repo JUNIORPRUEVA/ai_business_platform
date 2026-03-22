@@ -4,15 +4,20 @@ class AppTheme {
   const AppTheme._();
 
   static ThemeData light() {
-    const baseBackground = Color(0xFFF3F6FB);
-    const surface = Colors.white;
+    const baseBackground = Color(0xFFE9EFEA);
+    const surface = Color(0xFFF7F5EF);
+    const surfaceSoft = Color(0xFFF1EEE6);
+    const surfaceMuted = Color(0xFFE5E8DF);
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF165DFF),
+      seedColor: const Color(0xFF0F766E),
       brightness: Brightness.light,
     ).copyWith(
       surface: surface,
-      surfaceContainerHighest: const Color(0xFFE8EEF8),
-      outlineVariant: const Color(0xFFD8E1ED),
+      surfaceContainerHighest: surfaceSoft,
+      outlineVariant: const Color(0xFFD3D9CF),
+      primary: const Color(0xFF0B6E61),
+      secondary: const Color(0xFF7C8C6A),
+      onSurface: const Color(0xFF1D2824),
     );
 
     return ThemeData(
@@ -30,9 +35,24 @@ class AppTheme {
           side: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: const WidgetStatePropertyAll(surface),
+          elevation: const WidgetStatePropertyAll(0),
+          side: WidgetStatePropertyAll(
+            BorderSide(color: colorScheme.outlineVariant),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          ),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(vertical: 8),
+          ),
+        ),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: surfaceSoft,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 14,
@@ -51,9 +71,9 @@ class AppTheme {
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: const Color(0xFFF5F8FD),
+        backgroundColor: surfaceSoft,
         selectedColor: colorScheme.primary.withValues(alpha: 0.12),
-        disabledColor: const Color(0xFFE5EAF2),
+        disabledColor: surfaceMuted,
         side: BorderSide(color: colorScheme.outlineVariant),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         labelStyle: const TextStyle(fontWeight: FontWeight.w600),
@@ -66,42 +86,59 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           elevation: 0,
+          backgroundColor: colorScheme.primary,
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           side: BorderSide(color: colorScheme.outlineVariant),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          foregroundColor: const Color(0xFF1D2824),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: const Color(0xFF24322D).withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF42524B)),
+        ),
+        textStyle: const TextStyle(
+          color: Color(0xFFF5F7F2),
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
         ),
       ),
       textTheme: const TextTheme(
         headlineMedium: TextStyle(
           fontSize: 28,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF111827),
+          color: Color(0xFF1D2824),
         ),
         titleLarge: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF111827),
+          color: Color(0xFF1D2824),
         ),
         titleMedium: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF111827),
+          color: Color(0xFF1D2824),
         ),
         bodyLarge: TextStyle(
           fontSize: 14,
           height: 1.45,
-          color: Color(0xFF334155),
+          color: Color(0xFF34443F),
         ),
         bodyMedium: TextStyle(
           fontSize: 13,
           height: 1.45,
-          color: Color(0xFF475569),
+          color: Color(0xFF55655F),
         ),
         labelLarge: TextStyle(
           fontSize: 13,
@@ -170,45 +207,54 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colorScheme.surface.withValues(alpha: 0.22),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.72)),
+          borderSide: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.72)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.72)),
+          borderSide: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.72)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: colorScheme.primary.withValues(alpha: 0.92), width: 1.4),
+          borderSide: BorderSide(
+              color: colorScheme.primary.withValues(alpha: 0.92), width: 1.4),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
       menuTheme: MenuThemeData(
         style: MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(colorScheme.surface.withValues(alpha: 0.96)),
+          backgroundColor: WidgetStatePropertyAll(
+              colorScheme.surface.withValues(alpha: 0.96)),
           elevation: const WidgetStatePropertyAll(0),
           side: WidgetStatePropertyAll(
-            BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.75)),
+            BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.75)),
           ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           ),
-          padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 8)),
+          padding:
+              const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 8)),
         ),
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
           color: const Color(0xFF0B1220).withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.75)),
+          border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.75)),
         ),
         textStyle: baseTextTheme.bodySmall?.copyWith(
           color: colorScheme.onSurface.withValues(alpha: 0.85),

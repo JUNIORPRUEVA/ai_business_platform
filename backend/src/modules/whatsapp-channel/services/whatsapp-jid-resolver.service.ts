@@ -145,14 +145,6 @@ export class WhatsappJidResolverService {
       this.readString(this.readMap(payload['source'])['phoneNumber']),
       this.readString(this.readMap(payload['source'])['wa_id']),
       this.readString(this.readMap(payload['source'])['waId']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['id']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['jid']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['user']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['phone']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['phoneNumber']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['number']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['wa_id']),
-      this.readString(this.readMap(this.readMap(payload['source'])['owner'])['waId']),
     ];
 
     for (const candidate of rootCandidates) {
@@ -216,14 +208,6 @@ export class WhatsappJidResolverService {
       this.readString(this.readMap(data['source'])['phoneNumber']),
       this.readString(this.readMap(data['source'])['wa_id']),
       this.readString(this.readMap(data['source'])['waId']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['id']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['jid']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['user']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['phone']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['phoneNumber']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['number']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['wa_id']),
-      this.readString(this.readMap(this.readMap(data['source'])['owner'])['waId']),
     ];
 
     for (const candidate of candidates) {

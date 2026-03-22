@@ -409,3 +409,19 @@ test('deduplication service generates stable event keys', () => {
 
   assert.equal(left, right);
 });
+
+test('deduplication service accepts numeric timestamps without trim failures', () => {
+  const service = new MemoryDeduplicationService();
+
+  const result = service.buildEventKey({
+    channel: 'whatsapp',
+    senderId: '5511999999999',
+    externalMessageId: 'abc',
+    timestamp: 1774153781 as unknown as string,
+    type: 'text',
+    content: 'hola',
+  });
+
+  assert.equal(typeof result, 'string');
+  assert.equal(result.length > 0, true);
+});

@@ -148,7 +148,7 @@ export class EvolutionWebhookService {
         messageId: message.id,
       },
       {
-        jobId: `process-inbound-message:${eventKey}`,
+        jobId: `process-inbound-message-${eventKey}`,
         removeOnComplete: 1000,
         removeOnFail: 1000,
       },

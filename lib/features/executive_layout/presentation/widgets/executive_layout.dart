@@ -290,17 +290,42 @@ class _ExecutiveLightBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Positioned.fill(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFF8FAFC),
-              Color(0xFFEEF2F7),
-            ],
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFF0F3EA),
+                  Color(0xFFE7ECE3),
+                  Color(0xFFDCE4DD),
+                ],
+                stops: [0, 0.48, 1],
+              ),
+            ),
           ),
-        ),
+          _RadialGlow(
+            alignment: Alignment.topLeft,
+            color: Color(0xFF8DB7AB),
+            opacity: 0.16,
+            radius: 0.88,
+          ),
+          _RadialGlow(
+            alignment: Alignment.topRight,
+            color: Color(0xFFB0B89A),
+            opacity: 0.12,
+            radius: 0.74,
+          ),
+          _RadialGlow(
+            alignment: Alignment.bottomCenter,
+            color: Color(0xFFDEE7D4),
+            opacity: 0.22,
+            radius: 1.10,
+          ),
+        ],
       ),
     );
   }
