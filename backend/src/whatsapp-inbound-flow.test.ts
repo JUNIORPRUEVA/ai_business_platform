@@ -1274,6 +1274,7 @@ test('WhatsappJidResolverService extrae canonicalRemoteJid desde payload.sender 
 
 test('BotCenterService prioriza numeros limpios sobre JIDs al resolver contacts.phone', () => {
   const service = new BotCenterService(
+    { get: () => null } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -1318,6 +1319,7 @@ test('BotCenterService prioriza numeros limpios sobre JIDs al resolver contacts.
 
 test('BotCenterService resuelve canal por fallback cuando no existe bridge exacto por instanceName', async () => {
   const service = new BotCenterService(
+    { get: () => null } as never,
     {} as never,
     {} as never,
     {} as never,

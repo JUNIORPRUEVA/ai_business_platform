@@ -1066,6 +1066,24 @@ export class BotCenterService {
   private async toBotMessage(message: WhatsappMessageEntity): Promise<BotMessageResponse> {
     const mediaUrl = await this.resolveMessageMediaUrl(message);
     const thumbnailUrl = await this.resolveMessageThumbnailUrl(message, mediaUrl);
+
+    return {
+      id: message.id,
+      conversationId: message.chatId,
+      author: message.fromMe ? 'operator' : 'contact',
+      body: this.describeMessage(message),
+      type: message.messageType,
+      caption: message.caption,
+      mimeType: message.mimeType,
+      mediaUrl,
+      thumbnailUrl,
+      fileName: message.mediaOriginalName,
+      duration: message.durationSeconds,
+      timestamp: message.createdAt.toISOString(),
+      state: this.resolveMessageState(message.status),
+    };
+  }
+
   async streamPublicVideo(
     messageId: string,
     range?: string,
@@ -1121,24 +1139,6 @@ export class BotCenterService {
       acceptRanges: stored.acceptRanges ?? 'bytes',
       statusCode: stored.statusCode,
       fileName: this.resolveMessageAssetFileName(hydratedMessage, 'media'),
-    };
-  }
-
-
-    return {
-      id: message.id,
-      conversationId: message.chatId,
-      author: message.fromMe ? 'operator' : 'contact',
-      body: this.describeMessage(message),
-      type: message.messageType,
-      caption: message.caption,
-      mimeType: message.mimeType,
-      mediaUrl,
-      thumbnailUrl,
-      fileName: message.mediaOriginalName,
-      duration: message.durationSeconds,
-      timestamp: message.createdAt.toISOString(),
-      state: this.resolveMessageState(message.status),
     };
   }
 
@@ -1357,7 +1357,7 @@ export class BotCenterService {
     const externalCandidate =
       variant === 'thumbnail'
         ? await this.resolveMessageThumbnailUrl(hydratedMessage, hydratedMessage.mediaUrl)
-        : await this.resolveMessageMediaUrl(companyId, null, hydratedMessage.mediaUrl);
+        : await this.resolveMessageMediaUrl(hydratedMessage);
     if (!externalCandidate) {
       return null;
     }
