@@ -12,7 +12,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(const FullPosApp());
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Panel'), findsWidgets);
     expect(find.text('Mensajes'), findsOneWidget);

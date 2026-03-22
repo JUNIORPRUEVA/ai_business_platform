@@ -74,6 +74,17 @@ class BotCenterRemoteDataSource {
     await _apiClient.deleteJson('/bot-center/conversations/$conversationId');
   }
 
+  Future<BotConversationModel> updateConversationAutoReply({
+    required String conversationId,
+    required bool enabled,
+  }) async {
+    final json = await _apiClient.patchJson(
+      '/bot-center/conversations/$conversationId/auto-reply',
+      {'enabled': enabled},
+    );
+    return BotConversationModel.fromJson(json);
+  }
+
   Future<BotMemoryCollectionModel> getMemory(String conversationId) async {
     final json = await _apiClient
         .getJson('/bot-center/conversations/$conversationId/memory');

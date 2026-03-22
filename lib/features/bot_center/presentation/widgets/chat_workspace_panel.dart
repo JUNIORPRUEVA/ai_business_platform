@@ -21,7 +21,7 @@ final ValueNotifier<String?> _activeAudioMessageId = ValueNotifier<String?>(
   null,
 );
 
-class ChatWorkspacePanel extends StatelessWidget {
+class ChatWorkspacePanel extends StatefulWidget {
   const ChatWorkspacePanel({
     required this.controller,
     required this.isContextExpanded,
@@ -34,7 +34,22 @@ class ChatWorkspacePanel extends StatelessWidget {
   final VoidCallback onToggleContext;
 
   @override
+  State<ChatWorkspacePanel> createState() => _ChatWorkspacePanelState();
+}
+
+class _ChatWorkspacePanelState extends State<ChatWorkspacePanel> {
+  late final ScrollController _messageScrollController = ScrollController();
+  bool _isNearBottom = true;
+
+  @override
+  void dispose() {
+    _messageScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
     final theme = Theme.of(context);
 
     if (!controller.hasConversationSelection && !controller.isInitialLoading) {
@@ -42,6 +57,8 @@ class ChatWorkspacePanel extends StatelessWidget {
     }
 
     final conversation = controller.selectedConversation;
+    final showScrollToBottomButton =
+        controller.selectedMessages.isNotEmpty && !_isNearBottom;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -49,21 +66,21 @@ class ChatWorkspacePanel extends StatelessWidget {
         _ConversationHeader(
           controller: controller,
           conversation: conversation,
-          isContextExpanded: isContextExpanded,
-          onToggleContext: onToggleContext,
+          isContextExpanded: widget.isContextExpanded,
+          onToggleContext: widget.onToggleContext,
         ),
         const SizedBox(height: 6),
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
+              color: const Color(0xFFEFEAE2),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFD5DCD9)),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x0D0F172A),
-                  blurRadius: 18,
-                  offset: Offset(0, 8),
+                  color: Color(0x0B0F172A),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
                 ),
               ],
             ),
@@ -71,25 +88,35 @@ class ChatWorkspacePanel extends StatelessWidget {
               children: [
                 const Positioned.fill(
                   child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.white,
-                            Color(0xFFF8FBFF),
-                            Color(0xFFF1F5F9),
-                          ],
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xFFF5F0E8),
+                                Color(0xFFEFE8DE),
+                                Color(0xFFEAE3D9),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
+                        _ChatBackgroundPattern(),
+                      ],
                     ),
                   ),
                 ),
                 Positioned.fill(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(8, 8, 8, 8 + 66 + 14),
-                    child: _MessageViewport(controller: controller),
+                    child: _MessageViewport(
+                      controller: controller,
+                      scrollController: _messageScrollController,
+                      onNearBottomChanged: _handleNearBottomChanged,
+                    ),
                   ),
                 ),
                 Positioned(
@@ -98,6 +125,15 @@ class ChatWorkspacePanel extends StatelessWidget {
                   bottom: 10,
                   child: _FloatingComposer(controller: controller),
                 ),
+                if (controller.hasConversationSelection)
+                  Positioned(
+                    right: 18,
+                    bottom: 146,
+                    child: _ScrollToBottomButton(
+                      isVisible: showScrollToBottomButton,
+                      onPressed: _scrollToBottom,
+                    ),
+                  ),
                 if (controller.hasConversationSelection)
                   Positioned(
                     right: 18,
@@ -111,6 +147,140 @@ class ChatWorkspacePanel extends StatelessWidget {
       ],
     );
   }
+
+  void _handleNearBottomChanged(bool isNearBottom) {
+    if (_isNearBottom == isNearBottom || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isNearBottom = isNearBottom;
+    });
+  }
+
+  void _scrollToBottom() {
+    if (!_messageScrollController.hasClients) {
+      return;
+    }
+
+    unawaited(
+      _messageScrollController.animateTo(
+        _messageScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      ),
+    );
+  }
+}
+
+class _ScrollToBottomButton extends StatelessWidget {
+  const _ScrollToBottomButton({
+    required this.isVisible,
+    required this.onPressed,
+  });
+
+  final bool isVisible;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !isVisible,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        offset: isVisible ? Offset.zero : const Offset(0, 0.35),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: isVisible ? 1 : 0,
+          child: Material(
+            color: Colors.transparent,
+            elevation: 0,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: onPressed,
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  border: Border.all(color: const Color(0xFFD7DCE1)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x140F172A),
+                      blurRadius: 10,
+                      offset: Offset(0, 5),
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.arrow_downward_rounded,
+                  color: Color(0xFF00A884),
+                  size: 22,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatBackgroundPattern extends StatelessWidget {
+  const _ChatBackgroundPattern();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _ChatBackgroundPatternPainter(),
+    );
+  }
+}
+
+class _ChatBackgroundPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final loopPaint = Paint()
+      ..color = const Color(0xFFD6CFC2).withValues(alpha: 0.38)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    final dotPaint = Paint()
+      ..color = const Color(0xFFC8BFB0).withValues(alpha: 0.26)
+      ..style = PaintingStyle.fill;
+    const cellSize = 66.0;
+
+    for (var row = -1; row <= (size.height / cellSize).ceil(); row++) {
+      final y = row * cellSize;
+      final xOffset = row.isEven ? 0.0 : cellSize / 2;
+
+      for (var column = -1;
+          column <= (size.width / cellSize).ceil();
+          column++) {
+        final x = (column * cellSize) + xOffset;
+        final bubbleRect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(x + 16, y + 18, 18, 11),
+          const Radius.circular(6),
+        );
+        final tailPath = Path()
+          ..moveTo(x + 22, y + 29)
+          ..lineTo(x + 18, y + 34)
+          ..lineTo(x + 26, y + 30)
+          ..close();
+
+        canvas.drawRRect(bubbleRect, loopPaint);
+        canvas.drawPath(tailPath, loopPaint);
+        canvas.drawCircle(Offset(x + 44, y + 24), 2.1, dotPaint);
+        canvas.drawCircle(Offset(x + 51, y + 31), 1.5, dotPaint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _EmptyConversation extends StatelessWidget {
@@ -177,33 +347,58 @@ class _ConversationHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final autoReplyEnabled = conversation.autoReplyEnabled;
+    final contactDisplayName =
+        _resolveSelectedContactDisplayName(controller, conversation);
+    final contactPhoneNumber = _resolveSelectedContactPhoneNumber(controller);
     return Container(
       height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        color: const Color(0xFFF0F2F5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE3E7EA)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 12,
-            offset: Offset(0, 6),
+            color: Color(0x04000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
           ),
         ],
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: const Color(0xFFE2E8F0),
-            child: Text(
-              conversation.contactName.characters.first,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: const Color(0xFF0F172A),
-                fontWeight: FontWeight.w700,
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: 19,
+                backgroundColor: const Color(0xFFDDE6EA),
+                foregroundImage: _normalizedChatAvatarProvider(
+                  conversation.profilePictureUrl,
+                ),
+                child: Text(
+                  contactDisplayName.characters.first,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: const Color(0xFF111B21),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-            ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF25D366),
+                    shape: BoxShape.circle,
+                    border:
+                        Border.all(color: const Color(0xFFF0F2F5), width: 1.5),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -212,29 +407,92 @@ class _ConversationHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  conversation.contactName,
+                  contactDisplayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF0F172A),
+                    color: const Color(0xFF111B21),
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Activo • ${conversation.phoneNumber}',
+                  contactPhoneNumber ?? 'Teléfono no disponible',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 11.5,
-                    color: const Color(0xFF64748B),
+                    color: const Color(0xFF667781),
                   ),
                 ),
               ],
             ),
           ),
-          IconButton(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: autoReplyEnabled
+                  ? const Color(0xFFDCFCE7)
+                  : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: autoReplyEnabled
+                    ? const Color(0xFF86EFAC)
+                    : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  autoReplyEnabled
+                      ? Icons.smart_toy_rounded
+                      : Icons.pause_circle_outline_rounded,
+                  size: 16,
+                  color: autoReplyEnabled
+                      ? const Color(0xFF166534)
+                      : const Color(0xFF64748B),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  autoReplyEnabled ? 'IA activa' : 'IA pausada',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: autoReplyEnabled
+                        ? const Color(0xFF166534)
+                        : const Color(0xFF475569),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  height: 24,
+                  child: Switch.adaptive(
+                    value: autoReplyEnabled,
+                    onChanged: controller.isUpdatingAutoReply
+                        ? null
+                        : (value) => unawaited(
+                              controller.setConversationAutoReplyEnabled(value),
+                            ),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _HeaderIconButton(
+            tooltip: 'Copiar nombre y teléfono',
+            onPressed: () => unawaited(
+              _copyContactSummary(
+                context,
+                contactName: contactDisplayName,
+                contactPhoneNumber: contactPhoneNumber,
+              ),
+            ),
+            icon: const Icon(Icons.content_copy_rounded),
+          ),
+          _HeaderIconButton(
             tooltip:
                 isContextExpanded ? 'Ocultar contexto' : 'Mostrar contexto',
             onPressed: onToggleContext,
@@ -244,7 +502,7 @@ class _ConversationHeader extends StatelessWidget {
                   : Icons.dock_outlined,
             ),
           ),
-          IconButton(
+          _HeaderIconButton(
             tooltip: 'Buscar en conversación',
             onPressed: () {},
             icon: const Icon(Icons.search_rounded),
@@ -291,7 +549,10 @@ class _ConversationHeader extends StatelessWidget {
                 child: Text('Eliminar contacto'),
               ),
             ],
-            icon: const Icon(Icons.more_horiz_rounded),
+            icon: const Icon(
+              Icons.more_vert_rounded,
+              color: Color(0xFF54656F),
+            ),
           ),
         ],
       ),
@@ -299,17 +560,67 @@ class _ConversationHeader extends StatelessWidget {
   }
 }
 
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+  });
+
+  final String tooltip;
+  final VoidCallback onPressed;
+  final Widget icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        foregroundColor: const Color(0xFF54656F),
+        backgroundColor: Colors.transparent,
+        hoverColor: Colors.white.withValues(alpha: 0.65),
+        highlightColor: Colors.white.withValues(alpha: 0.8),
+      ),
+      icon: icon,
+    );
+  }
+}
+
+ImageProvider? _normalizedChatAvatarProvider(String? candidate) {
+  final trimmed = candidate?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    return null;
+  }
+
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null) {
+    return null;
+  }
+
+  if (uri.scheme == 'http' || uri.scheme == 'https') {
+    return CachedNetworkImageProvider(trimmed);
+  }
+
+  return null;
+}
+
 class _MessageViewport extends StatefulWidget {
-  const _MessageViewport({required this.controller});
+  const _MessageViewport({
+    required this.controller,
+    required this.scrollController,
+    required this.onNearBottomChanged,
+  });
 
   final BotCenterController controller;
+  final ScrollController scrollController;
+  final ValueChanged<bool> onNearBottomChanged;
 
   @override
   State<_MessageViewport> createState() => _MessageViewportState();
 }
 
 class _MessageViewportState extends State<_MessageViewport> {
-  late final ScrollController _scrollController = ScrollController();
   var _lastRenderedMessageCount = 0;
   String _lastConversationId = '';
   String _lastMessageIdentity = '';
@@ -318,13 +629,23 @@ class _MessageViewportState extends State<_MessageViewport> {
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_handleScrollChange);
+    widget.scrollController.addListener(_handleScrollChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MessageViewport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController == widget.scrollController) {
+      return;
+    }
+
+    oldWidget.scrollController.removeListener(_handleScrollChange);
+    widget.scrollController.addListener(_handleScrollChange);
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_handleScrollChange);
-    _scrollController.dispose();
+    widget.scrollController.removeListener(_handleScrollChange);
     super.dispose();
   }
 
@@ -332,6 +653,7 @@ class _MessageViewportState extends State<_MessageViewport> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     if (controller.isConversationLoading) {
+      _publishNearBottomState(true);
       return const Center(
         child: SizedBox(
             width: 28,
@@ -341,6 +663,7 @@ class _MessageViewportState extends State<_MessageViewport> {
     }
 
     if (controller.selectedMessages.isEmpty) {
+      _publishNearBottomState(true);
       return Center(
         child: Text(
           'Aún no hay mensajes en esta conversación.',
@@ -358,16 +681,41 @@ class _MessageViewportState extends State<_MessageViewport> {
       messages: controller.selectedMessages,
     );
 
+    final messages = controller.selectedMessages;
+
     return Scrollbar(
-      controller: _scrollController,
-      child: ListView.separated(
-        controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
-        itemCount: controller.selectedMessages.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
+      controller: widget.scrollController,
+      child: ListView.builder(
+        controller: widget.scrollController,
+        padding: const EdgeInsets.fromLTRB(6, 8, 6, 12),
+        itemCount: messages.length,
         itemBuilder: (context, index) {
-          final message = controller.selectedMessages[index];
-          return _MessageBubble(controller: controller, message: message);
+          final message = messages[index];
+          final previousMessage = index > 0 ? messages[index - 1] : null;
+          final nextMessage =
+              index + 1 < messages.length ? messages[index + 1] : null;
+          final groupedWithPrevious =
+              _messagesBelongToSameVisualGroup(previousMessage, message);
+          final groupedWithNext =
+              _messagesBelongToSameVisualGroup(message, nextMessage);
+
+          return Padding(
+            padding: EdgeInsets.only(
+              top: groupedWithPrevious ? 1.5 : 7,
+              bottom: groupedWithNext ? 1.5 : 9,
+            ),
+            child: KeyedSubtree(
+              key: ValueKey(
+                '${message.id}:${message.state.name}:${message.timestamp.microsecondsSinceEpoch}',
+              ),
+              child: _MessageBubble(
+                controller: controller,
+                message: message,
+                previousMessage: previousMessage,
+                nextMessage: nextMessage,
+              ),
+            ),
+          );
         },
       ),
     );
@@ -395,35 +743,50 @@ class _MessageViewportState extends State<_MessageViewport> {
     final shouldAutoScroll = conversationChanged || _shouldStickToBottom;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) {
+      if (!mounted || !widget.scrollController.hasClients) {
         return;
       }
 
       if (!shouldAutoScroll) {
+        _publishNearBottomState(false);
         return;
       }
 
-      final position = _scrollController.position.maxScrollExtent;
+      final position = widget.scrollController.position.maxScrollExtent;
       if (conversationChanged) {
-        _scrollController.jumpTo(position);
+        widget.scrollController.jumpTo(position);
       } else {
-        _scrollController.animateTo(
+        unawaited(widget.scrollController.animateTo(
           position,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-        );
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        ));
       }
+
+      _publishNearBottomState(true);
     });
   }
 
   void _handleScrollChange() {
-    if (!_scrollController.hasClients) {
+    if (!widget.scrollController.hasClients) {
       return;
     }
 
-    final distanceToBottom =
-        _scrollController.position.maxScrollExtent - _scrollController.offset;
-    _shouldStickToBottom = distanceToBottom <= 56;
+    final distanceToBottom = widget.scrollController.position.maxScrollExtent -
+        widget.scrollController.offset;
+    final isNearBottom = distanceToBottom <= 72;
+    _shouldStickToBottom = isNearBottom;
+    _publishNearBottomState(isNearBottom);
+  }
+
+  void _publishNearBottomState(bool isNearBottom) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      widget.onNearBottomChanged(isNearBottom);
+    });
   }
 }
 
@@ -452,168 +815,193 @@ class _FloatingComposer extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFFF0F2F5),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x160F172A),
-            blurRadius: 14,
-            offset: Offset(0, 6),
+            color: Color(0x080F172A),
+            blurRadius: 10,
+            offset: Offset(0, 4),
           ),
         ],
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(color: const Color(0xFFE2E5E7)),
       ),
       child: Row(
         children: [
-          IconButton(
-            tooltip: 'Adjuntar',
-            onPressed: !isRecording &&
-                    controller.hasConversationSelection &&
-                    !controller.isSendingMessage &&
-                    !controller.isProcessingWithAi
-                ? () async {
-                    final selection =
-                        await showModalBottomSheet<BotMessageType>(
-                      context: context,
-                      builder: (sheetContext) {
-                        return SafeArea(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ListTile(
-                                leading: const Icon(Icons.image_outlined),
-                                title: const Text('Enviar imagen'),
-                                onTap: () => Navigator.of(sheetContext)
-                                    .pop(BotMessageType.image),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.videocam_outlined),
-                                title: const Text('Enviar video'),
-                                onTap: () => Navigator.of(sheetContext)
-                                    .pop(BotMessageType.video),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
+          Material(
+            color: Colors.white,
+            shape: const CircleBorder(),
+            child: IconButton(
+              tooltip: 'Adjuntar',
+              onPressed: !isRecording &&
+                      controller.hasConversationSelection &&
+                      !controller.isSendingMessage &&
+                      !controller.isProcessingWithAi
+                  ? () async {
+                      final selection =
+                          await showModalBottomSheet<BotMessageType>(
+                        context: context,
+                        builder: (sheetContext) {
+                          return SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading: const Icon(Icons.image_outlined),
+                                  title: const Text('Enviar imagen'),
+                                  onTap: () => Navigator.of(sheetContext)
+                                      .pop(BotMessageType.image),
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.videocam_outlined),
+                                  title: const Text('Enviar video'),
+                                  onTap: () => Navigator.of(sheetContext)
+                                      .pop(BotMessageType.video),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
 
-                    if (selection != null) {
-                      unawaited(controller.pickAndSendMedia(selection));
+                      if (selection != null) {
+                        unawaited(controller.pickAndSendMedia(selection));
+                      }
                     }
-                  }
-                : null,
-            icon: const Icon(Icons.add_rounded),
+                  : null,
+              icon: const Icon(Icons.add_rounded),
+              color: const Color(0xFF0F172A),
+            ),
           ),
+          const SizedBox(width: 8),
           Expanded(
-            child: isRecording
-                ? _RecordingStatusStrip(controller: controller)
-                : CallbackShortcuts(
-                    bindings: <ShortcutActivator, VoidCallback>{
-                      const SingleActivator(LogicalKeyboardKey.enter):
-                          sendMessage,
-                      const SingleActivator(LogicalKeyboardKey.numpadEnter):
-                          sendMessage,
-                    },
-                    child: TextField(
-                      controller: controller.messageComposerController,
-                      decoration: InputDecoration(
-                        hintText: 'Escribir mensaje...',
-                        hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                          fontSize: 13,
-                          color: const Color(0xFF94A3B8),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 46),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE2E5E7)),
+              ),
+              child: isRecording
+                  ? _RecordingStatusStrip(controller: controller)
+                  : CallbackShortcuts(
+                      bindings: <ShortcutActivator, VoidCallback>{
+                        const SingleActivator(LogicalKeyboardKey.enter):
+                            sendMessage,
+                        const SingleActivator(LogicalKeyboardKey.numpadEnter):
+                            sendMessage,
+                      },
+                      child: TextField(
+                        controller: controller.messageComposerController,
+                        decoration: InputDecoration(
+                          hintText: 'Escribe un mensaje',
+                          hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                            fontSize: 13,
+                            color: const Color(0xFF8696A0),
+                          ),
+                          border: InputBorder.none,
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 8),
                         ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => sendMessage(),
+                        minLines: 1,
+                        maxLines: 3,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontSize: 13.5,
+                          color: const Color(0xFF0F172A),
+                          height: 1.35,
+                        ),
                       ),
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => sendMessage(),
-                      minLines: 1,
-                      maxLines: 3,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontSize: 13.5,
-                        color: const Color(0xFF0F172A),
-                        height: 1.35,
+                    ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: controller.hasDraftMessage || isRecording
+                ? SizedBox(
+                    key: const ValueKey('send-action'),
+                    width: 42,
+                    height: 42,
+                    child: FilledButton(
+                      onPressed: canSend ? sendMessage : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF00A884),
+                        padding: EdgeInsets.zero,
+                        shape: const CircleBorder(),
+                      ),
+                      child: controller.isSendingMessage ||
+                              controller.isPreparingAudio
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                    ),
+                  )
+                : Tooltip(
+                    key: const ValueKey('record-action'),
+                    message: 'Mantén presionado para grabar una nota de voz',
+                    child: GestureDetector(
+                      onLongPressStart: canRecord
+                          ? (_) => unawaited(controller.startAudioRecording())
+                          : null,
+                      onLongPressEnd: controller.isRecordingAudio
+                          ? (_) => unawaited(controller.finishAudioRecording())
+                          : null,
+                      onLongPressCancel: controller.isRecordingAudio
+                          ? () => unawaited(
+                                controller.finishAudioRecording(cancel: true),
+                              )
+                          : null,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: controller.isRecordingAudio
+                              ? const Color(0xFFDC2626)
+                              : canRecord
+                                  ? const Color(0xFF00A884)
+                                  : const Color(0xFF94A3B8),
+                          shape: BoxShape.circle,
+                          boxShadow: controller.isRecordingAudio
+                              ? const [
+                                  BoxShadow(
+                                    color: Color(0x33DC2626),
+                                    blurRadius: 18,
+                                    offset: Offset(0, 8),
+                                  ),
+                                ]
+                              : const [],
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          controller.isPreparingAudio
+                              ? Icons.hourglass_top_rounded
+                              : Icons.mic_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                     ),
                   ),
           ),
-          const SizedBox(width: 6),
-          if (controller.hasDraftMessage || isRecording)
-            SizedBox(
-              height: 40,
-              child: FilledButton(
-                onPressed: canSend ? sendMessage : null,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  controller.isSendingMessage
-                      ? 'Enviando...'
-                      : controller.isPreparingAudio
-                          ? 'Procesando...'
-                          : 'Enviar',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            )
-          else
-            Tooltip(
-              message: 'Mantén presionado para grabar una nota de voz',
-              child: GestureDetector(
-                onLongPressStart: canRecord
-                    ? (_) => unawaited(controller.startAudioRecording())
-                    : null,
-                onLongPressEnd: controller.isRecordingAudio
-                    ? (_) => unawaited(controller.finishAudioRecording())
-                    : null,
-                onLongPressCancel: controller.isRecordingAudio
-                    ? () => unawaited(
-                          controller.finishAudioRecording(cancel: true),
-                        )
-                    : null,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: controller.isRecordingAudio
-                        ? const Color(0xFFDC2626)
-                        : canRecord
-                            ? const Color(0xFF0F172A)
-                            : const Color(0xFF94A3B8),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: controller.isRecordingAudio
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x33DC2626),
-                              blurRadius: 18,
-                              offset: Offset(0, 8),
-                            ),
-                          ]
-                        : const [],
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    controller.isPreparingAudio
-                        ? Icons.hourglass_top_rounded
-                        : Icons.mic_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -632,11 +1020,10 @@ class _RecordingStatusStrip extends StatelessWidget {
     final level = controller.recordingLevel.clamp(0.12, 1.0);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
@@ -693,25 +1080,38 @@ class _RecordingStatusStrip extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.controller, required this.message});
+  const _MessageBubble({
+    required this.controller,
+    required this.message,
+    this.previousMessage,
+    this.nextMessage,
+  });
 
   final BotCenterController controller;
   final BotMessage message;
+  final BotMessage? previousMessage;
+  final BotMessage? nextMessage;
 
   @override
   Widget build(BuildContext context) {
     final isIncoming = message.isIncoming;
     final isSystem = message.author == BotMessageAuthor.system;
     final isOutgoing = !isIncoming && !isSystem;
+    final startsVisualGroup =
+        !_messagesBelongToSameVisualGroup(previousMessage, message);
+    final endsVisualGroup =
+        !_messagesBelongToSameVisualGroup(message, nextMessage);
+    final contactPhoneNumber = _resolveSelectedContactPhoneNumber(controller);
+    final showAuthorLabel = startsVisualGroup &&
+        (isSystem || message.author == BotMessageAuthor.bot || isIncoming);
     final bubbleColor = isOutgoing
-        ? const Color(0xFF2563EB)
+        ? const Color(0xFFD9FDD3)
         : isSystem
             ? const Color(0xFFE2E8F0)
             : Colors.white;
-    final textColor = isOutgoing ? Colors.white : const Color(0xFF0F172A);
-    final metaColor = isOutgoing
-        ? Colors.white.withValues(alpha: 0.82)
-        : const Color(0xFF64748B);
+    final textColor = const Color(0xFF111B21);
+    final metaColor =
+        isOutgoing ? const Color(0xFF667781) : const Color(0xFF667781);
     final alignment = isOutgoing ? Alignment.centerRight : Alignment.centerLeft;
     final timeLabel = formatConversationTimestamp(message.timestamp);
     final displayText = message.caption?.trim().isNotEmpty == true
@@ -723,10 +1123,10 @@ class _MessageBubble extends StatelessWidget {
       builder: (context, constraints) {
         final mediaHeavy = message.hasVisualMedia || message.isAudio;
         final maxWidthFactor = constraints.maxWidth >= 1200
-            ? (mediaHeavy ? 0.88 : 0.78)
+            ? (mediaHeavy ? 0.84 : 0.72)
             : constraints.maxWidth >= 840
-                ? (mediaHeavy ? 0.84 : 0.76)
-                : (mediaHeavy ? 0.92 : 0.84);
+                ? (mediaHeavy ? 0.8 : 0.72)
+                : (mediaHeavy ? 0.9 : 0.82);
 
         return Align(
           alignment: alignment,
@@ -734,120 +1134,135 @@ class _MessageBubble extends StatelessWidget {
             constraints: BoxConstraints(
               maxWidth: constraints.maxWidth * maxWidthFactor,
             ),
-            child: Column(
-              crossAxisAlignment: isOutgoing
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    _senderLabel(message.author),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 10.5,
-                          color: metaColor,
-                          fontWeight: FontWeight.w600,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: isOutgoing ? (startsVisualGroup ? 26 : 38) : 0,
+                right: isOutgoing ? 0 : (startsVisualGroup ? 26 : 38),
+              ),
+              child: Column(
+                crossAxisAlignment: isOutgoing
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  if (showAuthorLabel) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        _senderLabel(
+                          message.author,
+                          contactPhoneNumber: contactPhoneNumber,
                         ),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Container(
-                  padding: EdgeInsets.all(
-                    message.hasVisualMedia
-                        ? 8
-                        : message.isAudio
-                            ? 10
-                            : 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    borderRadius: BorderRadius.circular(18),
-                    border: isOutgoing
-                        ? null
-                        : Border.all(color: const Color(0xFFE2E8F0)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF0F172A).withValues(
-                          alpha: isOutgoing ? 0.08 : 0.05,
-                        ),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontSize: 10.5,
+                              color: metaColor,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (message.isAudio)
-                        _AudioMessageCard(
-                          controller: controller,
-                          message: message,
-                          isOutgoing: isOutgoing,
-                        )
-                      else if (message.hasVisualMedia)
-                        _MessageMedia(
-                          controller: controller,
-                          message: message,
-                        ),
-                      if (hasDisplayText) ...[
-                        if (message.hasVisualMedia || message.isAudio)
-                          const SizedBox(height: 10),
-                        Text(
-                          displayText,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    fontSize: 13,
-                                    color: textColor,
-                                    height: 1.35,
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Container(
+                    padding: EdgeInsets.fromLTRB(
+                      message.hasVisualMedia ? 8 : 12,
+                      message.isAudio ? 10 : 8,
+                      message.hasVisualMedia ? 8 : 12,
+                      7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: bubbleColor,
+                      borderRadius: _messageBubbleBorderRadius(
+                        isOutgoing: isOutgoing,
+                        isSystem: isSystem,
+                        startsVisualGroup: startsVisualGroup,
+                        endsVisualGroup: endsVisualGroup,
+                      ),
+                      border: isOutgoing || isSystem
+                          ? isOutgoing
+                              ? Border.all(color: const Color(0xFFCFE9C9))
+                              : null
+                          : Border.all(color: const Color(0xFFE7EAED)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (message.isAudio)
+                          _AudioMessageCard(
+                            controller: controller,
+                            message: message,
+                            isOutgoing: isOutgoing,
+                          )
+                        else if (message.hasVisualMedia)
+                          _MessageMedia(
+                            controller: controller,
+                            message: message,
+                            isOutgoing: isOutgoing,
+                          ),
+                        if (hasDisplayText) ...[
+                          if (message.hasVisualMedia || message.isAudio)
+                            const SizedBox(height: 8),
+                          Text(
+                            displayText,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  fontSize: 13,
+                                  color: textColor,
+                                  height: 1.32,
+                                ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            if (message.canRetry) ...[
+                              IconButton(
+                                tooltip: 'Reintentar envío',
+                                onPressed: () => unawaited(
+                                  controller.retryFailedMessage(message),
+                                ),
+                                icon: Icon(
+                                  Icons.refresh_rounded,
+                                  size: 18,
+                                  color: isOutgoing
+                                      ? const Color(0xFF00A884)
+                                      : const Color(0xFF00A884),
+        
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 24,
+                                  height: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              timeLabel,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    fontSize: 10,
+                                    color: metaColor,
+                                    fontWeight: FontWeight.w600,
                                   ),
+                            ),
+                            if (message.author ==
+                                BotMessageAuthor.operator) ...[
+                              const SizedBox(width: 5),
+                              _MessageStateIndicator(state: message.state),
+                            ],
+                          ],
                         ),
                       ],
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          if (message.canRetry) ...[
-                            IconButton(
-                              tooltip: 'Reintentar envío',
-                              onPressed: () => unawaited(
-                                controller.retryFailedMessage(message),
-                              ),
-                              icon: Icon(
-                                Icons.refresh_rounded,
-                                size: 18,
-                                color: isOutgoing
-                                    ? Colors.white
-                                    : const Color(0xFF2563EB),
-                              ),
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 24,
-                                height: 24,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          Text(
-                            timeLabel,
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      fontSize: 10,
-                                      color: metaColor,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                          ),
-                          if (message.author == BotMessageAuthor.operator) ...[
-                            const SizedBox(width: 6),
-                            _MessageStateIndicator(state: message.state),
-                          ],
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -856,11 +1271,62 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
+bool _messagesBelongToSameVisualGroup(BotMessage? current, BotMessage? other) {
+  if (current == null || other == null) {
+    return false;
+  }
+
+  final currentIsSystem = current.author == BotMessageAuthor.system;
+  final otherIsSystem = other.author == BotMessageAuthor.system;
+  if (currentIsSystem || otherIsSystem) {
+    return false;
+  }
+
+  final sameDirection = current.isIncoming == other.isIncoming;
+  final sameAuthor = current.author == other.author;
+  final withinGroupWindow =
+      current.timestamp.difference(other.timestamp).abs().inMinutes <= 6;
+
+  return sameDirection && sameAuthor && withinGroupWindow;
+}
+
+BorderRadius _messageBubbleBorderRadius({
+  required bool isOutgoing,
+  required bool isSystem,
+  required bool startsVisualGroup,
+  required bool endsVisualGroup,
+}) {
+  if (isSystem) {
+    return BorderRadius.circular(18);
+  }
+
+  if (isOutgoing) {
+    return BorderRadius.only(
+      topLeft: const Radius.circular(18),
+      topRight: Radius.circular(startsVisualGroup ? 18 : 7),
+      bottomLeft: const Radius.circular(18),
+      bottomRight: Radius.circular(endsVisualGroup ? 4 : 7),
+    );
+  }
+
+  return BorderRadius.only(
+    topLeft: Radius.circular(startsVisualGroup ? 18 : 7),
+    topRight: const Radius.circular(18),
+    bottomLeft: Radius.circular(endsVisualGroup ? 4 : 7),
+    bottomRight: const Radius.circular(18),
+  );
+}
+
 class _MessageMedia extends StatefulWidget {
-  const _MessageMedia({required this.controller, required this.message});
+  const _MessageMedia({
+    required this.controller,
+    required this.message,
+    required this.isOutgoing,
+  });
 
   final BotCenterController controller;
   final BotMessage message;
+  final bool isOutgoing;
 
   @override
   State<_MessageMedia> createState() => _MessageMediaState();
@@ -887,8 +1353,23 @@ class _MessageMediaState extends State<_MessageMedia> {
 
   void _schedulePreviewLoad() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(widget.controller.ensureMessagePreviewLoaded(widget.message));
+      unawaited(_hydrateVisibleMedia());
     });
+  }
+
+  Future<void> _hydrateVisibleMedia() async {
+    await widget.controller.ensureMessagePreviewLoaded(widget.message);
+
+    final refreshed = widget.controller.findMessageById(
+            widget.message.conversationId, widget.message.id) ??
+        widget.message;
+    final hasRenderablePreview =
+        _resolveInlinePreviewBytes(refreshed) != null ||
+            _resolvePreviewUrl(refreshed) != null;
+
+    if (!hasRenderablePreview && refreshed.isImage) {
+      await widget.controller.ensureMessagePlayableLoaded(refreshed);
+    }
   }
 
   @override
@@ -897,6 +1378,12 @@ class _MessageMediaState extends State<_MessageMedia> {
     final previewBytes = _resolveInlinePreviewBytes(message);
     final previewUrl = _resolvePreviewUrl(message);
     final hasVisual = previewBytes != null || previewUrl != null;
+    final containerColor =
+        widget.isOutgoing ? const Color(0xFFEFFBD8) : Colors.white;
+    final containerBorderColor =
+        widget.isOutgoing ? const Color(0xFFB7E3AE) : const Color(0xFFE2E8F0);
+    final chipColor =
+        widget.isOutgoing ? const Color(0xFFD9FDD3) : const Color(0xFFF8FAFC);
     final mediaLabel = message.fileName?.trim().isNotEmpty == true
         ? message.fileName!
         : (message.isImage ? 'Imagen' : 'Video');
@@ -955,18 +1442,11 @@ class _MessageMediaState extends State<_MessageMedia> {
                     Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A),
+                        color: containerColor,
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.10),
+                          color: containerBorderColor,
                         ),
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x22020617),
-                            blurRadius: 18,
-                            offset: Offset(0, 10),
-                          ),
-                        ],
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: message.isVideo
                           ? _VideoMessageThumbnailCard(
@@ -974,18 +1454,19 @@ class _MessageMediaState extends State<_MessageMedia> {
                               previewBytes: previewBytes,
                               previewUrl: previewUrl,
                               mediaLabel: mediaLabel,
+                              isOutgoing: widget.isOutgoing,
                             )
                           : Stack(
                               fit: StackFit.expand,
                               children: [
                                 DecoratedBox(
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
                                       colors: [
-                                        Color(0xFF1F2937),
-                                        Color(0xFF111827),
+                                        containerColor,
+                                        Color(0xFFF8FAFC),
                                       ],
                                     ),
                                   ),
@@ -1004,10 +1485,10 @@ class _MessageMediaState extends State<_MessageMedia> {
                                         end: Alignment.bottomCenter,
                                         colors: [
                                           Colors.transparent,
-                                          Colors.black.withValues(alpha: 0.05),
-                                          Colors.black.withValues(alpha: 0.34),
+                                          Colors.white.withValues(alpha: 0.02),
+                                          Colors.black.withValues(alpha: 0.08),
                                         ],
-                                        stops: const [0.50, 0.74, 1],
+                                        stops: const [0.66, 1],
                                       ),
                                     ),
                                   ),
@@ -1027,7 +1508,7 @@ class _MessageMediaState extends State<_MessageMedia> {
                                               .textTheme
                                               .labelLarge
                                               ?.copyWith(
-                                                color: Colors.white,
+                                                color: const Color(0xFF0F172A),
                                                 fontWeight: FontWeight.w700,
                                               ),
                                         ),
@@ -1038,21 +1519,17 @@ class _MessageMediaState extends State<_MessageMedia> {
                                           vertical: 6,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.14,
-                                          ),
+                                          color: chipColor,
                                           borderRadius:
                                               BorderRadius.circular(999),
                                           border: Border.all(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.18,
-                                            ),
+                                            color: containerBorderColor,
                                           ),
                                         ),
                                         child: const Text(
                                           'Foto',
                                           style: TextStyle(
-                                            color: Colors.white,
+                                            color: Color(0xFF334155),
                                             fontSize: 11,
                                             fontWeight: FontWeight.w700,
                                           ),
@@ -1066,7 +1543,7 @@ class _MessageMediaState extends State<_MessageMedia> {
                     ),
                     if (message.state == BotMessageState.queued)
                       Container(
-                        color: Colors.black.withValues(alpha: 0.18),
+                        color: Colors.white.withValues(alpha: 0.55),
                         alignment: Alignment.center,
                         child: const SizedBox(
                           width: 26,
@@ -1143,19 +1620,22 @@ class _VideoMessageThumbnailCard extends StatefulWidget {
     required this.previewBytes,
     required this.previewUrl,
     required this.mediaLabel,
+    required this.isOutgoing,
   });
 
   final BotMessage message;
   final Uint8List? previewBytes;
   final String? previewUrl;
   final String mediaLabel;
+  final bool isOutgoing;
 
   @override
   State<_VideoMessageThumbnailCard> createState() =>
       _VideoMessageThumbnailCardState();
 }
 
-class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> {
+class _VideoMessageThumbnailCardState
+    extends State<_VideoMessageThumbnailCard> {
   Future<Uint8List?>? _generatedThumbnailFuture;
 
   @override
@@ -1193,9 +1673,13 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
         'bot-center-thumb-',
       );
       final extension = _fileExtension(widget.message.fileName ?? 'video.mp4');
-      final file = File('${directory.path}${Platform.pathSeparator}video.$extension');
+      final file =
+          File('${directory.path}${Platform.pathSeparator}video.$extension');
       await file.writeAsBytes(localBytes, flush: true);
       try {
+        debugPrint(
+          '[BOT_CENTER_VIDEO] thumbnail source=local messageId=${widget.message.id} bytes=${localBytes.length} file=${file.path}',
+        );
         return await video_thumbnail.VideoThumbnail.thumbnailData(
           video: file.path,
           imageFormat: video_thumbnail.ImageFormat.JPEG,
@@ -1203,7 +1687,10 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
           quality: 72,
           timeMs: 0,
         );
-      } catch (_) {
+      } catch (error) {
+        debugPrint(
+          '[BOT_CENTER_VIDEO] thumbnail local error messageId=${widget.message.id} error=$error',
+        );
         return null;
       } finally {
         unawaited(directory.delete(recursive: true));
@@ -1216,6 +1703,9 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
     }
 
     try {
+      debugPrint(
+        '[BOT_CENTER_VIDEO] thumbnail source=remote messageId=${widget.message.id} mediaUrl=$remoteUrl',
+      );
       return await video_thumbnail.VideoThumbnail.thumbnailData(
         video: remoteUrl,
         imageFormat: video_thumbnail.ImageFormat.JPEG,
@@ -1223,19 +1713,28 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
         quality: 72,
         timeMs: 0,
       );
-    } catch (_) {
+    } catch (error) {
+      debugPrint(
+        '[BOT_CENTER_VIDEO] thumbnail remote error messageId=${widget.message.id} mediaUrl=$remoteUrl error=$error',
+      );
       return null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final surfaceColor =
+        widget.isOutgoing ? const Color(0xFFEFFBD8) : const Color(0xFFFFFFFF);
+    final surfaceBorderColor =
+        widget.isOutgoing ? const Color(0xFFB7E3AE) : const Color(0xFFE2E8F0);
     final durationLabel = _resolveVideoDurationLabel(widget.message);
 
     return FutureBuilder<Uint8List?>(
       future: _generatedThumbnailFuture,
       builder: (context, snapshot) {
         final generatedBytes = snapshot.data;
+        final isGenerating =
+            snapshot.connectionState == ConnectionState.waiting;
 
         return ConstrainedBox(
           constraints: const BoxConstraints(
@@ -1250,17 +1749,20 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
                 ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: DecoratedBox(
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Color(0xFF1F2937),
-                          Color(0xFF0F172A),
+                          surfaceColor,
+                          Color(0xFFF8FAFC),
                         ],
                       ),
                     ),
-                    child: _buildThumbnailVisual(generatedBytes),
+                    child: _buildThumbnailVisual(
+                      generatedBytes,
+                      isGenerating: isGenerating,
+                    ),
                   ),
                 ),
                 Positioned.fill(
@@ -1270,9 +1772,9 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withValues(alpha: 0.04),
+                          Colors.white.withValues(alpha: 0.04),
                           Colors.transparent,
-                          Colors.black.withValues(alpha: 0.44),
+                          Colors.black.withValues(alpha: 0.16),
                         ],
                         stops: const [0.0, 0.56, 1.0],
                       ),
@@ -1280,50 +1782,47 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
                   ),
                 ),
                 Positioned(
-                  left: 10,
                   top: 10,
+                  right: 10,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
+                      horizontal: 8,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.54),
+                      color: Colors.white.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: surfaceBorderColor),
                     ),
-                    child: const Text(
-                      'VIDEO',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                      ),
+                    child: const Icon(
+                      Icons.videocam_rounded,
+                      color: Color(0xFF475569),
+                      size: 14,
                     ),
                   ),
                 ),
                 Center(
                   child: Container(
-                    width: 58,
-                    height: 58,
+                    width: 64,
+                    height: 64,
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
+                      color: Colors.white.withValues(alpha: 0.92),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.18),
+                        color: surfaceBorderColor,
                       ),
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x4D020617),
-                          blurRadius: 18,
+                          color: Color(0x180F172A),
+                          blurRadius: 16,
                           offset: Offset(0, 8),
                         ),
                       ],
                     ),
                     child: const Icon(
                       Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 34,
+                      color: Color(0xFF0F172A),
+                      size: 38,
                     ),
                   ),
                 ),
@@ -1333,17 +1832,26 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
                   bottom: 10,
                   child: Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          widget.mediaLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: surfaceBorderColor),
+                        ),
+                        child: const Text(
+                          'Video',
+                          style: TextStyle(
+                            color: Color(0xFF334155),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
+                      const Spacer(),
                       if (durationLabel != null)
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -1351,13 +1859,14 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
+                            color: Colors.white.withValues(alpha: 0.92),
                             borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: surfaceBorderColor),
                           ),
                           child: Text(
                             durationLabel,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: Color(0xFF334155),
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1366,6 +1875,21 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
                     ],
                   ),
                 ),
+                if (widget.mediaLabel.trim().isNotEmpty)
+                  Positioned(
+                    left: 12,
+                    right: 72,
+                    bottom: 42,
+                    child: Text(
+                      widget.mediaLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: const Color(0xFF0F172A),
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1374,7 +1898,10 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
     );
   }
 
-  Widget _buildThumbnailVisual(Uint8List? generatedBytes) {
+  Widget _buildThumbnailVisual(
+    Uint8List? generatedBytes, {
+    required bool isGenerating,
+  }) {
     if (widget.previewBytes != null) {
       return Image.memory(
         widget.previewBytes!,
@@ -1403,7 +1930,7 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
       );
     }
 
-    if (widget.message.state == BotMessageState.queued) {
+    if (widget.message.state == BotMessageState.queued || isGenerating) {
       return const _MediaLoadingPlaceholder();
     }
 
@@ -1411,9 +1938,68 @@ class _VideoMessageThumbnailCardState extends State<_VideoMessageThumbnailCard> 
   }
 
   Widget _videoThumbnailFallback() {
-    return const _MediaFallbackState(
-      icon: Icons.videocam_outlined,
-      label: 'Vista previa no disponible',
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFFFFFFF),
+            Color(0xFFF8FAFC),
+            Color(0xFFF1F5F9),
+          ],
+        ),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned(
+            left: -16,
+            top: -10,
+            child: Container(
+              width: 110,
+              height: 110,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            right: -24,
+            bottom: -20,
+            child: Container(
+              width: 130,
+              height: 130,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.movie_creation_outlined,
+                  color: const Color(0xFF64748B),
+                  size: 38,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Toca para reproducir',
+                  style: TextStyle(
+                    color: const Color(0xFF64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1491,6 +2077,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
   void initState() {
     super.initState();
     _player = just_audio.AudioPlayer();
+    _scheduleAudioHydration();
     _positionSubscription = _player.positionStream.listen((value) {
       if (!mounted) {
         return;
@@ -1530,7 +2117,18 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
       _errorMessage = null;
       _position = Duration.zero;
       _duration = Duration.zero;
+      _scheduleAudioHydration();
     }
+  }
+
+  void _scheduleAudioHydration() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.message.localFileBytes != null) {
+        return;
+      }
+
+      unawaited(widget.controller.ensureMessagePlayableLoaded(widget.message));
+    });
   }
 
   @override
@@ -1555,25 +2153,25 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
         ? 0.0
         : (_position.inMilliseconds / totalDuration.inMilliseconds)
             .clamp(0.0, 1.0);
-    final accent = widget.isOutgoing ? Colors.white : const Color(0xFF0F172A);
-    final secondary = widget.isOutgoing
-        ? Colors.white.withValues(alpha: 0.72)
-        : const Color(0xFF64748B);
+    final accent =
+        widget.isOutgoing ? const Color(0xFF00A884) : const Color(0xFF0F172A);
+    final secondary = const Color(0xFF64748B);
+    final waveformInactive = widget.isOutgoing
+        ? const Color(0xFF7CC7B8).withValues(alpha: 0.45)
+        : secondary.withValues(alpha: 0.22);
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 320),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
         decoration: BoxDecoration(
           color: widget.isOutgoing
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: widget.isOutgoing
-                ? Colors.white.withValues(alpha: 0.12)
-                : const Color(0xFFE2E8F0),
-          ),
+              ? const Color(0xFFD9FDD3)
+              : const Color(0xFFFFFFFF),
+          borderRadius: BorderRadius.circular(18),
+          border: widget.isOutgoing
+              ? null
+              : Border.all(color: const Color(0xFFE7EAED)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1584,12 +2182,12 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                   onTap: _togglePlayback,
                   borderRadius: BorderRadius.circular(999),
                   child: Container(
-                    width: 40,
-                    height: 40,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
                       color: widget.isOutgoing
-                          ? Colors.white.withValues(alpha: 0.14)
-                          : const Color(0xFFDBEAFE),
+                          ? const Color(0xFF00A884)
+                          : const Color(0xFFE9EDEF),
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
@@ -1599,7 +2197,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                           : Icons.play_arrow_rounded,
                       color: widget.isOutgoing
                           ? Colors.white
-                          : const Color(0xFF2563EB),
+                          : const Color(0xFF54656F),
                       size: 22,
                     ),
                   ),
@@ -1613,13 +2211,13 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                         messageId: message.id,
                         progress: progress,
                         activeColor: accent,
-                        inactiveColor: secondary.withValues(alpha: 0.28),
+                        inactiveColor: waveformInactive,
                         onSeekFraction: totalDuration.inMilliseconds > 0
                             ? (fraction) =>
                                 _seekToFraction(fraction, totalDuration)
                             : null,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
                           Text(
@@ -1631,6 +2229,14 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                                     ),
                           ),
                           const Spacer(),
+                          if (widget.message.isIncoming) ...[
+                            const Icon(
+                              Icons.mic_rounded,
+                              size: 12,
+                              color: Color(0xFF667781),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
                           Text(
                             _formatAudioDuration(totalDuration),
                             style:
@@ -1654,7 +2260,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                     Icons.error_outline_rounded,
                     size: 14,
                     color: widget.isOutgoing
-                        ? const Color(0xFFFECACA)
+                        ? const Color(0xFFDC2626)
                         : const Color(0xFFDC2626),
                   ),
                   const SizedBox(width: 6),
@@ -1663,7 +2269,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                       _errorMessage!,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: widget.isOutgoing
-                                ? const Color(0xFFFECACA)
+                                ? const Color(0xFFB91C1C)
                                 : const Color(0xFFB91C1C),
                             fontSize: 11.5,
                           ),
@@ -1675,7 +2281,7 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
                       'Reintentar',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: widget.isOutgoing
-                                ? Colors.white
+                                ? const Color(0xFF1D4ED8)
                                 : const Color(0xFF1D4ED8),
                             fontWeight: FontWeight.w700,
                           ),
@@ -1728,51 +2334,54 @@ class _AudioMessageCardState extends State<_AudioMessageCard> {
   }
 
   Future<bool> _ensureSourceReady(BotMessage candidate) async {
-    final localBytes = candidate.localFileBytes;
-    if (localBytes != null && localBytes.isNotEmpty) {
-      final nextKey = 'local:${candidate.id}:${localBytes.length}';
-      if (_openedSourceKey == nextKey) {
-        return true;
-      }
+    final remoteUrl = _resolvePlayableAudioUrl(candidate);
 
-      try {
-        final directory =
-            await Directory.systemTemp.createTemp('bot-center-audio-');
-        final extension = _resolveAudioTempExtension(candidate);
-        final file = File(
-          '${directory.path}${Platform.pathSeparator}audio.$extension',
-        );
-        await file.writeAsBytes(localBytes, flush: true);
+    // On Windows/iOS, prefer remoteUrl over local files due to platform limitations
+    final isDesktopOrIos = Platform.isWindows || Platform.isIOS;
 
-        final previousFile = _tempFile;
-        _tempFile = file;
-        if (previousFile != null) {
-          unawaited(previousFile.parent.delete(recursive: true));
+    // Try local bytes first (only on Android/macOS where it's reliable)
+    if (!isDesktopOrIos) {
+      final localBytes = candidate.localFileBytes;
+      if (localBytes != null && localBytes.isNotEmpty) {
+        final nextKey = 'local:${candidate.id}:${localBytes.length}';
+        if (_openedSourceKey == nextKey) {
+          return true;
         }
 
-        debugPrint(
-          '[BOT_CENTER_AUDIO] setFilePath messageId=${candidate.id} path=${file.path}',
-        );
-        await _player.setFilePath(file.path);
-        _openedSourceKey = nextKey;
-        if (mounted) {
-          setState(() => _errorMessage = null);
+        try {
+          final directory =
+              await Directory.systemTemp.createTemp('bot-center-audio-');
+          final extension = _resolveAudioTempExtension(candidate);
+          final file = File(
+            '${directory.path}${Platform.pathSeparator}audio.$extension',
+          );
+          await file.writeAsBytes(localBytes, flush: true);
+
+          final previousFile = _tempFile;
+          _tempFile = file;
+          if (previousFile != null) {
+            unawaited(previousFile.parent.delete(recursive: true));
+          }
+
+          debugPrint(
+            '[BOT_CENTER_AUDIO] setFilePath messageId=${candidate.id} path=${file.path}',
+          );
+          await _player.setFilePath(file.path);
+          _openedSourceKey = nextKey;
+          if (mounted) {
+            setState(() => _errorMessage = null);
+          }
+          return true;
+        } catch (error) {
+          debugPrint(
+            '[BOT_CENTER_AUDIO] local load error messageId=${candidate.id} error=$error',
+          );
+          // Fall through to try remote URL
         }
-        return true;
-      } catch (error) {
-        debugPrint(
-          '[BOT_CENTER_AUDIO] local load error messageId=${candidate.id} error=$error',
-        );
-        if (mounted) {
-          setState(() {
-            _errorMessage = 'No se pudo reproducir el audio local.';
-          });
-        }
-        return false;
       }
     }
 
-    final remoteUrl = _resolvePlayableAudioUrl(candidate);
+    // Fall back to remote URL
     if (remoteUrl == null) {
       debugPrint(
         '[BOT_CENTER_AUDIO] invalid mediaUrl messageId=${candidate.id} mediaUrl=${candidate.mediaUrl ?? '(none)'}',
@@ -1989,12 +2598,12 @@ class _AiFloatingActionButton extends StatelessWidget {
     return FloatingActionButton(
       heroTag: 'bot-center-ai-fab',
       onPressed: () => _showAiActionSheet(context),
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFF00A884),
       foregroundColor: Colors.white,
-      elevation: 8,
-      highlightElevation: 10,
+      elevation: 4,
+      highlightElevation: 6,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: controller.isProcessingWithAi
           ? const SizedBox(
@@ -2254,7 +2863,7 @@ String _resolveAudioTempExtension(BotMessage message) {
   switch (mimeType) {
     case 'audio/ogg':
     case 'audio/opus':
-      return 'ogg';
+      return 'mp3'; // Backend converts OGG/opus to MP3
     case 'audio/wav':
     case 'audio/x-wav':
       return 'wav';
@@ -2412,12 +3021,15 @@ class _MediaLoadingPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF0F172A),
+      color: const Color(0xFFF8FAFC),
       alignment: Alignment.center,
       child: const SizedBox(
         width: 28,
         height: 28,
-        child: CircularProgressIndicator(strokeWidth: 2.6),
+        child: CircularProgressIndicator(
+          strokeWidth: 2.6,
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF94A3B8)),
+        ),
       ),
     );
   }
@@ -2432,7 +3044,7 @@ class _MediaFallbackState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF4B5563),
+      color: const Color(0xFFF8FAFC),
       alignment: Alignment.center,
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -2440,7 +3052,7 @@ class _MediaFallbackState extends StatelessWidget {
         children: [
           Icon(
             icon,
-            color: Colors.white70,
+            color: const Color(0xFF94A3B8),
             size: 40,
           ),
           const SizedBox(height: 10),
@@ -2448,7 +3060,7 @@ class _MediaFallbackState extends StatelessWidget {
             label,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white70,
+                  color: const Color(0xFF64748B),
                   fontSize: 12,
                   height: 1.35,
                 ),
@@ -2511,23 +3123,33 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
         return;
       }
       setState(() {
-        _duration = value ?? Duration.zero;
+        _duration = value;
       });
+    });
+    _player.stream.log.listen((event) {
+      debugPrint(
+        '[BOT_CENTER_VIDEO] player-log messageId=${widget.message.id} level=${event.level} text=${event.text}',
+      );
+    });
+    _player.stream.error.listen((error) {
+      debugPrint(
+        '[BOT_CENTER_VIDEO] player-error messageId=${widget.message.id} error=$error',
+      );
     });
     unawaited(_openVideo());
   }
 
   Future<void> _openVideo() async {
     try {
-      var resolved = widget.controller
-              .findMessageById(widget.message.conversationId, widget.message.id) ??
+      var resolved = widget.controller.findMessageById(
+              widget.message.conversationId, widget.message.id) ??
           widget.message;
 
       if (resolved.localFileBytes?.isNotEmpty != true &&
           _resolvePlayableVideoUrl(resolved) == null) {
         await widget.controller.ensureMessagePlayableLoaded(resolved);
-        resolved = widget.controller
-                .findMessageById(widget.message.conversationId, widget.message.id) ??
+        resolved = widget.controller.findMessageById(
+                widget.message.conversationId, widget.message.id) ??
             resolved;
       }
 
@@ -2536,6 +3158,9 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
         throw StateError('Video source not available');
       }
 
+      debugPrint(
+        '[BOT_CENTER_VIDEO] open messageId=${resolved.id} mediaUrl=${resolved.mediaUrl ?? '(none)'} localBytes=${resolved.localFileBytes?.length ?? 0}',
+      );
       await _player.open(media);
       await _player.play();
       if (!mounted) {
@@ -2547,14 +3172,16 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
         _errorMessage = null;
       });
       return;
-    } catch (_) {
-      // handled below
+    } catch (error) {
+      debugPrint(
+        '[BOT_CENTER_VIDEO] open error messageId=${widget.message.id} mediaUrl=${widget.message.mediaUrl ?? '(none)'} error=$error',
+      );
     }
 
     if (mounted) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'No se pudo cargar el video';
+        _errorMessage = 'No se pudo cargar el video. Verifica URL o codec.';
       });
     }
   }
@@ -2649,7 +3276,8 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
                                   Center(
                                     child: AspectRatio(
                                       aspectRatio: _resolvedVideoAspectRatio(),
-                                      child: Video(controller: _videoController),
+                                      child:
+                                          Video(controller: _videoController),
                                     ),
                                   ),
                                   if (!_isPlaying)
@@ -2724,7 +3352,9 @@ class _VideoPreviewDialogState extends State<_VideoPreviewDialog> {
                         IconButton(
                           onPressed: _togglePlayback,
                           icon: Icon(
-                            _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            _isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
                             color: Colors.white,
                             size: 30,
                           ),
@@ -2815,10 +3445,78 @@ String _formatAudioDuration(Duration duration) {
   return '$minutes:$seconds';
 }
 
-String _senderLabel(BotMessageAuthor author) {
+String? _resolveSelectedContactPhoneNumber(BotCenterController controller) {
+  final fromConversation =
+      controller.selectedConversationOrNull?.phoneNumber.trim();
+  if (fromConversation != null &&
+      fromConversation.isNotEmpty &&
+      fromConversation != '-') {
+    return fromConversation;
+  }
+
+  final fromContact = controller.selectedContact.phoneNumber.trim();
+  if (fromContact.isNotEmpty && fromContact != '-') {
+    return fromContact;
+  }
+
+  return null;
+}
+
+String _resolveSelectedContactDisplayName(
+  BotCenterController controller,
+  BotConversation conversation,
+) {
+  final fromContact = controller.selectedContact.name.trim();
+  if (fromContact.isNotEmpty && fromContact != '-' && fromContact != 'No disponible') {
+    return fromContact;
+  }
+
+  final fromConversation = conversation.contactName.trim();
+  if (fromConversation.isNotEmpty) {
+    return fromConversation;
+  }
+
+  return 'Contacto';
+}
+
+Future<void> _copyContactSummary(
+  BuildContext context, {
+  required String contactName,
+  required String? contactPhoneNumber,
+}) async {
+  final sanitizedName = contactName.trim().isEmpty ? 'Contacto' : contactName.trim();
+  final sanitizedPhone =
+      contactPhoneNumber == null || contactPhoneNumber.trim().isEmpty
+          ? 'No disponible'
+          : contactPhoneNumber.trim();
+
+  await Clipboard.setData(
+    ClipboardData(
+      text: 'Nombre: $sanitizedName\nTeléfono: $sanitizedPhone',
+    ),
+  );
+
+  if (!context.mounted) {
+    return;
+  }
+
+  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+    const SnackBar(
+      content: Text('Nombre y teléfono copiados'),
+      duration: Duration(seconds: 2),
+    ),
+  );
+}
+
+String _senderLabel(
+  BotMessageAuthor author, {
+  String? contactPhoneNumber,
+}) {
   switch (author) {
     case BotMessageAuthor.contact:
-      return 'Contacto';
+      return contactPhoneNumber == null
+          ? 'Cliente'
+          : 'Cliente • $contactPhoneNumber';
     case BotMessageAuthor.bot:
       return 'Bot';
     case BotMessageAuthor.operator:

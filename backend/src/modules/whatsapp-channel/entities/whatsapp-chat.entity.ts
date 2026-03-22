@@ -37,6 +37,9 @@ export class WhatsappChatEntity extends BaseEntity {
   @Column({ type: 'boolean', name: 'reply_target_unresolved', default: false })
   replyTargetUnresolved!: boolean;
 
+  @Column({ type: 'boolean', name: 'auto_reply_enabled', default: false })
+  autoReplyEnabled!: boolean;
+
   @Column({ type: 'text', name: 'push_name', nullable: true })
   pushName!: string | null;
 

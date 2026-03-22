@@ -89,6 +89,23 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
   }
 
   @override
+  Future<BotConversation> updateConversationAutoReply({
+    required String conversationId,
+    required bool enabled,
+  }) async {
+    final model = await _resolve(
+      () => _remoteDataSource.updateConversationAutoReply(
+        conversationId: conversationId,
+        enabled: enabled,
+      ),
+      fallback: () => throw const BotCenterApiException(
+        'El control de IA automática requiere el backend real del Bot Center.',
+      ),
+    );
+    return model.toEntity();
+  }
+
+  @override
   Future<List<BotMemoryItem>> getMemory(String conversationId) async {
     final model = await _resolve(
       () => _remoteDataSource.getMemory(conversationId),

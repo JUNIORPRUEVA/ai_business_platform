@@ -24,6 +24,11 @@ abstract interface class BotCenterRepository {
 
   Future<void> deleteConversation(String conversationId);
 
+  Future<BotConversation> updateConversationAutoReply({
+    required String conversationId,
+    required bool enabled,
+  });
+
   Future<List<BotMemoryItem>> getMemory(String conversationId);
 
   Future<BotMemoryItem> createMemory({

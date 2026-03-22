@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -7,6 +8,14 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Configure audio session for playback
+    do {
+      try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: .duckOthers)
+      try AVAudioSession.sharedInstance().setActive(true)
+    } catch {
+      print("AVAudioSession configuration failed: \(error)")
+    }
+
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

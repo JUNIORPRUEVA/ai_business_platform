@@ -106,6 +106,7 @@ class BotCenterController extends ChangeNotifier {
   bool _isMutatingMemory = false;
   bool _isSendingMessage = false;
   bool _isProcessingWithAi = false;
+  bool _isUpdatingAutoReply = false;
   bool _isRealtimeConnected = false;
   bool _hasLoaded = false;
   bool _isRecordingAudio = false;
@@ -129,6 +130,7 @@ class BotCenterController extends ChangeNotifier {
   bool get isMutatingMemory => _isMutatingMemory;
   bool get isSendingMessage => _isSendingMessage;
   bool get isProcessingWithAi => _isProcessingWithAi;
+  bool get isUpdatingAutoReply => _isUpdatingAutoReply;
   bool get hasLoaded => _hasLoaded;
   bool get isRealtimeConnected => _isRealtimeConnected;
   bool get isRecordingAudio => _isRecordingAudio;
@@ -184,6 +186,8 @@ class BotCenterController extends ChangeNotifier {
         id: 'unavailable',
         contactName: 'No conversation selected',
         phoneNumber: '-',
+        profilePictureUrl: null,
+        autoReplyEnabled: false,
         lastMessagePreview: '',
         unreadCount: 0,
         stage: BotConversationStage.onboarding,
@@ -647,6 +651,42 @@ class BotCenterController extends ChangeNotifier {
       if (_hasLoaded) {
         _scheduleNextBackgroundRefresh();
       }
+      notifyListeners();
+    }
+  }
+
+  Future<void> setConversationAutoReplyEnabled(bool enabled) async {
+    final conversation = selectedConversationOrNull;
+    if (conversation == null || _isUpdatingAutoReply) {
+      return;
+    }
+
+    _isUpdatingAutoReply = true;
+    _actionMessage = null;
+    notifyListeners();
+
+    try {
+      final updatedConversation = await _repository.updateConversationAutoReply(
+        conversationId: conversation.id,
+        enabled: enabled,
+      );
+
+      for (var index = 0; index < _conversations.length; index++) {
+        if (_conversations[index].id == updatedConversation.id) {
+          _conversations[index] = updatedConversation;
+          break;
+        }
+      }
+
+      _actionMessage = enabled
+          ? 'La IA responderá automáticamente en este chat.'
+          : 'La IA quedó pausada en este chat.';
+      _errorMessage = null;
+    } catch (error) {
+      _actionMessage =
+          'No se pudo actualizar el modo IA del chat. ${error.toString()}';
+    } finally {
+      _isUpdatingAutoReply = false;
       notifyListeners();
     }
   }
@@ -1349,13 +1389,12 @@ class BotCenterController extends ChangeNotifier {
     final fetchedGrowable = fetched
         .where((message) => message.conversationId == conversationId)
         .map((message) {
-          final previous = existingById[message.id];
-          if (previous == null) {
-            return message;
-          }
-          return _mergeMediaPresentation(previous, message);
-        })
-        .toList(growable: true);
+      final previous = existingById[message.id];
+      if (previous == null) {
+        return message;
+      }
+      return _mergeMediaPresentation(previous, message);
+    }).toList(growable: true);
     final optimistic = existing
         .where(
           (message) =>
@@ -1691,12 +1730,10 @@ class BotCenterController extends ChangeNotifier {
   }
 
   BotMessage _mergeMediaPresentation(BotMessage previous, BotMessage next) {
-    final localPreviewBytes =
-      next.localPreviewBytes ??
-      (next.hasVisualMedia ? previous.localPreviewBytes : null);
-    final localFileBytes =
-      next.localFileBytes ??
-      (next.hasDownloadableAsset ? previous.localFileBytes : null);
+    final localPreviewBytes = next.localPreviewBytes ??
+        (next.hasVisualMedia ? previous.localPreviewBytes : null);
+    final localFileBytes = next.localFileBytes ??
+        (next.hasDownloadableAsset ? previous.localFileBytes : null);
 
     return next.copyWith(
       localPreviewBytes: localPreviewBytes,

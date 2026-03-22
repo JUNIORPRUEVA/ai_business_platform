@@ -26,6 +26,7 @@ import { RolesGuard } from '../../../common/auth/roles.guard';
 import { CreateMemoryItemDto } from '../dto/create-memory-item.dto';
 import { SendTestMediaDto } from '../dto/send-test-media.dto';
 import { SendTestMessageDto } from '../dto/send-test-message.dto';
+import { UpdateAutoReplyDto } from '../dto/update-auto-reply.dto';
 import { UpdateMemoryItemDto } from '../dto/update-memory-item.dto';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
@@ -133,6 +134,20 @@ export class BotCenterController {
     @Param('id') conversationId: string,
   ): Promise<{ deleted: true }> {
     return this.botCenterService.deleteConversation(user.companyId, conversationId);
+  }
+
+  @Roles('admin', 'operator')
+  @Patch('conversations/:id/auto-reply')
+  updateConversationAutoReply(
+    @CurrentUser() user: AuthUser,
+    @Param('id') conversationId: string,
+    @Body() payload: UpdateAutoReplyDto,
+  ): Promise<BotConversationSummary> {
+    return this.botCenterService.updateConversationAutoReply(
+      user.companyId,
+      conversationId,
+      payload.enabled,
+    );
   }
 
   @Get('conversations/:id/delivery-diagnostics')

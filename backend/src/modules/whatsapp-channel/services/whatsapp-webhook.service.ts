@@ -4,7 +4,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 
+import { ChannelsService } from '../../channels/channels.service';
+import { ContactsService } from '../../contacts/contacts.service';
+import { ConversationsService } from '../../conversations/conversations.service';
+import { MessagesService } from '../../messages/messages.service';
+import { MessageProcessingJob } from '../../workers/processors/message-processing.processor';
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
+import { WhatsappChatEntity } from '../entities/whatsapp-chat.entity';
 import { WhatsappMessageType } from '../entities/whatsapp-message.entity';
 import { WhatsappAttachmentService } from './whatsapp-attachment.service';
 import { BotCenterRealtimeService } from './bot-center-realtime.service';
@@ -38,8 +44,16 @@ export class WhatsappWebhookService {
   constructor(
     @InjectQueue('whatsapp-webhook-processing')
     private readonly webhookQueue: Queue<WhatsappWebhookJob>,
+    @InjectQueue('message-processing')
+    private readonly messageProcessingQueue: Queue<MessageProcessingJob>,
     @InjectRepository(WhatsappChannelConfigEntity)
     private readonly configsRepository: Repository<WhatsappChannelConfigEntity>,
+    @InjectRepository(WhatsappChatEntity)
+    private readonly chatsRepository: Repository<WhatsappChatEntity>,
+    private readonly channelsService: ChannelsService,
+    private readonly contactsService: ContactsService,
+    private readonly conversationsService: ConversationsService,
+    private readonly appMessagesService: MessagesService,
     private readonly configService: WhatsappChannelConfigService,
     private readonly logsService: WhatsappChannelLogService,
     private readonly messagingService: WhatsappMessagingService,
@@ -291,6 +305,10 @@ export class WhatsappWebhookService {
 
     await this.botCenterRealtimeService.publishMessageUpsert(messageForRealtime);
 
+    if (!fromMe) {
+      await this.triggerAiAutoReply(config, messageForRealtime.chatId, messageForRealtime.id, content.textBody);
+    }
+
     return {
       messageId: saved.id,
       chatId: saved.chatId,
@@ -298,6 +316,128 @@ export class WhatsappWebhookService {
       messageType: saved.messageType,
       fromMe: saved.fromMe,
     };
+  }
+
+  private async triggerAiAutoReply(
+    config: WhatsappChannelConfigEntity,
+    chatId: string,
+    whatsappMessageId: string,
+    textBody: string | null,
+  ): Promise<void> {
+    const chat = await this.chatsRepository.findOne({
+      where: { id: chatId, companyId: config.companyId },
+    });
+    if (!chat) {
+      return;
+    }
+
+    if (!chat.autoReplyEnabled) {
+      this.logger.log(
+        `[AI AUTO REPLY] skipped companyId=${config.companyId} chatId=${chatId} reason=chat_auto_reply_disabled`,
+      );
+      return;
+    }
+
+    const contactPhone = this.resolveConversationContactPhone(chat);
+    if (!contactPhone) {
+      this.logger.warn(
+        `[AI AUTO REPLY] skipped companyId=${config.companyId} chatId=${chatId} reason=missing_contact_phone`,
+      );
+      return;
+    }
+
+    let channelId = '';
+    try {
+      const channel = await this.channelsService.getByInstanceNameUnsafe(config.instanceName);
+      if (channel.companyId !== config.companyId) {
+        return;
+      }
+      channelId = channel.id;
+    } catch (error) {
+      this.logger.warn(
+        `[AI AUTO REPLY] skipped companyId=${config.companyId} chatId=${chatId} reason=channel_resolution_failed error=${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return;
+    }
+
+    const contact = await this.contactsService.findOrCreateByPhone(
+      config.companyId,
+      contactPhone,
+      chat.pushName || chat.profileName,
+    );
+    const conversation = await this.conversationsService.findOrCreateOpen(
+      config.companyId,
+      channelId,
+      contact.id,
+    );
+
+    const existingMessage = await this.appMessagesService.findByMetadataValue(
+      config.companyId,
+      conversation.id,
+      'whatsappChannelMessageId',
+      whatsappMessageId,
+    );
+    if (existingMessage) {
+      return;
+    }
+
+    const createdMessage = await this.appMessagesService.create(
+      config.companyId,
+      conversation.id,
+      {
+        sender: 'client',
+        content: textBody?.trim().isNotEmpty == true ? textBody!.trim() : 'Mensaje recibido por WhatsApp.',
+        type: 'text',
+        metadata: {
+          source: 'whatsapp-channel-auto-reply',
+          botCenterConversationId: chat.id,
+          whatsappChannelMessageId: whatsappMessageId,
+          remoteJid: chat.remoteJid,
+        },
+      },
+    );
+
+    await this.messageProcessingQueue.add(
+      'process-inbound-message',
+      {
+        companyId: config.companyId,
+        channelId,
+        contactPhone,
+        conversationId: conversation.id,
+        messageId: createdMessage.id,
+      },
+      {
+        jobId: `whatsapp-channel-auto-reply:${whatsappMessageId}`,
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      },
+    );
+
+    this.logger.log(
+      `[AI AUTO REPLY] queued companyId=${config.companyId} chatId=${chat.id} appConversationId=${conversation.id} appMessageId=${createdMessage.id}`,
+    );
+  }
+
+  private resolveConversationContactPhone(chat: WhatsappChatEntity): string {
+    const candidates = [
+      chat.sendTarget,
+      chat.canonicalNumber,
+      chat.canonicalRemoteJid,
+      chat.remoteJid,
+    ];
+
+    for (const raw of candidates) {
+      const candidate = this.readString(raw);
+      if (!candidate) {
+        continue;
+      }
+      const digits = candidate.replace(/\D/g, '');
+      if (digits) {
+        return digits;
+      }
+    }
+
+    return '';
   }
 
   private detectType(message: Record<string, unknown>): WhatsappMessageType {

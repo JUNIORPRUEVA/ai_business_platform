@@ -826,6 +826,33 @@ export class BotCenterService {
     return { deleted: true };
   }
 
+  async updateConversationAutoReply(
+    companyId: string,
+    conversationId: string,
+    enabled: boolean,
+  ): Promise<BotConversationSummary> {
+    const chat = await this.getConversationOrThrow(companyId, conversationId);
+    chat.autoReplyEnabled = enabled;
+    const saved = await this.chatsRepository.save(chat);
+    const latestMessage = await this.messagesRepository.findOne({
+      where: { companyId, chatId: conversationId },
+      order: { createdAt: 'DESC' },
+    });
+
+    this.prependLog(companyId, {
+      id: `log-${Date.now()}-auto-reply`,
+      timestamp: new Date().toISOString(),
+      eventType: enabled ? 'AI auto-reply enabled' : 'AI auto-reply paused',
+      summary: enabled
+        ? 'La IA respondera automaticamente en esta conversación.'
+        : 'La IA automática quedó pausada para esta conversación.',
+      severity: 'info',
+      conversationId,
+    });
+
+    return this.toConversationSummary(saved, latestMessage);
+  }
+
   async getConversationDetail(
     companyId: string,
     conversationId: string,
@@ -1056,6 +1083,7 @@ export class BotCenterService {
       id: chat.id,
       contactName: this.resolveContactName(chat),
       phone: this.toPhoneDisplay(chat.remoteJid),
+      autoReplyEnabled: chat.autoReplyEnabled,
       lastMessagePreview: preview,
       unreadCount: chat.unreadCount,
       stage: this.resolveConversationStage(chat, latestMessage),

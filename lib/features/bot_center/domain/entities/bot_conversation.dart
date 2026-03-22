@@ -32,17 +32,23 @@ class BotConversation {
     required this.unreadCount,
     required this.stage,
     required this.lastUpdated,
+    this.profilePictureUrl,
+    this.autoReplyEnabled = false,
   });
 
   final String id;
   final String contactName;
   final String phoneNumber;
+  final String? profilePictureUrl;
+  final bool autoReplyEnabled;
   final String lastMessagePreview;
   final int unreadCount;
   final BotConversationStage stage;
   final DateTime lastUpdated;
 
   BotConversation copyWith({
+    String? profilePictureUrl,
+    bool? autoReplyEnabled,
     String? lastMessagePreview,
     int? unreadCount,
     BotConversationStage? stage,
@@ -52,6 +58,8 @@ class BotConversation {
       id: id,
       contactName: contactName,
       phoneNumber: phoneNumber,
+      profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
+      autoReplyEnabled: autoReplyEnabled ?? this.autoReplyEnabled,
       lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
       unreadCount: unreadCount ?? this.unreadCount,
       stage: stage ?? this.stage,

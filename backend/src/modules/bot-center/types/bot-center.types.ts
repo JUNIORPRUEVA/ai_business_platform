@@ -19,6 +19,7 @@ export interface BotConversationSummary {
   id: string;
   contactName: string;
   phone: string;
+  autoReplyEnabled: boolean;
   lastMessagePreview: string;
   unreadCount: number;
   stage: BotConversationStage;

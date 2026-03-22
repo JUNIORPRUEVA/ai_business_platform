@@ -147,18 +147,20 @@ class _BotCenterContentState extends State<BotCenterContent> {
           builder: (context, constraints) {
             final contentPadding = widget.embedded
                 ? EdgeInsets.zero
-              : const EdgeInsets.fromLTRB(6, 0, 6, 4);
+                : const EdgeInsets.fromLTRB(6, 0, 6, 4);
 
             // Spec: | Chats | Conversación | Contexto |
             final isWideDesktop = constraints.maxWidth >= 1320;
-            final chatsWidth = isWideDesktop ? 272.0 : 284.0;
+            final chatsWidth = isWideDesktop ? 328.0 : 340.0;
             final contextWidth = isWideDesktop ? 308.0 : 320.0;
             const columnGap = 8.0;
             const minConversationWidth = 640.0;
 
             final contextActualWidth = _isContextExpanded ? contextWidth : 0.0;
 
-            final fixed = chatsWidth + contextActualWidth + (_isContextExpanded ? columnGap * 2 : columnGap);
+            final fixed = chatsWidth +
+                contextActualWidth +
+                (_isContextExpanded ? columnGap * 2 : columnGap);
             final availableConversationWidth = constraints.maxWidth - fixed;
             final needsHorizontalScroll =
                 availableConversationWidth < minConversationWidth;
@@ -177,7 +179,8 @@ class _BotCenterContentState extends State<BotCenterContent> {
                       controller: widget.controller,
                       isContextExpanded: _isContextExpanded,
                       onToggleContext: () {
-                        setState(() => _isContextExpanded = !_isContextExpanded);
+                        setState(
+                            () => _isContextExpanded = !_isContextExpanded);
                       },
                     ),
                   )
@@ -187,7 +190,8 @@ class _BotCenterContentState extends State<BotCenterContent> {
                       controller: widget.controller,
                       isContextExpanded: _isContextExpanded,
                       onToggleContext: () {
-                        setState(() => _isContextExpanded = !_isContextExpanded);
+                        setState(
+                            () => _isContextExpanded = !_isContextExpanded);
                       },
                     ),
                   ),
@@ -255,31 +259,6 @@ class _BotCenterContentState extends State<BotCenterContent> {
     }
 
     return SafeArea(child: content);
-  }
-}
-
-class _ContextCollapsedRail extends StatelessWidget {
-  const _ContextCollapsedRail({required this.onExpand});
-
-  final VoidCallback onExpand;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Center(
-        child: IconButton(
-          tooltip: 'Mostrar contexto',
-          onPressed: onExpand,
-          icon: const Icon(Icons.chevron_left_rounded),
-        ),
-      ),
-    );
   }
 }
 
