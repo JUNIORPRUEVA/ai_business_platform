@@ -3,6 +3,8 @@ import { test } from 'node:test';
 
 import { EvolutionApiClientService } from './modules/whatsapp-channel/services/evolution-api-client.service';
 import { WhatsappAttachmentService } from './modules/whatsapp-channel/services/whatsapp-attachment.service';
+import { WhatsappChatEntity } from './modules/whatsapp-channel/entities/whatsapp-chat.entity';
+import { WhatsappMessageEntity } from './modules/whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappMessagingService } from './modules/whatsapp-channel/services/whatsapp-messaging.service';
 import { WhatsappJidResolverService } from './modules/whatsapp-channel/services/whatsapp-jid-resolver.service';
 import { WhatsappWebhookService } from './modules/whatsapp-channel/services/whatsapp-webhook.service';
@@ -381,8 +383,8 @@ test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensaje
     lastSyncAt: null,
   };
   const configsRepository = new InMemoryRepository([config]);
-  const chatsRepository = new InMemoryRepository([]);
-  const messagesRepository = new InMemoryRepository([]);
+  const chatsRepository = new InMemoryRepository<WhatsappChatEntity>([]);
+  const messagesRepository = new InMemoryRepository<WhatsappMessageEntity>([]);
   const savedContactPhones: string[] = [];
   const createdConversations: Array<Record<string, string>> = [];
   const queuedJobs: Array<Record<string, unknown>> = [];
