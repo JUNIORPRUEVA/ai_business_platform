@@ -664,25 +664,26 @@ export class AiBrainService {
     senderName: string | null,
   ): string {
     const normalized = userMessage.toLowerCase();
-    const namePrefix = senderName?.trim().isNotEmpty == true ? `${senderName!.trim()}, ` : '';
+    const trimmedSenderName = senderName?.trim() ?? '';
+    const namePrefix = trimmedSenderName.length > 0 ? `${trimmedSenderName}, ` : '';
     const previousClientTopic = [...recentMessages]
       .reverse()
-      .find((message) => message.sender === 'client' && message.content.trim() != userMessage.trim())
+      .find((message) => message.sender === 'client' && message.content.trim() !== userMessage.trim())
       ?.content
       .trim();
-    const shortPreviousTopic = previousClientTopic == null || previousClientTopic.isEmpty
+    const shortPreviousTopic = previousClientTopic == null || previousClientTopic.length === 0
       ? null
       : previousClientTopic.length > 80
-        ? `${previousClientTopic.substring(0, 77)}...`
+        ? `${previousClientTopic.slice(0, 77)}...`
         : previousClientTopic;
 
-    if (RegExp(r'^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b').hasMatch(normalized)) {
+    if (/^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b/.test(normalized)) {
       return shortPreviousTopic != null
         ? `Hola ${namePrefix}seguimos con lo que me comentabas sobre "${shortPreviousTopic}". ¿Qué necesitas ahora mismo?`
         : `Hola ${namePrefix}estoy aquí para ayudarte. ¿Qué necesitas?`;
     }
 
-    if (RegExp(r'(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)').hasMatch(normalized)) {
+    if (/(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)/.test(normalized)) {
       return shortPreviousTopic != null
         ? `Todo bien. Seguimos con "${shortPreviousTopic}" si quieres, o dime en qué te ayudo ahora.`
         : 'Todo bien. Dime en qué te ayudo y seguimos por ahí.';
