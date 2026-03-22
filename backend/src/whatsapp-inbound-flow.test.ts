@@ -1041,12 +1041,8 @@ test('WhatsappWebhookService extrae canonicalRemoteJid desde estructuras anidada
         };
       },
       updateStoredMedia: async () => undefined,
-    } as never,
-    botCenterRealtimeStub as never,
-    { downloadRemoteToStorage: async () => null } as never,
-    emptyEvolutionApiClient as never,
-    jidResolverStub as never,
-  );
+    },
+  });
 
   const payload = {
     event: 'messages.upsert',
@@ -1090,12 +1086,11 @@ test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution
   const configsRepository = new InMemoryRepository([config]);
   const savedMessages: Array<Record<string, unknown>> = [];
 
-  const service = new WhatsappWebhookService(
-    { add: async () => undefined } as never,
-    configsRepository as never,
-    { getEntity: async () => config } as never,
-    { create: async () => ({}) } as never,
-    {
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
       upsertInboundMessage: async (params: Record<string, unknown>) => {
         savedMessages.push(params);
         return {
