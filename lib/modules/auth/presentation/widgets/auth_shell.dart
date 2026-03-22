@@ -30,18 +30,19 @@ class AuthShell extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 520),
                   child: Container(
-                    padding: const EdgeInsets.all(28),
+                    padding: const EdgeInsets.all(32),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(28),
-                      color: theme.colorScheme.surface.withValues(alpha: 0.22),
+                      color: theme.colorScheme.surface.withValues(alpha: 0.96),
                       border: Border.all(
-                        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+                        color: theme.colorScheme.outlineVariant
+                            .withValues(alpha: 0.9),
                       ),
-                      boxShadow: [
+                      boxShadow: const [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.24),
-                          blurRadius: 30,
-                          offset: const Offset(0, 16),
+                          color: Color(0x140F172A),
+                          blurRadius: 34,
+                          offset: Offset(0, 20),
                         ),
                       ],
                     ),
@@ -49,18 +50,39 @@ class AuthShell extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFF0B6E61),
+                                Color(0xFF2E6F95),
+                              ],
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
                         Text(
                           title,
                           style: theme.textTheme.titleLarge?.copyWith(
                             fontSize: 28,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           subtitle,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.70),
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -94,16 +116,16 @@ class _AuthBackground extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF142443),
-              Color(0xFF0F1830),
-              Color(0xFF090D18),
+              Color(0xFFF6F2E9),
+              Color(0xFFF2EBE0),
+              Color(0xFFE8DFD2),
             ],
           ),
         ),
         child: Stack(
           children: [
-            _Orb(alignment: Alignment.topLeft, color: Color(0xFF38BDF8)),
-            _Orb(alignment: Alignment.bottomRight, color: Color(0xFF60A5FA)),
+            _Orb(alignment: Alignment.topLeft, color: Color(0xFF7AB6A0)),
+            _Orb(alignment: Alignment.bottomRight, color: Color(0xFFC8A47A)),
           ],
         ),
       ),

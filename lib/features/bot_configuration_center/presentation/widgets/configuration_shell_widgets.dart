@@ -22,13 +22,15 @@ class ConfigurationShellCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.88),
+        ),
         boxShadow: const [
           BoxShadow(
             color: Color(0x120F172A),
-            blurRadius: 28,
+            blurRadius: 26,
             offset: Offset(0, 16),
           ),
         ],
@@ -87,7 +89,7 @@ class ConfigurationBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: foreground.withValues(alpha: 0.18)),
       ),
       child: Row(
@@ -135,25 +137,27 @@ class ConfigurationSummaryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        color:
+            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: Theme.of(context).textTheme.labelLarge),
+          Text(label, style: theme.textTheme.labelLarge),
           const SizedBox(height: 10),
           Text(
             value,
-            style:
-                Theme.of(context).textTheme.titleLarge?.copyWith(color: accent),
+            style: theme.textTheme.titleLarge?.copyWith(color: accent),
           ),
           const SizedBox(height: 8),
-          Text(description, style: Theme.of(context).textTheme.bodyMedium),
+          Text(description, style: theme.textTheme.bodyMedium),
         ],
       ),
     );
@@ -213,12 +217,14 @@ class SettingSwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,10 +233,9 @@ class SettingSwitchTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: Theme.of(context).textTheme.titleMedium),
+                Text(label, style: theme.textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text(description,
-                    style: Theme.of(context).textTheme.bodyMedium),
+                Text(description, style: theme.textTheme.bodyMedium),
               ],
             ),
           ),

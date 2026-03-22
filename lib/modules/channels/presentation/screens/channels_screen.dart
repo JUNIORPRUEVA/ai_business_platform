@@ -26,6 +26,10 @@ class ChannelsScreen extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 920;
+                final secondaryWidth = compact
+                    ? double.infinity
+                    : (constraints.maxWidth - 14 - 340)
+                        .clamp(220.0, double.infinity);
 
                 return Wrap(
                   spacing: 14,
@@ -89,9 +93,9 @@ class ChannelsScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(
-                      width: compact
-                          ? double.infinity
-                          : constraints.maxWidth - 388,
+                      width: secondaryWidth is double
+                          ? secondaryWidth
+                          : double.infinity,
                       child: Wrap(
                         spacing: 12,
                         runSpacing: 12,
@@ -224,7 +228,8 @@ class _ChannelCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               color: isPrimary
                   ? const Color(0xFF25D366).withValues(alpha: 0.14)
-                  : theme.colorScheme.surface.withValues(alpha: 0.16),
+                  : theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.42),
               border: Border.all(
                 color: isPrimary
                     ? const Color(0xFF25D366).withValues(alpha: 0.26)
@@ -235,7 +240,7 @@ class _ChannelCard extends StatelessWidget {
               icon,
               color: isPrimary
                   ? const Color(0xFF25D366)
-                  : Colors.white.withValues(alpha: 0.86),
+                  : theme.colorScheme.primary,
               size: 22,
             ),
           ),
@@ -251,7 +256,8 @@ class _ChannelCard extends StatelessWidget {
                         title,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w900,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.92),
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.92),
                         ),
                       ),
                     ),
@@ -264,8 +270,8 @@ class _ChannelCard extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(999),
-                          color: const Color(0xFF25D366)
-                              .withValues(alpha: 0.12),
+                          color:
+                              const Color(0xFF25D366).withValues(alpha: 0.12),
                         ),
                         child: Text(
                           'Principal',
@@ -278,11 +284,13 @@ class _ChannelCard extends StatelessWidget {
                     ],
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
                         color: statusColor.withValues(alpha: 0.14),
-                        border: Border.all(color: statusColor.withValues(alpha: 0.25)),
+                        border: Border.all(
+                            color: statusColor.withValues(alpha: 0.25)),
                       ),
                       child: Text(
                         connected ? 'Conectado' : 'No conectado',

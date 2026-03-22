@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { DatabaseModule } from './common/database/database.module';
+import { AppErrorsController } from './common/errors/app-errors.controller';
+import { AppErrorLogService } from './common/errors/app-error-log.service';
+import { GlobalExceptionFilter } from './common/errors/global-exception.filter';
 import { HealthController } from './common/health/health.controller';
 import { EvolutionWebhookModule } from './modules/evolution-webhook/evolution-webhook.module';
 import { WhatsappInstancesModule } from './modules/whatsapp-instances/whatsapp-instances.module';
@@ -54,6 +57,7 @@ import { WhatsappChannelModule } from './modules/whatsapp-channel/whatsapp-chann
     WhatsappChannelModule,
     BotCenterModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, AppErrorsController],
+  providers: [AppErrorLogService, GlobalExceptionFilter],
 })
 export class AppModule {}

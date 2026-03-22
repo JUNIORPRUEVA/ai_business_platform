@@ -60,69 +60,66 @@ class ExecutiveSidebar extends ConsumerWidget {
         padding: shellPadding,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(26),
-            boxShadow: [
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: const [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.30),
-                blurRadius: 34,
-                offset: const Offset(0, 18),
+                color: Color(0x120F172A),
+                blurRadius: 36,
+                offset: Offset(0, 20),
               ),
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(26),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF0B1A3A),
-                      Color(0xFF10264D),
-                      Color(0xFF0A0F24),
-                    ],
-                    stops: [0, 0.55, 1],
-                  ),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.10),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    _SidebarHeader(
-                      isCollapsed: isCollapsed,
-                      onToggleCollapse: onToggleCollapse,
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: ListView.separated(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: isCollapsed ? 6 : 8),
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final item = items[index];
-                          final isActive = selectedIndex == index;
-                          return _SidebarItem(
-                            label: item.label,
-                            icon: item.icon,
-                            isCollapsed: isCollapsed,
-                            isActive: isActive,
-                            onTap: () => onSelect(index),
-                            activeColor: theme.colorScheme.primary,
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-                      child: _SidebarFooterPill(isCollapsed: isCollapsed),
-                    ),
+            borderRadius: BorderRadius.circular(28),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFFFFEFB),
+                    Color(0xFFF8F2E8),
+                    Color(0xFFF1E8DC),
                   ],
                 ),
+                border: Border.all(
+                  color:
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.86),
+                ),
+              ),
+              child: Column(
+                children: [
+                  _SidebarHeader(
+                    isCollapsed: isCollapsed,
+                    onToggleCollapse: onToggleCollapse,
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.separated(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: isCollapsed ? 6 : 8),
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        final isActive = selectedIndex == index;
+                        return _SidebarItem(
+                          label: item.label,
+                          icon: item.icon,
+                          isCollapsed: isCollapsed,
+                          isActive: isActive,
+                          onTap: () => onSelect(index),
+                          activeColor: theme.colorScheme.primary,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                    child: _SidebarFooterPill(isCollapsed: isCollapsed),
+                  ),
+                ],
               ),
             ),
           ),
@@ -406,7 +403,7 @@ class _SidebarHeader extends StatelessWidget {
                   Text(
                     'FULLTECH',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.92),
+                      color: theme.colorScheme.onSurface,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.4,
                     ),
@@ -415,7 +412,8 @@ class _SidebarHeader extends StatelessWidget {
                   Text(
                     'Consola ejecutiva',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.62),
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.62),
                       fontSize: 12,
                     ),
                   ),
@@ -460,17 +458,20 @@ class _SidebarItemState extends State<_SidebarItem> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final iconColor = widget.isActive
-        ? Colors.white
-        : Colors.white.withValues(alpha: _isHovered ? 0.90 : 0.72);
+        ? widget.activeColor
+        : theme.colorScheme.onSurface
+            .withValues(alpha: _isHovered ? 0.88 : 0.7);
     final textColor = widget.isActive
-        ? Colors.white.withValues(alpha: 0.92)
-        : Colors.white.withValues(alpha: _isHovered ? 0.90 : 0.68);
+        ? theme.colorScheme.onSurface
+        : theme.colorScheme.onSurface
+            .withValues(alpha: _isHovered ? 0.88 : 0.72);
 
     final background = widget.isActive
-        ? Colors.white.withValues(alpha: 0.10)
+        ? widget.activeColor.withValues(alpha: 0.1)
         : _isHovered
-            ? Colors.white.withValues(alpha: 0.07)
+            ? theme.colorScheme.surface.withValues(alpha: 0.72)
             : Colors.transparent;
 
     return MouseRegion(
@@ -493,8 +494,9 @@ class _SidebarItemState extends State<_SidebarItem> {
               color: background,
               border: Border.all(
                 color: (widget.isActive
-                        ? widget.activeColor.withValues(alpha: 0.32)
-                        : Colors.white.withValues(alpha: 0.07))
+                        ? widget.activeColor.withValues(alpha: 0.2)
+                        : theme.colorScheme.outlineVariant
+                            .withValues(alpha: 0.5))
                     .withValues(alpha: widget.isActive ? 1 : 1),
               ),
             ),
@@ -589,8 +591,16 @@ class _SidebarFooterPill extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: Colors.white.withValues(alpha: 0.06),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.42),
+        border: Border.all(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.8),
+        ),
       ),
       child: Row(
         children: [
@@ -599,11 +609,12 @@ class _SidebarFooterPill extends StatelessWidget {
             height: 38,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
-              color: Colors.white.withValues(alpha: 0.08),
+              color:
+                  Theme.of(context).colorScheme.surface.withValues(alpha: 0.94),
             ),
             child: Icon(
               Icons.lock_outline_rounded,
-              color: Colors.white.withValues(alpha: 0.86),
+              color: Theme.of(context).colorScheme.primary,
               size: 18,
             ),
           ),
@@ -615,7 +626,7 @@ class _SidebarFooterPill extends StatelessWidget {
                 Text(
                   'Espacio de trabajo seguro',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.88),
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
@@ -624,7 +635,10 @@ class _SidebarFooterPill extends StatelessWidget {
                 Text(
                   'Controles de acceso de nivel empresarial.',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.62),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.62),
                     fontSize: 12,
                     height: 1.2,
                   ),
@@ -658,6 +672,8 @@ class _HoverIconButtonState extends State<_HoverIconButton> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Tooltip(
       message: widget.tooltip,
       child: MouseRegion(
@@ -673,12 +689,16 @@ class _HoverIconButtonState extends State<_HoverIconButton> {
             height: 40,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
-              color: Colors.white.withValues(alpha: _isHovered ? 0.10 : 0.06),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: _isHovered ? 0.78 : 0.46),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.72),
+              ),
             ),
             child: Icon(
               widget.icon,
-              color: Colors.white.withValues(alpha: _isHovered ? 0.92 : 0.80),
+              color: theme.colorScheme.onSurface
+                  .withValues(alpha: _isHovered ? 0.92 : 0.76),
             ),
           ),
         ),

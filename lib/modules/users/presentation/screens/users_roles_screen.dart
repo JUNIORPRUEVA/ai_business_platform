@@ -19,6 +19,44 @@ class UsersRolesScreen extends StatelessWidget {
             subtitle:
                 'Administra miembros del equipo y permisos (Administrador, Agente, Gerente, Técnico, Ventas).',
           ),
+          const SizedBox(height: 18),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 960;
+
+              return Wrap(
+                spacing: 14,
+                runSpacing: 14,
+                children: [
+                  for (final item in const [
+                    ('Miembros activos', '12'),
+                    ('Administradores', '3'),
+                    ('Agentes', '6'),
+                  ])
+                    SizedBox(
+                      width: compact
+                          ? constraints.maxWidth
+                          : (constraints.maxWidth - 28) / 3,
+                      child: ExecutiveGlassCard(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item.$1, style: theme.textTheme.bodySmall),
+                            const SizedBox(height: 10),
+                            Text(
+                              item.$2,
+                              style: theme.textTheme.titleLarge
+                                  ?.copyWith(fontSize: 24),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 14),
           ExecutiveGlassCard(
             padding: const EdgeInsets.all(16),
@@ -94,7 +132,7 @@ class _UserRow extends StatelessWidget {
             name.isNotEmpty ? name.characters.first.toUpperCase() : '?',
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w900,
-              color: Colors.white.withValues(alpha: 0.90),
+              color: theme.colorScheme.primary,
             ),
           ),
         ),

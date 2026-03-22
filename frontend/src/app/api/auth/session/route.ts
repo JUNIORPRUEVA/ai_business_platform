@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { routeErrorResponse } from "../../_errors";
 import { backendJson } from "../_backend";
 import { TOKEN_COOKIE } from "../_constants";
 
@@ -22,7 +23,14 @@ export async function GET(req: Request) {
   const token = (await cookies()).get(TOKEN_COOKIE)?.value ?? "";
 
   if (!token) {
-    return NextResponse.json({ message: "Not authenticated" }, { status: 401 });
+    return routeErrorResponse({
+      status: 401,
+      message: "Not authenticated",
+      module: "auth_session_route",
+      path: "/api/auth/session",
+      method: "GET",
+      type: "authentication",
+    });
   }
 
   const [me, company] = await Promise.all([
@@ -31,10 +39,28 @@ export async function GET(req: Request) {
   ]);
 
   if (!me.ok) {
-    return NextResponse.json({ message: me.message }, { status: me.status });
+    return routeErrorResponse({
+      status: me.status,
+      message: me.message,
+      details: me.details,
+      module: me.module ?? "auth_session_route",
+      path: "/api/auth/session",
+      method: "GET",
+      requestId: me.requestId,
+      type: me.type,
+    });
   }
   if (!company.ok) {
-    return NextResponse.json({ message: company.message }, { status: company.status });
+    return routeErrorResponse({
+      status: company.status,
+      message: company.message,
+      details: company.details,
+      module: company.module ?? "auth_session_route",
+      path: "/api/auth/session",
+      method: "GET",
+      requestId: company.requestId,
+      type: company.type,
+    });
   }
 
   return NextResponse.json({ user: me.data, company: company.data });

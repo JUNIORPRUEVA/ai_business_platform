@@ -23,19 +23,22 @@ class SettingsScreen extends StatelessWidget {
             subtitle:
                 'Ajustes de empresa, claves API, integraciones, seguridad y facturación. Configuración aislada por tenant.',
           ),
-          SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TabBar(
-              isScrollable: true,
-              dividerColor: Colors.transparent,
-              tabAlignment: TabAlignment.start,
-              tabs: [
-                Tab(text: 'Empresa'),
-                Tab(text: 'Claves API'),
-                Tab(text: 'Seguridad'),
-                Tab(text: 'Facturación'),
-              ],
+          SizedBox(height: 18),
+          ExecutiveGlassCard(
+            padding: const EdgeInsets.all(8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TabBar(
+                isScrollable: true,
+                dividerColor: Colors.transparent,
+                tabAlignment: TabAlignment.start,
+                tabs: [
+                  Tab(text: 'Empresa'),
+                  Tab(text: 'Claves API'),
+                  Tab(text: 'Seguridad'),
+                  Tab(text: 'Facturación'),
+                ],
+              ),
             ),
           ),
           SizedBox(height: 12),

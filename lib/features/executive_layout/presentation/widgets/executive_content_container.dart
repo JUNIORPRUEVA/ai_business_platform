@@ -14,58 +14,55 @@ class ExecutiveContentContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final outerPadding = width < 760 ? 12.0 : 22.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const outerPadding = 24.0;
         final innerMaxWidth =
             math.max(0.0, constraints.maxWidth - outerPadding * 2);
         final innerMaxHeight =
             math.max(0.0, constraints.maxHeight - outerPadding * 2);
 
-        final contentWidth = math.min(1400.0, innerMaxWidth);
+        final contentWidth = math.min(1460.0, innerMaxWidth);
         return Padding(
-          padding: const EdgeInsets.all(outerPadding),
+          padding: EdgeInsets.all(outerPadding),
           child: Align(
             alignment: Alignment.topCenter,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(30),
+                borderRadius: BorderRadius.circular(28),
                 border: Border.all(
                   color:
-                      theme.colorScheme.outlineVariant.withValues(alpha: 0.92),
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.86),
                 ),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x120F172A),
-                    blurRadius: 28,
-                    offset: Offset(0, 14),
+                    blurRadius: 34,
+                    offset: Offset(0, 20),
                   ),
                 ],
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color(0xFFF8F6F0),
-                    Color(0xFFF0EEE7),
-                    Color(0xFFEAE8DE),
+                    Color(0xFFFFFEFB),
+                    Color(0xFFF8F3EA),
+                    Color(0xFFF1E8DC),
                   ],
                 ),
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(30),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: SizedBox(
-                    width: contentWidth,
-                    height: innerMaxHeight,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color:
-                            theme.colorScheme.surface.withValues(alpha: 0.74),
-                      ),
-                      child: child,
+                borderRadius: BorderRadius.circular(28),
+                child: SizedBox(
+                  width: contentWidth,
+                  height: innerMaxHeight,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface.withValues(alpha: 0.94),
                     ),
+                    child: child,
                   ),
                 ),
               ),
@@ -98,10 +95,10 @@ class _ExecutiveGlassCardState extends State<ExecutiveGlassCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    final baseBorder = theme.colorScheme.outlineVariant.withValues(alpha: 0.55);
-    final hoverBorder = theme.colorScheme.primary.withValues(alpha: 0.45);
+    final baseBorder = theme.colorScheme.outlineVariant.withValues(alpha: 0.7);
+    final hoverBorder = theme.colorScheme.primary.withValues(alpha: 0.28);
 
-    final background = theme.colorScheme.surface.withValues(alpha: 0.76);
+    final background = theme.colorScheme.surface;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -110,38 +107,35 @@ class _ExecutiveGlassCardState extends State<ExecutiveGlassCard> {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _isHovered ? hoverBorder : baseBorder),
           boxShadow: [
             BoxShadow(
               color: const Color(0x120F172A)
-                  .withValues(alpha: _isHovered ? 1 : 0.82),
-              blurRadius: _isHovered ? 30 : 22,
-              offset: const Offset(0, 12),
+                  .withValues(alpha: _isHovered ? 1 : 0.84),
+              blurRadius: _isHovered ? 32 : 24,
+              offset: const Offset(0, 16),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: background,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    theme.colorScheme.surface.withValues(alpha: 0.94),
-                    theme.colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.78),
-                  ],
-                ),
+          borderRadius: BorderRadius.circular(20),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: background,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  theme.colorScheme.surface,
+                  theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.35),
+                ],
               ),
-              child: Padding(
-                padding: widget.padding,
-                child: widget.child,
-              ),
+            ),
+            child: Padding(
+              padding: widget.padding,
+              child: widget.child,
             ),
           ),
         ),

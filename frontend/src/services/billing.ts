@@ -20,30 +20,7 @@ export type BillingSummary = {
   subscription: BillingSubscription;
 };
 
-async function jsonFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let message = "Request failed";
-    try {
-      const parsed = JSON.parse(text);
-      message = parsed?.message ?? parsed?.error ?? message;
-    } catch {
-      message = text || message;
-    }
-    throw new Error(message);
-  }
-
-  return (await res.json()) as T;
-}
+import { jsonFetch } from "@/services/app-error";
 
 export function getBillingSummary(): Promise<BillingSummary> {
   return jsonFetch<BillingSummary>("/api/billing/me");

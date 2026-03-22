@@ -48,124 +48,136 @@ class ExecutiveAppBar extends ConsumerWidget {
 
     return SizedBox(
       height: height,
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface.withValues(alpha: 0.16),
-              border: Border(
-                bottom: BorderSide(
-                  color:
-                      theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
-                ),
-              ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withValues(alpha: 0.78),
+          border: Border(
+            bottom: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.78),
             ),
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              child: Row(
-                children: [
-                  if (!minimal || isMobile) ...[
-                    _HoverIconButton(
-                      icon: Icons.menu_rounded,
-                      tooltip: 'Alternar navegación',
-                      onPressed: onToggleSidebar,
-                      size: iconSize,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0E0F172A),
+              blurRadius: 18,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          child: Row(
+            children: [
+              if (!minimal || isMobile) ...[
+                _HoverIconButton(
+                  icon: Icons.menu_rounded,
+                  tooltip: 'Alternar navegación',
+                  onPressed: onToggleSidebar,
+                  size: iconSize,
+                ),
+                const SizedBox(width: 14),
+              ],
+              if (minimal) ...[
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.9),
                     ),
-                    const SizedBox(width: 12),
-                  ],
-                  if (minimal) ...[
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.4,
-                          color: theme.colorScheme.onSurface
-                              .withValues(alpha: 0.90),
+                  ),
+                ),
+                _HoverIconButton(
+                  icon: Icons.search_rounded,
+                  tooltip: 'Buscar',
+                  onPressed: () {},
+                  size: iconSize,
+                ),
+                SizedBox(width: iconGap),
+                _HoverIconButton(
+                  icon: Icons.notifications_none_rounded,
+                  tooltip: 'Notificaciones',
+                  onPressed: () {},
+                  size: iconSize,
+                ),
+                SizedBox(width: isMobile ? 8 : 12),
+                _UserMenu(isCompact: true, isMobile: isMobile),
+              ] else ...[
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Enterprise workspace',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
                         ),
                       ),
-                    ),
-                    _HoverIconButton(
-                      icon: Icons.search_rounded,
-                      tooltip: 'Buscar',
-                      onPressed: () {},
-                      size: iconSize,
-                    ),
-                    SizedBox(width: iconGap),
-                    _HoverIconButton(
-                      icon: Icons.notifications_none_rounded,
-                      tooltip: 'Notificaciones',
-                      onPressed: () {},
-                      size: iconSize,
-                    ),
-                    SizedBox(width: isMobile ? 8 : 12),
-                    _UserMenu(isCompact: true, isMobile: isMobile),
-                  ] else ...[
-                    Expanded(
-                      child: Text(
+                      const SizedBox(height: 6),
+                      Text(
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontSize: isMobile ? 20 : 22,
                           fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.onSurface
-                              .withValues(alpha: 0.92),
-                          letterSpacing: 0.2,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
-                    ),
-                    if (!isMobile) ...[
-                      const SizedBox(width: 10),
-                      _TenantSwitcher(isCompact: isCompact),
-                      const SizedBox(width: 12),
                     ],
-                    if (isMobile) ...[
-                      _HoverIconButton(
-                        icon: Icons.search_rounded,
-                        tooltip: 'Buscar',
-                        onPressed: () {},
-                        size: iconSize,
-                      ),
-                      SizedBox(width: iconGap),
-                    ] else ...[
-                      SizedBox(
-                        width: isCompact
-                            ? math
-                                .min(260.0, math.max(180.0, width * 0.30))
-                                .toDouble()
-                            : searchWidth,
-                        child: const _SearchField(),
-                      ),
-                      SizedBox(width: isCompact ? 8 : 12),
-                    ],
-                    _HoverIconButton(
-                      icon: Icons.notifications_none_rounded,
-                      tooltip: 'Notificaciones',
-                      onPressed: () {},
-                      size: iconSize,
-                    ),
-                    SizedBox(width: iconGap),
-                    _HoverIconButton(
-                      icon: Icons.chat_bubble_outline_rounded,
-                      tooltip: 'Mensajes',
-                      onPressed: () {
-                        ref
-                            .read(executiveSelectedIndexProvider.notifier)
-                            .state = executiveMessagesIndex;
-                      },
-                      size: iconSize,
-                    ),
-                    SizedBox(width: isMobile ? 8 : 12),
-                    _UserMenu(isCompact: isCompact, isMobile: isMobile),
-                  ],
+                  ),
+                ),
+                if (!isMobile) ...[
+                  const SizedBox(width: 10),
+                  _TenantSwitcher(isCompact: isCompact),
+                  const SizedBox(width: 12),
                 ],
-              ),
-            ),
+                if (isMobile) ...[
+                  _HoverIconButton(
+                    icon: Icons.search_rounded,
+                    tooltip: 'Buscar',
+                    onPressed: () {},
+                    size: iconSize,
+                  ),
+                  SizedBox(width: iconGap),
+                ] else ...[
+                  SizedBox(
+                    width: isCompact
+                        ? math
+                            .min(260.0, math.max(180.0, width * 0.3))
+                            .toDouble()
+                        : searchWidth,
+                    child: const _SearchField(),
+                  ),
+                  SizedBox(width: isCompact ? 8 : 12),
+                ],
+                _HoverIconButton(
+                  icon: Icons.notifications_none_rounded,
+                  tooltip: 'Notificaciones',
+                  onPressed: () {},
+                  size: iconSize,
+                ),
+                SizedBox(width: iconGap),
+                _HoverIconButton(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  tooltip: 'Mensajes',
+                  onPressed: () {
+                    ref.read(executiveSelectedIndexProvider.notifier).state =
+                        executiveMessagesIndex;
+                  },
+                  size: iconSize,
+                ),
+                SizedBox(width: isMobile ? 8 : 12),
+                _UserMenu(isCompact: isCompact, isMobile: isMobile),
+              ],
+            ],
           ),
         ),
       ),
@@ -339,8 +351,8 @@ class _TenantSwitcherState extends ConsumerState<_TenantSwitcher> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
-                color: theme.colorScheme.surface
-                    .withValues(alpha: _isHovered ? 0.16 : 0.12),
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: _isHovered ? 0.9 : 0.65),
                 border: Border.all(
                   color: (_isHovered
                           ? theme.colorScheme.primary.withValues(alpha: 0.35)
@@ -479,8 +491,8 @@ class _SearchFieldState extends State<_SearchField> {
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          color: theme.colorScheme.surface
-              .withValues(alpha: _isHovered ? 0.16 : 0.12),
+          color: theme.colorScheme.surfaceContainerHighest
+              .withValues(alpha: _isHovered ? 0.92 : 0.68),
           border: Border.all(
             color: (_isHovered
                     ? theme.colorScheme.primary.withValues(alpha: 0.35)
@@ -553,8 +565,8 @@ class _UserMenuState extends ConsumerState<_UserMenu> {
               ),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
-                color: theme.colorScheme.surface
-                    .withValues(alpha: _isHovered ? 0.16 : 0.12),
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: _isHovered ? 0.92 : 0.68),
                 border: Border.all(
                   color:
                       theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
@@ -747,8 +759,8 @@ class _HoverIconButtonState extends State<_HoverIconButton> {
             height: widget.size,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              color: theme.colorScheme.surface
-                  .withValues(alpha: _isHovered ? 0.16 : 0.10),
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: _isHovered ? 0.88 : 0.58),
               border: Border.all(
                 color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
               ),

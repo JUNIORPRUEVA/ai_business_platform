@@ -50,7 +50,6 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
     final size = MediaQuery.sizeOf(context);
     final rawSelectedIndex = ref.watch(executiveSelectedIndexProvider);
     final selectedIndex = rawSelectedIndex.clamp(0, widget.items.length - 1);
-    const useWhatsappShell = true;
 
     final isMobile = size.width < 760;
     final isNarrow = size.width >= 760 && size.width < 1100;
@@ -66,6 +65,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
 
     final pageTitle = _pageTitleForIndex(selectedIndex);
     final isMessagesPage = pageTitle.toLowerCase().contains('mensajes');
+    final useWhatsappShell = isMessagesPage;
 
     if (!_didAutoCollapseOnce && isNarrow) {
       _didAutoCollapseOnce = true;
@@ -140,7 +140,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                       children: [
                         ExecutiveAppBar(
                           title: pageTitle,
-                          height: useWhatsappShell ? 58 : 70,
+                          height: useWhatsappShell ? 58 : 84,
                           minimal: useWhatsappShell,
                           whatsappStyle: useWhatsappShell,
                           onToggleSidebar: () {
@@ -251,9 +251,9 @@ class _ExecutiveBackground extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF182A4D),
-              Color(0xFF13244A),
-              Color(0xFF0B1024),
+              Color(0xFFF5F1E9),
+              Color(0xFFF2EDE5),
+              Color(0xFFE9E2D7),
             ],
           ),
         ),
@@ -261,20 +261,20 @@ class _ExecutiveBackground extends StatelessWidget {
           children: [
             _RadialGlow(
               alignment: Alignment.topLeft,
-              color: Color(0xFF38BDF8),
-              opacity: 0.26,
+              color: Color(0xFF6DAA97),
+              opacity: 0.18,
               radius: 0.75,
             ),
             _RadialGlow(
               alignment: Alignment.topRight,
-              color: Color(0xFF60A5FA),
-              opacity: 0.22,
+              color: Color(0xFFC8A47A),
+              opacity: 0.15,
               radius: 0.70,
             ),
             _RadialGlow(
               alignment: Alignment.bottomLeft,
-              color: Color(0xFF22C55E),
-              opacity: 0.12,
+              color: Color(0xFFEEE4D6),
+              opacity: 0.32,
               radius: 0.80,
             ),
           ],

@@ -27,9 +27,9 @@ class _AppShell extends StatelessWidget {
     return MaterialApp(
       title: 'FULLPOS Enterprise Bot',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.executiveDark(),
-      darkTheme: AppTheme.executiveDark(),
-      themeMode: ThemeMode.dark,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.light(),
+      themeMode: ThemeMode.light,
       routes: {
         '/login': (_) => const LoginScreen(),
         '/register': (_) => const RegisterCompanyScreen(),

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { routeErrorResponse } from "../../_errors";
 import { backendJson } from "../_backend";
 import { TOKEN_COOKIE, TOKEN_MAX_AGE_SECONDS } from "../_constants";
 
@@ -8,10 +9,14 @@ export async function POST(req: Request) {
     | null;
 
   if (!body?.companyName || !body?.adminName || !body?.email || !body?.password) {
-    return NextResponse.json(
-      { message: "companyName, adminName, email y password son requeridos" },
-      { status: 400 },
-    );
+    return routeErrorResponse({
+      status: 400,
+      message: "companyName, adminName, email y password son requeridos",
+      module: "auth_register_route",
+      path: "/api/auth/register",
+      method: "POST",
+      type: "validation",
+    });
   }
 
   const result = await backendJson<{ accessToken: string }>("/auth/register-company", {
@@ -25,7 +30,16 @@ export async function POST(req: Request) {
   });
 
   if (!result.ok) {
-    return NextResponse.json({ message: result.message }, { status: result.status });
+    return routeErrorResponse({
+      status: result.status,
+      message: result.message,
+      details: result.details,
+      module: result.module ?? "auth_register_route",
+      path: "/api/auth/register",
+      method: "POST",
+      requestId: result.requestId,
+      type: result.type,
+    });
   }
 
   const res = NextResponse.json({ ok: true });
