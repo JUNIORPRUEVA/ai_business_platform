@@ -10,6 +10,9 @@ import {
 
 @Injectable()
 export class OpenAiService {
+  private static readonly defaultTemperature = 0.7;
+  private static readonly defaultPresencePenalty = 0.6;
+  private static readonly defaultFrequencyPenalty = 0.4;
   private readonly logger = new Logger(OpenAiService.name);
 
   constructor(
@@ -25,7 +28,9 @@ export class OpenAiService {
       model: request.model,
     });
     const model = runtime.model;
-    const temperature = request.temperature ?? configuration.openai.temperature;
+    const temperature = request.temperature ?? configuration.openai.temperature ?? OpenAiService.defaultTemperature;
+    const presencePenalty = request.presencePenalty ?? OpenAiService.defaultPresencePenalty;
+    const frequencyPenalty = request.frequencyPenalty ?? OpenAiService.defaultFrequencyPenalty;
     const maxTokens = request.maxTokens ?? configuration.openai.maxTokens;
     const apiKey = runtime.apiKey;
     const messages = this.buildMessages(request);
@@ -57,6 +62,8 @@ export class OpenAiService {
           body: JSON.stringify({
             model,
             temperature,
+            presence_penalty: presencePenalty,
+            frequency_penalty: frequencyPenalty,
             max_completion_tokens: maxTokens,
             messages,
           }),
@@ -114,24 +121,38 @@ export class OpenAiService {
     const previousTopic = this.extractPreviousUserTopic(request, lastUserMessage);
     const normalized = lastUserMessage.toLowerCase();
 
-    let content =
-      `Hola ${sender}. Recibimos tu ${intent} y la estamos procesando en este momento. ` +
-      'Si necesitas una respuesta inmediata con datos exactos, un asesor puede continuar la conversación.';
+    let content = this.selectVariant(`${sender}:${normalized}:${intent}`, [
+      `Perfecto, ${sender}. Estoy aquí para ayudarte con eso. Si quieres, te muestro opciones o te doy una recomendación directa.`,
+      `Claro, ${sender}. Vamos a resolverlo juntos. Puedo enseñarte opciones, precios o el siguiente paso según lo que necesites.`,
+    ]);
 
     if (this.isGreeting(normalized)) {
       content = previousTopic
-        ? `Hola ${sender}. Aqui sigo contigo. La última vez estábamos hablando de ${previousTopic}. ¿Qué necesitas resolver ahora mismo?`
-        : `Hola ${sender}. Estoy aquí para ayudarte. ¿Qué necesitas hoy?`;
+        ? this.selectVariant(previousTopic, [
+            `Hola ${sender} 👋 Seguimos con ${previousTopic}. ¿Quieres que te muestre opciones, precios o disponibilidad?`,
+            `Hola ${sender} 👋 Te sigo el hilo con ${previousTopic}. Dime si prefieres precios, opciones o una recomendación rápida.`,
+          ])
+        : this.selectVariant(sender, [
+            `Hola ${sender} 👋 ¿Qué estás buscando hoy? Tengo varias opciones que podrían interesarte.`,
+            `Hola ${sender} 👋 Cuéntame qué necesitas y te ayudo a encontrar la mejor opción.`,
+          ]);
     } else if (this.isHowAreYou(normalized)) {
       content = previousTopic
-        ? `Estoy listo para seguir ayudándote. Seguíamos con ${previousTopic}. ¿Quieres que retomemos eso o tienes otra consulta?`
-        : 'Estoy bien y listo para ayudarte. ¿Qué necesitas resolver ahora mismo?';
+        ? `Todo bien por aquí 👍 Seguimos con ${previousTopic}. ¿Quieres que avancemos con opciones o con precios?`
+        : 'Todo bien 👍 Dime qué necesitas y te ayudo de una vez.';
+    } else if (this.isAffirmative(normalized)) {
+      content = previousTopic
+        ? `Perfecto 👍 Sobre ${previousTopic}, ¿prefieres que te muestre precios o las opciones disponibles primero?`
+        : 'Perfecto 👍 ¿Quieres que te muestre precios o prefieres ver opciones primero?';
     } else if (normalized.length <= 12) {
       content = previousTopic
-        ? `Te sigo el hilo con ${previousTopic}. Cuéntame un poco más para ayudarte mejor.`
-        : `Claro, ${sender}. Cuéntame un poco más y te ayudo enseguida.`;
+        ? `Seguimos con ${previousTopic}. Te puedo mostrar opciones, precios o disponibilidad, como prefieras.`
+        : this.selectVariant(normalized, [
+            'Claro 👍 Te puedo mostrar opciones, precios o disponibilidad. ¿Por cuál quieres empezar?',
+            'Perfecto 👍 Vamos rápido: dime si quieres ver opciones, precios o una recomendación.',
+          ]);
     } else if (previousTopic) {
-      content = `Entiendo. Para seguir con ${previousTopic}, esto es lo que puedo adelantarte: ${this.summarizeForMock(lastUserMessage)}`;
+      content = `Entiendo. Para seguir con ${previousTopic}, ${this.summarizeForMock(lastUserMessage)}`;
     } else {
       content = `Entiendo, ${sender}. ${this.summarizeForMock(lastUserMessage)}`;
     }
@@ -180,15 +201,24 @@ export class OpenAiService {
     return /(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)/.test(value);
   }
 
+  private isAffirmative(value: string): boolean {
+    return /^(si|sí|ok|oki|dale|perfecto|de acuerdo|claro|yes)\b/.test(value.trim());
+  }
+
+  private selectVariant(seed: string, variants: string[]): string {
+    const hash = Array.from(seed).reduce((total, char, index) => total + (char.charCodeAt(0) * (index + 1)), 0);
+    return variants[Math.abs(hash) % variants.length];
+  }
+
   private summarizeForMock(message: string): string {
     const cleaned = message.replace(/\s+/g, ' ').trim();
     if (!cleaned) {
-      return 'Cuéntame un poco más y te ayudo.';
+      return 'te ayudo enseguida. Si quieres, te muestro opciones o te recomiendo lo más conveniente.';
     }
     if (cleaned.length <= 120) {
-      return `Te ayudo con esto: "${cleaned}". Si quieres, dime un poco más de contexto y sigo contigo.`;
+      return `te ayudo con esto: "${cleaned}". Si quieres, te doy opciones, precios o una recomendación puntual.`;
     }
-    return `Te ayudo con esto: "${cleaned.slice(0, 117)}...". Si quieres, dime un poco más de contexto y sigo contigo.`;
+    return `te ayudo con esto: "${cleaned.slice(0, 117)}...". Si quieres, te doy opciones, precios o una recomendación puntual.`;
   }
 
   private buildMessages(request: OpenAiDraftRequest): OpenAiChatMessage[] {

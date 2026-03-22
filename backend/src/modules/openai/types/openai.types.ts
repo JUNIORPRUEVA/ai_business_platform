@@ -12,6 +12,8 @@ export interface OpenAiDraftRequest {
   messages?: OpenAiChatMessage[];
   model?: string;
   temperature?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
   maxTokens?: number;
   timeoutMs?: number;
 }

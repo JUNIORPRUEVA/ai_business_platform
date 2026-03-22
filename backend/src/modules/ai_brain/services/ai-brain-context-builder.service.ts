@@ -10,6 +10,23 @@ import { AiBrainContext } from '../types/ai-brain.types';
 
 @Injectable()
 export class AiBrainContextBuilderService {
+  private static readonly baseSalesSystemPrompt = [
+    'You are a professional sales assistant for a business platform.',
+    '',
+    'Your behavior:',
+    '- Speak like a real human for WhatsApp: natural, friendly, confident, and sales-oriented.',
+    '- Use a Dominican-friendly tone when speaking Spanish, without caricature or slang overload.',
+    '- Be concise but persuasive.',
+    '- NEVER repeat the same sentence.',
+    '- NEVER use generic fallback messages.',
+    '- Always continue the conversation naturally.',
+    '- If the user message is short, guide the conversation with a useful next step instead of asking vague questions.',
+    '- Use previous messages and memory to maintain context.',
+    '- Your goal is to help and sell naturally.',
+    '- Do not sound robotic, scripted, or like a FAQ machine.',
+    '- If a tool is required, reply only with valid JSON in the shape {"tool":"...","data":{...}}.',
+  ].join('\n');
+
   build(params: {
     company: CompanyEntity;
     bot: BotEntity;
@@ -87,58 +104,55 @@ export class AiBrainContextBuilderService {
       ? documentSnippets.map((document) => `- ${document}`).join('\n')
       : '- Sin documentos empresariales activos.';
 
-    const recentTranscript = params.recentMessages.length > 0
-      ? params.recentMessages
-          .map((message) => `${message.role === 'assistant' ? 'Bot' : 'Cliente'}: ${message.content}`)
-          .join('\n')
-      : 'Sin historial reciente util.';
-
-    const prompt = [
-      'INSTRUCCIONES DEL SISTEMA',
-      params.systemInstructions.trim() || 'Eres un asistente empresarial profesional.',
+    const coreSystemPrompt = [
+      AiBrainContextBuilderService.baseSalesSystemPrompt,
       '',
-      'PROMPT PRINCIPAL DEL BOT',
-      params.mainBotPrompt.trim() || 'Debes atender conversaciones comerciales y operativas con claridad.',
+      'CUSTOM SYSTEM INSTRUCTIONS',
+      params.systemInstructions.trim() || 'Act as a commercial assistant that keeps context and sells naturally.',
       '',
-      'IDENTIDAD DEL BOT',
-      `- Nombre del bot: ${params.bot.name}`,
-      `- Idioma principal: ${params.bot.language || 'es'}`,
-      `- Modelo preferido: ${params.bot.model}`,
-      `- Intent detectado: ${params.detectedIntent}`,
+      'BOT SALES PLAYBOOK',
+      params.mainBotPrompt.trim() || 'Guide commercial conversations clearly and naturally.',
       '',
-      'REGLAS DE NEGOCIO',
+      'BOT IDENTITY',
+      `- Bot name: ${params.bot.name}`,
+      `- Main language: ${params.bot.language || 'es'}`,
+      `- Preferred model: ${params.bot.model}`,
+      `- Detected intent: ${params.detectedIntent}`,
+      '',
+      'BUSINESS RULES',
       businessRules,
       '',
-      'CONTEXTO DE EMPRESA',
+      'COMPANY CONTEXT',
       companyFacts,
       '',
-      'CONTEXTO DEL CLIENTE',
+      'CUSTOMER CONTEXT',
       contactFacts,
       '',
-      'MEMORIA RESUMIDA Y CONTEXTO RELEVANTE',
-      params.assembledMemoryContext.trim() || 'Sin memoria resumida disponible.',
-      '',
-      'FACTS PERSISTENTES',
-      memoryFacts,
-      '',
-      'DOCUMENTOS Y KNOWLEDGE BASE',
+      'KNOWLEDGE BASE',
       documentsDescription,
       '',
-      'HERRAMIENTAS DISPONIBLES',
+      'AVAILABLE TOOLS',
       toolsDescription,
       '',
-      'HISTORIAL RECIENTE',
-      recentTranscript,
-      '',
-      'REGLA DE SALIDA',
-      'Mantén continuidad con el historial y responde listo para enviar por WhatsApp. Si necesitas ejecutar una herramienta, responde únicamente con JSON válido con la forma {"tool":"<tool_name>","data":{...}}.',
+      'OUTPUT RULE',
+      'Reply with one final WhatsApp-ready message. Keep continuity with the conversation and move the sale or support flow forward naturally.',
     ].join('\n');
 
+    const conversationSummary = params.assembledMemoryContext.trim() || 'No persistent summary available yet.';
+    const relevantFacts = memoryFacts;
+
     const modelMessages: OpenAiChatMessage[] = [
-      { role: 'system', content: prompt },
+      { role: 'system', content: coreSystemPrompt },
+      { role: 'system', content: `Conversation summary: ${conversationSummary}` },
+      { role: 'system', content: `Relevant facts:\n${relevantFacts}` },
       ...params.recentMessages,
       { role: 'user', content: params.incomingMessage },
     ];
+
+    const prompt = modelMessages
+      .filter((message) => message.role === 'system')
+      .map((message) => message.content)
+      .join('\n\n');
 
     return {
       detectedIntent: params.detectedIntent,

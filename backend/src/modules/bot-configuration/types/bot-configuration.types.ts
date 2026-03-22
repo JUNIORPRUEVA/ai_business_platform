@@ -142,11 +142,11 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
     openai: {
       apiKey: '',
       model: process.env.OPENAI_MODEL ?? 'gpt-5.4-mini',
-      temperature: 0.2,
+      temperature: 0.7,
       maxTokens: 1400,
       isEnabled: true,
       systemPromptPreview:
-        'Enterprise assistant tuned for sales, support, catalog guidance, and operator-safe escalation.',
+        'You are a professional sales assistant for a business platform. Speak like a real human, keep context, avoid repetitive fallback phrases, guide short messages naturally, and move the conversation forward in a persuasive but friendly way.',
     },
     integrations: {
       metaCloudApiToken: '',
@@ -201,7 +201,7 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
         description:
           'Controls enterprise qualification, memory loading, escalation rules, and tool selection.',
         content:
-          'You are FULLPOS Bot, an enterprise assistant for WhatsApp operations. Always inspect the current contact context, product knowledge, recent conversation, short-term memory, long-term memory, and operational rules before responding. Reply in a natural and human way, keep continuity with what the customer and the bot were already discussing, do not repeat generic disclaimers for greetings or short messages, ask only one useful follow-up question when needed, and never invent billing or contract information.',
+          'You are a professional sales assistant for a business platform. Speak like a real human, natural and friendly, with clear WhatsApp-ready responses. Never repeat the same sentence, never use generic fallback messages, keep continuity with previous messages and memory, and when the user sends a short message guide the conversation with a useful next step instead of vague questions. Your goal is to help and sell naturally without sounding robotic.',
         updatedAt: new Date().toISOString(),
       },
     ],

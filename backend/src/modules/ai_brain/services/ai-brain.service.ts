@@ -28,6 +28,9 @@ import { AiBrainToolRouterService } from './ai-brain-tool-router.service';
 
 @Injectable()
 export class AiBrainService {
+  private static readonly minimumResponseTemperature = 0.7;
+  private static readonly responsePresencePenalty = 0.6;
+  private static readonly responseFrequencyPenalty = 0.4;
   private readonly logger = new Logger(AiBrainService.name);
 
   constructor(
@@ -239,12 +242,6 @@ export class AiBrainService {
       );
       this.logger.log(`[AI BRAIN] tools resolved count=${activeTools.length}`);
 
-      const directShortReply = this.buildDeterministicReplyIfApplicable({
-        userMessage,
-        recentMessages,
-        senderName: contact.name || null,
-      });
-
       const recentTranscriptMessages = this.buildRecentTranscriptMessages(recentMessages);
       const context = this.aiBrainContextBuilderService.build({
         company,
@@ -268,51 +265,56 @@ export class AiBrainService {
         `[AI BRAIN] prompt built tokens=${approximatePromptTokens} messages=${context.modelMessages.length}`,
       );
 
+      const responseTemperature = this.resolveResponseTemperature(
+        bot.temperature,
+        configuration.openai.temperature,
+      );
+
       let firstDraft: OpenAiDraftResponse = {
         provider: 'mock',
         model: bot.model,
-        content: directShortReply ?? '',
-        usedMockFallback: directShortReply != null,
+        content: '',
+        usedMockFallback: false,
         systemPrompt: promptInputs.systemInstructions,
       };
-      let finalContent = directShortReply ?? '';
+      let finalContent = '';
       let executedTool: { tool: string; ok: boolean; result: unknown } | null = null;
 
-      if (directShortReply != null) {
-        this.logger.log(
-          `[AI BRAIN] direct short reply applied conversationId=${params.conversationId} reason=short_message_guardrail`,
-        );
-      } else {
-        this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
-        firstDraft = await this.openAiService.draftResponse({
-          senderName: contact.name || undefined,
+      console.log('[AI DEBUG] userMessage:', userMessage);
+      console.log('[AI DEBUG] finalPrompt:', context.modelMessages);
+      this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
+      firstDraft = await this.openAiService.draftResponse({
+        senderName: contact.name || undefined,
+        detectedIntent,
+        messages: context.modelMessages,
+        model: bot.model,
+        temperature: responseTemperature,
+        presencePenalty: AiBrainService.responsePresencePenalty,
+        frequencyPenalty: AiBrainService.responseFrequencyPenalty,
+        maxTokens: configuration.openai.maxTokens,
+      });
+      this.logger.log(
+        `[AI BRAIN] openai response received provider=${firstDraft.provider} fallback=${firstDraft.usedMockFallback}`,
+      );
+
+      finalContent = firstDraft.content;
+
+      const toolRequest = configuration.orchestrator.enableToolExecution
+        ? this.aiBrainToolRouterService.tryParse(firstDraft.content, activeTools)
+        : null;
+      if (!toolRequest) {
+        finalContent = this.normalizeAssistantReply({
+          draft: finalContent,
+          userMessage,
+          recentMessages,
+          senderName: contact.name || null,
           detectedIntent,
-          messages: context.modelMessages,
-          model: bot.model,
-          temperature: bot.temperature,
-          maxTokens: configuration.openai.maxTokens,
         });
-        this.logger.log(
-          `[AI BRAIN] openai response received provider=${firstDraft.provider} fallback=${firstDraft.usedMockFallback}`,
-        );
+      }
 
-        finalContent = firstDraft.content;
-
-        const toolRequest = configuration.orchestrator.enableToolExecution
-          ? this.aiBrainToolRouterService.tryParse(firstDraft.content, activeTools)
-          : null;
-        if (!toolRequest) {
-          finalContent = this.normalizeAssistantReply({
-            draft: finalContent,
-            userMessage,
-            recentMessages,
-            senderName: contact.name || null,
-          });
-        }
-
-        if (!toolRequest) {
-          executedTool = null;
-        } else {
+      if (!toolRequest) {
+        executedTool = null;
+      } else {
         executedTool = await this.aiBrainToolRouterService.run({
           companyId: params.companyId,
           botId: bot.id,
@@ -353,7 +355,9 @@ export class AiBrainService {
           senderName: contact.name || undefined,
           detectedIntent,
           model: bot.model,
-          temperature: bot.temperature,
+          temperature: responseTemperature,
+          presencePenalty: AiBrainService.responsePresencePenalty,
+          frequencyPenalty: AiBrainService.responseFrequencyPenalty,
           maxTokens: configuration.openai.maxTokens,
           messages: [
             ...context.modelMessages,
@@ -370,7 +374,6 @@ export class AiBrainService {
         });
 
         finalContent = followUp.content;
-        }
       }
 
       finalContent = this.normalizeAssistantReply({
@@ -378,7 +381,9 @@ export class AiBrainService {
         userMessage,
         recentMessages,
         senderName: contact.name || null,
+        detectedIntent,
       });
+      console.log('[AI DEBUG] response:', finalContent);
 
       const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
         sender: 'bot',
@@ -655,11 +660,17 @@ export class AiBrainService {
     userMessage: string;
     recentMessages: MessageEntity[];
     senderName: string | null;
+    detectedIntent: string;
   }): string {
     const trimmedDraft = params.draft.trim();
     const trimmedUserMessage = params.userMessage.trim();
     if (!trimmedDraft) {
-      return this.buildNaturalShortReply(trimmedUserMessage, params.recentMessages, params.senderName);
+      return this.buildHumanSalesReply({
+        userMessage: trimmedUserMessage,
+        recentMessages: params.recentMessages,
+        senderName: params.senderName,
+        detectedIntent: params.detectedIntent,
+      });
     }
 
     const normalizedDraft = trimmedDraft.toLowerCase();
@@ -671,6 +682,12 @@ export class AiBrainService {
       normalizedDraft.includes('podrías darme más detalles') ||
       normalizedDraft.includes('podrias darme mas detalles');
 
+    const soundsRobotic =
+      normalizedDraft.includes('recibimos tu') ||
+      normalizedDraft.includes('la estamos procesando') ||
+      normalizedDraft.includes('un asesor puede continuar') ||
+      normalizedDraft.includes('respuesta inmediata con datos exactos');
+
     const lastAssistantMessage = [...params.recentMessages]
       .reverse()
       .find((message) => message.sender === 'bot')?.content.trim();
@@ -678,54 +695,31 @@ export class AiBrainService {
       !!lastAssistantMessage &&
       lastAssistantMessage.toLowerCase() == normalizedDraft;
 
-    if (!looksLikeGenericShortMessageReply && !repeatsLastAssistant) {
+    if (!looksLikeGenericShortMessageReply && !soundsRobotic && !repeatsLastAssistant) {
       return trimmedDraft;
     }
 
-    const fallback = this.buildNaturalShortReply(
-      trimmedUserMessage,
-      params.recentMessages,
-      params.senderName,
-    );
+    const fallback = this.buildHumanSalesReply({
+      userMessage: trimmedUserMessage,
+      recentMessages: params.recentMessages,
+      senderName: params.senderName,
+      detectedIntent: params.detectedIntent,
+    });
     return fallback || trimmedDraft;
   }
 
-  private buildDeterministicReplyIfApplicable(params: {
+  private buildHumanSalesReply(params: {
     userMessage: string;
     recentMessages: MessageEntity[];
     senderName: string | null;
-  }): string | null {
-    const normalized = params.userMessage.trim().toLowerCase();
-    if (!normalized) {
-      return null;
-    }
-
-    const isGreeting = /^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b/.test(normalized);
-    const isHowAreYou = /(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)/.test(normalized);
-    const isUltraShort = normalized.length <= 12;
-
-    if (!isGreeting && !isHowAreYou && !isUltraShort) {
-      return null;
-    }
-
-    return this.buildNaturalShortReply(
-      params.userMessage,
-      params.recentMessages,
-      params.senderName,
-    );
-  }
-
-  private buildNaturalShortReply(
-    userMessage: string,
-    recentMessages: MessageEntity[],
-    senderName: string | null,
-  ): string {
-    const normalized = userMessage.toLowerCase();
-    const trimmedSenderName = senderName?.trim() ?? '';
+    detectedIntent: string;
+  }): string {
+    const normalized = params.userMessage.toLowerCase().trim();
+    const trimmedSenderName = params.senderName?.trim() ?? '';
     const namePrefix = trimmedSenderName.length > 0 ? `${trimmedSenderName}, ` : '';
-    const previousClientTopic = [...recentMessages]
+    const previousClientTopic = [...params.recentMessages]
       .reverse()
-      .find((message) => message.sender === 'client' && message.content.trim() !== userMessage.trim())
+      .find((message) => message.sender === 'client' && message.content.trim() !== params.userMessage.trim())
       ?.content
       .trim();
     const shortPreviousTopic = previousClientTopic == null || previousClientTopic.length === 0
@@ -734,25 +728,59 @@ export class AiBrainService {
         ? `${previousClientTopic.slice(0, 77)}...`
         : previousClientTopic;
 
+    if (!normalized) {
+      return 'Hola 👋 Estoy aquí para ayudarte. Si quieres, te muestro opciones, precios o disponibilidad.';
+    }
+
     if (/^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b/.test(normalized)) {
       return shortPreviousTopic != null
-        ? `Hola ${namePrefix}seguimos con lo que me comentabas sobre "${shortPreviousTopic}". ¿Qué necesitas ahora mismo?`
-        : `Hola ${namePrefix}estoy aquí para ayudarte. ¿Qué necesitas?`;
+        ? `Hola ${namePrefix}seguimos con ${shortPreviousTopic}. ¿Quieres que te muestre opciones, precios o disponibilidad?`
+        : `Hola ${namePrefix}👋 ¿Qué estás buscando hoy? Tengo varias opciones que podrían interesarte.`;
     }
 
     if (/(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)/.test(normalized)) {
       return shortPreviousTopic != null
-        ? `Todo bien. Seguimos con "${shortPreviousTopic}" si quieres, o dime en qué te ayudo ahora.`
-        : 'Todo bien. Dime en qué te ayudo y seguimos por ahí.';
+        ? `Todo bien 👍 Seguimos con ${shortPreviousTopic}. ¿Prefieres que avancemos con opciones o con precios?`
+        : 'Todo bien 👍 Dime qué necesitas y lo vemos de una vez.';
+    }
+
+    if (/^(si|sí|ok|oki|dale|perfecto|de acuerdo|claro|yes)\b/.test(normalized)) {
+      return shortPreviousTopic != null
+        ? `Perfecto 👍 Sobre ${shortPreviousTopic}, ¿prefieres que te muestre precios o las opciones disponibles primero?`
+        : 'Perfecto 👍 ¿Quieres que te muestre precios o prefieres ver opciones primero?';
     }
 
     if (normalized.length <= 12) {
+      if (params.detectedIntent === 'pricing') {
+        return 'Claro 👍 Te ayudo con precios. Dime cuál producto o servicio te interesa y te oriento.';
+      }
       return shortPreviousTopic != null
-        ? `Te sigo el hilo con "${shortPreviousTopic}". Cuéntame un poco más y te ayudo.`
-        : `Claro ${namePrefix}cuéntame un poco más y te ayudo enseguida.`;
+        ? `Seguimos con ${shortPreviousTopic}. Te puedo mostrar opciones, precios o disponibilidad, como prefieras.`
+        : `Claro ${namePrefix}te puedo mostrar opciones, precios o disponibilidad. ¿Por cuál quieres empezar?`;
     }
 
-    return `Entiendo. Cuéntame un poco más para ayudarte mejor con eso.`;
+    if (params.detectedIntent === 'pricing') {
+      return `Perfecto. Para ayudarte con precios sin hacerte perder tiempo, dime qué producto o servicio te interesa y te guío.`;
+    }
+
+    if (params.detectedIntent === 'support') {
+      return `Entiendo. Vamos a resolverlo. Dime qué parte te está dando problema y te guío paso a paso.`;
+    }
+
+    return shortPreviousTopic != null
+      ? `Entiendo. Seguimos con ${shortPreviousTopic}. Si quieres, te doy opciones, precios o una recomendación puntual.`
+      : 'Entiendo. Te ayudo con eso. Si quieres, te doy opciones, precios o una recomendación puntual.';
+  }
+
+  private resolveResponseTemperature(
+    botTemperature: number | null | undefined,
+    configuredTemperature: number | null | undefined,
+  ): number {
+    return Math.max(
+      AiBrainService.minimumResponseTemperature,
+      botTemperature ?? 0,
+      configuredTemperature ?? 0,
+    );
   }
 
   private async persistAiBrainLog(params: {
