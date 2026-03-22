@@ -1,15 +1,73 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class ExecutiveFooter extends StatelessWidget {
+import '../../../../modules/auth/application/auth_providers.dart';
+import '../../../../modules/tenancy/application/tenancy_providers.dart';
+
+class ExecutiveFooter extends ConsumerWidget {
   const ExecutiveFooter({
     super.key,
     this.height = 50,
+    this.whatsappStyle = false,
   });
 
   final double height;
+  final bool whatsappStyle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (whatsappStyle) {
+      final tenant = ref.watch(selectedTenantProvider);
+      final authState = ref.watch(authControllerProvider);
+      final companyName = authState.session?.company.name ?? tenant.name;
+
+      return SizedBox(
+        height: height,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF0F2F5),
+            border: Border(
+              top: BorderSide(color: Color(0xFFDADDE1)),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'FULLTECH • $companyName',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF667781),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ),
+                const _WhatsappFooterBadge(
+                  label: 'Activo',
+                  dotColor: Color(0xFF25D366),
+                ),
+                const SizedBox(width: 8),
+                _WhatsappFooterBadge(
+                  label: tenant.planLabel,
+                  dotColor: const Color(0xFF53BDEB),
+                ),
+                const SizedBox(width: 8),
+                const _WhatsappFooterBadge(
+                  label: 'v0.1.0',
+                  dotColor: Color(0xFF8696A0),
+                  showDot: false,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final theme = Theme.of(context);
 
     return SizedBox(
@@ -38,7 +96,8 @@ class ExecutiveFooter extends StatelessWidget {
                             '© 2026 FULLTECH Systems',
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.72),
                               fontSize: 12.5,
                             ),
                           ),
@@ -50,7 +109,8 @@ class ExecutiveFooter extends StatelessWidget {
                               'Plataforma de gestión empresarial',
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface.withValues(alpha: 0.60),
+                                color: theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.60),
                                 fontSize: 12.5,
                               ),
                             ),
@@ -82,6 +142,54 @@ class ExecutiveFooter extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _WhatsappFooterBadge extends StatelessWidget {
+  const _WhatsappFooterBadge({
+    required this.label,
+    required this.dotColor,
+    this.showDot = true,
+  });
+
+  final String label;
+  final Color dotColor;
+  final bool showDot;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFFFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFDADDE1)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showDot) ...[
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 7),
+          ],
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF54656F),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
       ),
     );
   }
@@ -126,7 +234,8 @@ class _StatusPillState extends State<_StatusPill> {
           vertical: verticalPadding,
         ),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface.withValues(alpha: _isHovered ? 0.16 : 0.12),
+          color: theme.colorScheme.surface
+              .withValues(alpha: _isHovered ? 0.16 : 0.12),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),

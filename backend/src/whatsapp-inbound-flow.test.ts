@@ -1146,6 +1146,176 @@ test('WhatsappWebhookService resuelve canonicalRemoteJid via lookup de Evolution
   assert.equal(savedMessages[0]['canonicalRemoteJid'], '18295344286@s.whatsapp.net');
 });
 
+test('WhatsappWebhookService encola auto reply cuando el chat tiene modo agente activo', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '18295344286@s.whatsapp.net',
+      canonicalRemoteJid: '18295344286@s.whatsapp.net',
+      canonicalNumber: '18295344286',
+      sendTarget: '18295344286',
+      autoReplyEnabled: true,
+      pushName: 'Cliente',
+      profileName: 'Cliente',
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const queuedJobs: Array<Record<string, unknown>> = [];
+  const createdMessages: Array<Record<string, unknown>> = [];
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    chatsRepository,
+    messageProcessingQueue: {
+      add: async (name: string, data: Record<string, unknown>, options: Record<string, unknown>) => {
+        queuedJobs.push({ name, data, options });
+      },
+    },
+    messagingService: {
+      upsertInboundMessage: async (params: Record<string, unknown>) => ({
+        id: 'wa-message-1',
+        chatId: 'chat-1',
+        remoteJid: params['remoteJid'],
+        messageType: params['messageType'],
+        fromMe: params['fromMe'],
+      }),
+      updateStoredMedia: async () => undefined,
+    },
+    appMessagesService: {
+      findByMetadataValue: async () => null,
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => {
+        createdMessages.push(payload);
+        return {
+          id: 'app-message-1',
+          ...payload,
+        };
+      },
+    },
+  });
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      messages: [
+        {
+          key: {
+            remoteJid: '18295344286@s.whatsapp.net',
+            id: 'wamid-auto-1',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          message: { conversation: 'hola bot' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(createdMessages.length, 1);
+  assert.equal(createdMessages[0]['content'], 'hola bot');
+  assert.equal(queuedJobs.length, 1);
+  assert.equal(queuedJobs[0]['name'], 'process-inbound-message');
+  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['companyId'], 'company-1');
+  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['conversationId'], 'conversation-1');
+});
+
+test('WhatsappWebhookService no encola auto reply cuando el chat tiene modo agente apagado', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const chatsRepository = new InMemoryRepository([
+    {
+      id: 'chat-1',
+      companyId: 'company-1',
+      channelConfigId: 'config-1',
+      remoteJid: '18295344286@s.whatsapp.net',
+      canonicalRemoteJid: '18295344286@s.whatsapp.net',
+      canonicalNumber: '18295344286',
+      sendTarget: '18295344286',
+      autoReplyEnabled: false,
+      pushName: 'Cliente',
+      profileName: 'Cliente',
+      createdAt: new Date('2026-03-18T18:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T18:00:00.000Z'),
+    },
+  ]);
+  const queuedJobs: Array<Record<string, unknown>> = [];
+  const createdMessages: Array<Record<string, unknown>> = [];
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    chatsRepository,
+    messageProcessingQueue: {
+      add: async (name: string, data: Record<string, unknown>, options: Record<string, unknown>) => {
+        queuedJobs.push({ name, data, options });
+      },
+    },
+    messagingService: {
+      upsertInboundMessage: async (params: Record<string, unknown>) => ({
+        id: 'wa-message-1',
+        chatId: 'chat-1',
+        remoteJid: params['remoteJid'],
+        messageType: params['messageType'],
+        fromMe: params['fromMe'],
+      }),
+      updateStoredMedia: async () => undefined,
+    },
+    appMessagesService: {
+      findByMetadataValue: async () => null,
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => {
+        createdMessages.push(payload);
+        return {
+          id: 'app-message-1',
+          ...payload,
+        };
+      },
+    },
+  });
+
+  const payload = {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      messages: [
+        {
+          key: {
+            remoteJid: '18295344286@s.whatsapp.net',
+            id: 'wamid-auto-2',
+            fromMe: false,
+          },
+          pushName: 'Cliente',
+          message: { conversation: 'hola bot' },
+        },
+      ],
+    },
+  };
+
+  await service.processNow('company-1', payload as never);
+
+  assert.equal(createdMessages.length, 0);
+  assert.equal(queuedJobs.length, 0);
+});
+
 test('WhatsappMessagingService resuelve destinatario canonico desde last inbound payload con estructuras anidadas en data.source', async () => {
   const remoteJid = '234840490270800@lid';
   const chatsRepository = new InMemoryRepository([

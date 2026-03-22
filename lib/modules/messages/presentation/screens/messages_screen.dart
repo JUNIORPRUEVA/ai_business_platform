@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../../../../features/bot_center/presentation/screens/bot_center_screen.dart';
+import '../../../../features/enterprise_bot_workspace/presentation/screens/enterprise_bot_workspace_screen.dart';
 
 class MessagesScreen extends StatelessWidget {
   const MessagesScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const BotCenterModule(embedded: true);
+    return const EnterpriseBotWorkspaceScreen();
   }
 }

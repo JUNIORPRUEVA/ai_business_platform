@@ -1,10 +1,13 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../modules/auth/application/auth_providers.dart';
+import '../../../../modules/tenancy/application/tenancy_providers.dart';
 import 'executive_nav_item.dart';
 
-class ExecutiveSidebar extends StatelessWidget {
+class ExecutiveSidebar extends ConsumerWidget {
   const ExecutiveSidebar({
     super.key,
     required this.items,
@@ -12,6 +15,7 @@ class ExecutiveSidebar extends StatelessWidget {
     required this.isCollapsed,
     required this.onSelect,
     required this.onToggleCollapse,
+    this.whatsappStyle = false,
   });
 
   final List<ExecutiveNavItem> items;
@@ -19,12 +23,30 @@ class ExecutiveSidebar extends StatelessWidget {
   final bool isCollapsed;
   final ValueChanged<int> onSelect;
   final VoidCallback onToggleCollapse;
+  final bool whatsappStyle;
 
   static const double expandedWidth = 260;
   static const double collapsedWidth = 80;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (whatsappStyle) {
+      final authState = ref.watch(authControllerProvider);
+      final tenant = ref.watch(selectedTenantProvider);
+      final userName = authState.session?.user.name ?? 'Usuario';
+      final companyName = authState.session?.company.name ?? tenant.name;
+      final avatarUrl = authState.session?.user.avatarUrl;
+
+      return _WhatsappSidebarRail(
+        items: items,
+        selectedIndex: selectedIndex,
+        onSelect: onSelect,
+        userName: userName,
+        companyName: companyName,
+        avatarUrl: avatarUrl,
+      );
+    }
+
     final theme = Theme.of(context);
     final width = isCollapsed ? collapsedWidth : expandedWidth;
     final shellPadding = EdgeInsets.all(isCollapsed ? 10 : 14);
@@ -75,7 +97,8 @@ class ExecutiveSidebar extends StatelessWidget {
                     const SizedBox(height: 10),
                     Expanded(
                       child: ListView.separated(
-                        padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 6 : 8),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: isCollapsed ? 6 : 8),
                         itemCount: items.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
@@ -104,6 +127,208 @@ class ExecutiveSidebar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _WhatsappSidebarRail extends StatelessWidget {
+  const _WhatsappSidebarRail({
+    required this.items,
+    required this.selectedIndex,
+    required this.onSelect,
+    required this.userName,
+    required this.companyName,
+    required this.avatarUrl,
+  });
+
+  final List<ExecutiveNavItem> items;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+  final String userName;
+  final String companyName;
+  final String? avatarUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 72,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0xFFF0F2F5),
+          border: Border(
+            right: BorderSide(color: Color(0xFFDADDE1)),
+          ),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 10, 0, 6),
+              child: Tooltip(
+                message: companyName,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD9FDD3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.wechat_rounded,
+                    color: Color(0xFF00A884),
+                    size: 23,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 2),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return _WhatsappRailItem(
+                    item: item,
+                    isActive: index == selectedIndex,
+                    onTap: () => onSelect(index),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+            Tooltip(
+              message: 'Configuración',
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () {},
+                  child: const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Icon(
+                      Icons.settings_outlined,
+                      size: 22,
+                      color: Color(0xFF54656F),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Tooltip(
+              message: '$userName • $companyName',
+              child: _WhatsappAvatarPill(
+                userName: userName,
+                avatarUrl: avatarUrl,
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WhatsappRailItem extends StatelessWidget {
+  const _WhatsappRailItem({
+    required this.item,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  final ExecutiveNavItem item;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: item.label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Center(
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color:
+                      isActive ? const Color(0xFFD9FDD3) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  item.icon,
+                  size: 21,
+                  color: isActive
+                      ? const Color(0xFF111B21)
+                      : const Color(0xFF54656F),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WhatsappAvatarPill extends StatelessWidget {
+  const _WhatsappAvatarPill({
+    required this.userName,
+    required this.avatarUrl,
+  });
+
+  final String userName;
+  final String? avatarUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = userName.trim().isEmpty
+        ? 'U'
+        : userName
+            .trim()
+            .split(RegExp(r'\s+'))
+            .take(2)
+            .map((part) => part.characters.first.toUpperCase())
+            .join();
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        CircleAvatar(
+          radius: 17,
+          backgroundColor: const Color(0xFFDDE6EA),
+          foregroundImage: avatarUrl != null && avatarUrl!.trim().isNotEmpty
+              ? NetworkImage(avatarUrl!.trim())
+              : null,
+          child: Text(
+            initials,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: const Color(0xFF111B21),
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ),
+        Positioned(
+          right: -1,
+          bottom: -1,
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: const Color(0xFF25D366),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFF0F2F5), width: 1.5),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -319,7 +544,8 @@ class _SidebarItemState extends State<_SidebarItem> {
                           child: AnimatedScale(
                             duration: const Duration(milliseconds: 140),
                             scale: _isHovered ? 1.04 : 1,
-                            child: Icon(widget.icon, color: iconColor, size: 20),
+                            child:
+                                Icon(widget.icon, color: iconColor, size: 20),
                           ),
                         ),
                       ),
@@ -331,7 +557,9 @@ class _SidebarItemState extends State<_SidebarItem> {
                           style: TextStyle(
                             color: textColor,
                             fontSize: 14,
-                            fontWeight: widget.isActive ? FontWeight.w700 : FontWeight.w600,
+                            fontWeight: widget.isActive
+                                ? FontWeight.w700
+                                : FontWeight.w600,
                             letterSpacing: 0.2,
                           ),
                         ),

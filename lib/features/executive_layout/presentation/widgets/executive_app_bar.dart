@@ -16,15 +16,25 @@ class ExecutiveAppBar extends ConsumerWidget {
     required this.onToggleSidebar,
     this.height = 70,
     this.minimal = false,
+    this.whatsappStyle = false,
   });
 
   final String title;
   final VoidCallback onToggleSidebar;
   final double height;
   final bool minimal;
+  final bool whatsappStyle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (whatsappStyle) {
+      return _WhatsappExecutiveAppBar(
+        title: title,
+        height: height,
+        onToggleSidebar: onToggleSidebar,
+      );
+    }
+
     final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
     final isMobile = width < 760;
@@ -144,8 +154,9 @@ class ExecutiveAppBar extends ConsumerWidget {
                       icon: Icons.chat_bubble_outline_rounded,
                       tooltip: 'Mensajes',
                       onPressed: () {
-                        ref.read(executiveSelectedIndexProvider.notifier).state =
-                            executiveMessagesIndex;
+                        ref
+                            .read(executiveSelectedIndexProvider.notifier)
+                            .state = executiveMessagesIndex;
                       },
                       size: iconSize,
                     ),
@@ -155,6 +166,133 @@ class ExecutiveAppBar extends ConsumerWidget {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WhatsappExecutiveAppBar extends ConsumerWidget {
+  const _WhatsappExecutiveAppBar({
+    required this.title,
+    required this.height,
+    required this.onToggleSidebar,
+  });
+
+  final String title;
+  final double height;
+  final VoidCallback onToggleSidebar;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final width = MediaQuery.sizeOf(context).width;
+    final isMobile = width < 760;
+    final authState = ref.watch(authControllerProvider);
+    final tenant = ref.watch(selectedTenantProvider);
+    final userName = authState.session?.user.name ?? 'Usuario';
+    final companyName = authState.session?.company.name ?? tenant.name;
+    final avatarUrl = authState.session?.user.avatarUrl;
+
+    return SizedBox(
+      height: height,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0xFFF0F2F5),
+          border: Border(
+            bottom: BorderSide(color: Color(0xFFDADDE1)),
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 14),
+          child: Row(
+            children: [
+              if (isMobile) ...[
+                _HoverIconButton(
+                  icon: Icons.menu_rounded,
+                  tooltip: 'Abrir navegación',
+                  onPressed: onToggleSidebar,
+                  size: 40,
+                ),
+                const SizedBox(width: 8),
+              ],
+              CircleAvatar(
+                radius: 19,
+                backgroundColor: const Color(0xFFDDE6EA),
+                foregroundImage:
+                    avatarUrl != null && avatarUrl.trim().isNotEmpty
+                        ? NetworkImage(avatarUrl.trim())
+                        : null,
+                child: Text(
+                  companyName.characters.first.toUpperCase(),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: const Color(0xFF111B21),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      companyName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF111B21),
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      '${tenant.name} • $userName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11.5,
+                        color: const Color(0xFF667781),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                title,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: const Color(0xFF667781),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _HoverIconButton(
+                icon: Icons.content_copy_outlined,
+                tooltip: 'Copiar información',
+                onPressed: () {},
+                size: 40,
+              ),
+              const SizedBox(width: 2),
+              _HoverIconButton(
+                icon: Icons.search_rounded,
+                tooltip: 'Buscar',
+                onPressed: () {},
+                size: 40,
+              ),
+              const SizedBox(width: 4),
+              _HoverIconButton(
+                icon: Icons.more_vert_rounded,
+                tooltip: 'Más opciones',
+                onPressed: () {
+                  ref.read(executiveSelectedIndexProvider.notifier).state =
+                      executiveSettingsIndex;
+                },
+                size: 40,
+              ),
+            ],
           ),
         ),
       ),

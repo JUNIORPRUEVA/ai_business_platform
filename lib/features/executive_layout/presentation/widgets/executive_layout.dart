@@ -93,6 +93,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                 child: ExecutiveSidebar(
                   items: widget.items,
                   selectedIndex: selectedIndex,
+                  whatsappStyle: isMessagesPage,
                   isCollapsed: false,
                   onSelect: (index) {
                     ref.read(executiveSelectedIndexProvider.notifier).state =
@@ -119,6 +120,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                     ExecutiveSidebar(
                       items: widget.items,
                       selectedIndex: selectedIndex,
+                      whatsappStyle: isMessagesPage,
                       isCollapsed: _isSidebarCollapsed,
                       onSelect: (index) {
                         ref
@@ -133,20 +135,20 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                   Expanded(
                     child: Column(
                       children: [
-                        if (!isMessagesPage)
-                          ExecutiveAppBar(
-                            title: pageTitle,
-                            height: 70,
-                            minimal: false,
-                            onToggleSidebar: () {
-                              if (isMobile) {
-                                _scaffoldKey.currentState?.openDrawer();
-                                return;
-                              }
-                              setState(() =>
-                                  _isSidebarCollapsed = !_isSidebarCollapsed);
-                            },
-                          ),
+                        ExecutiveAppBar(
+                          title: pageTitle,
+                          height: isMessagesPage ? 58 : 70,
+                          minimal: isMessagesPage,
+                          whatsappStyle: isMessagesPage,
+                          onToggleSidebar: () {
+                            if (isMobile) {
+                              _scaffoldKey.currentState?.openDrawer();
+                              return;
+                            }
+                            setState(() =>
+                                _isSidebarCollapsed = !_isSidebarCollapsed);
+                          },
+                        ),
                         Expanded(
                           child: Column(
                             children: [
@@ -155,7 +157,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                                     ? Padding(
                                         padding: const EdgeInsets.fromLTRB(
                                           10,
-                                              2,
+                                          2,
                                           10,
                                           0,
                                         ),
@@ -169,7 +171,7 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                               ),
                               const SizedBox(height: 8),
                               if (isMessagesPage)
-                                const _FooterFullWidth()
+                                const _FooterFullWidth(whatsappStyle: true)
                               else
                                 const _FooterMaxWidth(),
                             ],
@@ -217,7 +219,9 @@ class _FooterMaxWidth extends StatelessWidget {
 }
 
 class _FooterFullWidth extends StatelessWidget {
-  const _FooterFullWidth();
+  const _FooterFullWidth({this.whatsappStyle = false});
+
+  final bool whatsappStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -225,7 +229,8 @@ class _FooterFullWidth extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
-        child: const ExecutiveFooter(height: 50),
+        child: ExecutiveFooter(
+            height: whatsappStyle ? 38 : 50, whatsappStyle: whatsappStyle),
       ),
     );
   }
