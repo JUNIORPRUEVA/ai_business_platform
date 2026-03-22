@@ -1137,6 +1137,11 @@ export class WhatsappAttachmentService {
 
   private resolveMimeType(buffer: Buffer, mimeType: string | null, fileType: string): string | null {
     const normalized = this.normalizeMimeType(mimeType);
+    const detectedFromBuffer = this.detectMimeTypeFromBuffer(buffer, fileType);
+    if (this.isMimeTypeCompatible(detectedFromBuffer, fileType)) {
+      return detectedFromBuffer;
+    }
+
     if (this.isMimeTypeCompatible(normalized, fileType)) {
       switch (normalized) {
         case 'image/jpg':
@@ -1152,6 +1157,10 @@ export class WhatsappAttachmentService {
       }
     }
 
+    return this.fallbackMimeTypeFromBuffer(buffer, fileType) ?? normalized;
+  }
+
+  private detectMimeTypeFromBuffer(buffer: Buffer, fileType: string): string | null {
     if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
       return 'image/jpeg';
     }
@@ -1203,6 +1212,15 @@ export class WhatsappAttachmentService {
       buffer.subarray(8, 12).toString('ascii') === 'WAVE'
     ) {
       return 'audio/wav';
+    }
+
+    return null;
+  }
+
+  private fallbackMimeTypeFromBuffer(buffer: Buffer, fileType: string): string | null {
+    const detected = this.detectMimeTypeFromBuffer(buffer, fileType);
+    if (detected) {
+      return detected;
     }
 
     if (fileType === 'image') {

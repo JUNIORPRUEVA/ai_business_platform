@@ -166,6 +166,18 @@ test('WhatsappAttachmentService resuelve video/octet-stream como video mp4', () 
   assert.equal(resolveMimeType(mp4Header, 'application/octet-stream', 'video'), 'video/mp4');
 });
 
+test('WhatsappAttachmentService prioriza la firma binaria real cuando el mime declarado del audio no coincide', () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const resolveMimeType = (
+    service as unknown as {
+      resolveMimeType: (buffer: Buffer, mimeType: string | null, fileType: string) => string | null;
+    }
+  ).resolveMimeType.bind(service);
+
+  const oggHeader = Buffer.from([0x4f, 0x67, 0x67, 0x53, 0x00, 0x02, 0x00, 0x00]);
+  assert.equal(resolveMimeType(oggHeader, 'audio/mpeg', 'audio'), 'audio/ogg');
+});
+
 test('WhatsappAttachmentService decodifica payload base64 antes de persistir media', async () => {
   const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
   const prepareUploadPayload = (
