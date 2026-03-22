@@ -239,6 +239,12 @@ export class AiBrainService {
       );
       this.logger.log(`[AI BRAIN] tools resolved count=${activeTools.length}`);
 
+      const directShortReply = this.buildDeterministicReplyIfApplicable({
+        userMessage,
+        recentMessages,
+        senderName: contact.name || null,
+      });
+
       const recentTranscriptMessages = this.buildRecentTranscriptMessages(recentMessages);
       const context = this.aiBrainContextBuilderService.build({
         company,
@@ -262,26 +268,51 @@ export class AiBrainService {
         `[AI BRAIN] prompt built tokens=${approximatePromptTokens} messages=${context.modelMessages.length}`,
       );
 
-      this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
-      const firstDraft = await this.openAiService.draftResponse({
-        senderName: contact.name || undefined,
-        detectedIntent,
-        messages: context.modelMessages,
+      let firstDraft: OpenAiDraftResponse = {
+        provider: 'mock',
         model: bot.model,
-        temperature: bot.temperature,
-        maxTokens: configuration.openai.maxTokens,
-      });
-      this.logger.log(
-        `[AI BRAIN] openai response received provider=${firstDraft.provider} fallback=${firstDraft.usedMockFallback}`,
-      );
-
-      let finalContent = firstDraft.content;
+        content: directShortReply ?? '',
+        usedMockFallback: directShortReply != null,
+        systemPrompt: promptInputs.systemInstructions,
+      };
+      let finalContent = directShortReply ?? '';
       let executedTool: { tool: string; ok: boolean; result: unknown } | null = null;
 
-      const toolRequest = configuration.orchestrator.enableToolExecution
-        ? this.aiBrainToolRouterService.tryParse(firstDraft.content, activeTools)
-        : null;
-      if (toolRequest) {
+      if (directShortReply != null) {
+        this.logger.log(
+          `[AI BRAIN] direct short reply applied conversationId=${params.conversationId} reason=short_message_guardrail`,
+        );
+      } else {
+        this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
+        firstDraft = await this.openAiService.draftResponse({
+          senderName: contact.name || undefined,
+          detectedIntent,
+          messages: context.modelMessages,
+          model: bot.model,
+          temperature: bot.temperature,
+          maxTokens: configuration.openai.maxTokens,
+        });
+        this.logger.log(
+          `[AI BRAIN] openai response received provider=${firstDraft.provider} fallback=${firstDraft.usedMockFallback}`,
+        );
+
+        finalContent = firstDraft.content;
+
+        const toolRequest = configuration.orchestrator.enableToolExecution
+          ? this.aiBrainToolRouterService.tryParse(firstDraft.content, activeTools)
+          : null;
+        if (!toolRequest) {
+          finalContent = this.normalizeAssistantReply({
+            draft: finalContent,
+            userMessage,
+            recentMessages,
+            senderName: contact.name || null,
+          });
+        }
+
+        if (!toolRequest) {
+          executedTool = null;
+        } else {
         executedTool = await this.aiBrainToolRouterService.run({
           companyId: params.companyId,
           botId: bot.id,
@@ -339,6 +370,7 @@ export class AiBrainService {
         });
 
         finalContent = followUp.content;
+        }
       }
 
       finalContent = this.normalizeAssistantReply({
@@ -656,6 +688,31 @@ export class AiBrainService {
       params.senderName,
     );
     return fallback || trimmedDraft;
+  }
+
+  private buildDeterministicReplyIfApplicable(params: {
+    userMessage: string;
+    recentMessages: MessageEntity[];
+    senderName: string | null;
+  }): string | null {
+    const normalized = params.userMessage.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+
+    const isGreeting = /^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b/.test(normalized);
+    const isHowAreYou = /(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)/.test(normalized);
+    const isUltraShort = normalized.length <= 12;
+
+    if (!isGreeting && !isHowAreYou && !isUltraShort) {
+      return null;
+    }
+
+    return this.buildNaturalShortReply(
+      params.userMessage,
+      params.recentMessages,
+      params.senderName,
+    );
   }
 
   private buildNaturalShortReply(
