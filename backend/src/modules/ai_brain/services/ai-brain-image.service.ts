@@ -1,10 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
 import { Repository } from 'typeorm';
 
 import { MessageEntity } from '../../messages/entities/message.entity';
 import { OpenAiService } from '../../openai/services/openai.service';
 import { StorageService } from '../../storage/storage.service';
+import { FfmpegRuntimeService } from '../../whatsapp-channel/services/ffmpeg-runtime.service';
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
 
 @Injectable()
@@ -18,6 +23,7 @@ export class AiBrainImageService {
     private readonly whatsappMessagesRepository: Repository<WhatsappMessageEntity>,
     private readonly storageService: StorageService,
     private readonly openAiService: OpenAiService,
+    private readonly ffmpegRuntimeService: FfmpegRuntimeService,
   ) {}
 
   async resolveInboundImageText(params: {
@@ -41,11 +47,19 @@ export class AiBrainImageService {
         `[AI IMAGE] IMAGE DOWNLOADED companyId=${params.companyId} messageId=${params.message.id} file=${source.filename} bytes=${source.buffer.length} contentType=${source.contentType ?? '(none)'}`,
       );
 
-      const analysis = await this.openAiService.describeImage({
+      const prepared = await this.prepareVisionImage({
         companyId: params.companyId,
+        messageId: params.message.id,
         buffer: source.buffer,
         filename: source.filename,
         contentType: source.contentType ?? params.message.mimeType ?? 'image/jpeg',
+      });
+
+      const analysis = await this.openAiService.describeImage({
+        companyId: params.companyId,
+        buffer: prepared.buffer,
+        filename: prepared.filename,
+        contentType: prepared.contentType,
       });
       const text = analysis.text.trim();
       if (!text) {
@@ -184,6 +198,113 @@ export class AiBrainImageService {
     }
 
     return `El cliente envió una imagen. Análisis visual: ${analysis}`;
+  }
+
+  private async prepareVisionImage(params: {
+    companyId: string;
+    messageId: string;
+    buffer: Buffer;
+    filename: string;
+    contentType: string;
+  }): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+    const normalizedMimeType = params.contentType.trim().toLowerCase();
+    if (
+      normalizedMimeType === 'image/jpeg' &&
+      this.looksLikeJpeg(params.buffer)
+    ) {
+      return {
+        buffer: params.buffer,
+        filename: this.ensureJpegFilename(params.filename),
+        contentType: 'image/jpeg',
+      };
+    }
+
+    const converted = await this.convertImageToJpeg(params);
+    this.logger.log(
+      `[AI IMAGE] IMAGE NORMALIZED companyId=${params.companyId} messageId=${params.messageId} originalType=${params.contentType} outputBytes=${converted.buffer.length}`,
+    );
+
+    return converted;
+  }
+
+  private async convertImageToJpeg(params: {
+    companyId: string;
+    messageId: string;
+    buffer: Buffer;
+    filename: string;
+    contentType: string;
+  }): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+    const ffmpegExecutable = await this.ffmpegRuntimeService.getExecutableOrThrow();
+    const tempDir = await mkdtemp(join(tmpdir(), 'botposvendedor-image-vision-'));
+    const inputExtension = this.resolveInputExtension(params.filename, params.contentType);
+    const inputPath = join(tempDir, `input.${inputExtension}`);
+    const outputPath = join(tempDir, 'output.jpg');
+
+    try {
+      await writeFile(inputPath, params.buffer);
+
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(
+          ffmpegExecutable,
+          ['-y', '-i', inputPath, '-frames:v', '1', outputPath],
+          { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] },
+        );
+
+        let stderr = '';
+        child.stderr?.on('data', (chunk: Buffer | string) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code: number | null) => {
+          if (code === 0) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(stderr || `ffmpeg exited with code ${code}`));
+        });
+      });
+
+      return {
+        buffer: await readFile(outputPath),
+        filename: this.ensureJpegFilename(params.filename),
+        contentType: 'image/jpeg',
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown_error';
+      throw new Error(`image_normalization_failed_${reason}`);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  private resolveInputExtension(filename: string, mimeType: string): string {
+    const fromName = extname(filename).replace('.', '').trim().toLowerCase();
+    if (fromName) {
+      return fromName === 'jpeg' ? 'jpg' : fromName;
+    }
+
+    switch (mimeType.trim().toLowerCase()) {
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'image/gif':
+        return 'gif';
+      case 'image/jpeg':
+      case 'image/jpg':
+      default:
+        return 'jpg';
+    }
+  }
+
+  private ensureJpegFilename(filename: string): string {
+    const withoutExtension = filename.replace(/\.[^.]+$/, '').trim() || 'image';
+    return `${withoutExtension}.jpg`;
+  }
+
+  private looksLikeJpeg(buffer: Buffer): boolean {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
   }
 
   private isGenericImagePlaceholder(content: string): boolean {
