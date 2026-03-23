@@ -810,7 +810,7 @@ export class WhatsappInstancesService {
   }
 
   private guessInboundMessageType(data: Record<string, unknown>): string {
-    const message = this.readMessageMap(data);
+    const message = this.unwrapMessageContent(this.readMessageMap(data));
 
     if (message['audioMessage'] != null) return 'audio';
     if (message['imageMessage'] != null) return 'image';
@@ -1190,6 +1190,46 @@ export class WhatsappInstancesService {
     return this.readMap(this.readFirstMessageEntry(data)['message']);
   }
 
+  private unwrapMessageContent(message: Record<string, unknown>): Record<string, unknown> {
+    let current = message;
+
+    for (let depth = 0; depth < 6; depth += 1) {
+      const nestedCandidates = [
+        this.readMap(current['ephemeralMessage']),
+        this.readMap(current['viewOnceMessage']),
+        this.readMap(current['viewOnceMessageV2']),
+        this.readMap(current['viewOnceMessageV2Extension']),
+        this.readMap(current['documentWithCaptionMessage']),
+      ];
+
+      let advanced = false;
+      for (const candidate of nestedCandidates) {
+        if (Object.keys(candidate).length === 0) {
+          continue;
+        }
+
+        const nestedMessage = this.readMap(candidate['message']);
+        if (Object.keys(nestedMessage).length > 0) {
+          current = nestedMessage;
+          advanced = true;
+          break;
+        }
+
+        if (candidate['documentMessage'] != null) {
+          current = candidate;
+          advanced = true;
+          break;
+        }
+      }
+
+      if (!advanced) {
+        return current;
+      }
+    }
+
+    return current;
+  }
+
   private normalizeRemoteJid(value: string): string {
     if (!value) {
       return '';
@@ -1198,7 +1238,7 @@ export class WhatsappInstancesService {
   }
 
   private summarizeMessageBody(data: Record<string, unknown>): string {
-    const message = this.readMessageMap(data);
+    const message = this.unwrapMessageContent(this.readMessageMap(data));
     const conversation = this.readString(message['conversation']);
     if (conversation) {
       return conversation.slice(0, 80);

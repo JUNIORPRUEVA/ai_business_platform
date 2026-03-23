@@ -262,7 +262,7 @@ export class WhatsappWebhookService {
       return null;
     }
 
-    const message = this.readMap(data['message']);
+    const message = this.unwrapMessageContent(this.readMap(data['message']));
     const type = this.detectType(message);
     const content = this.extractContent(type, message);
 
@@ -645,11 +645,12 @@ export class WhatsappWebhookService {
   }
 
   private detectType(message: Record<string, unknown>): WhatsappMessageType {
-    if (message['conversation'] != null || message['extendedTextMessage'] != null) return 'text';
-    if (message['imageMessage'] != null) return 'image';
-    if (message['videoMessage'] != null) return 'video';
-    if (message['audioMessage'] != null || message['pttMessage'] != null) return 'audio';
-    if (message['documentMessage'] != null) return 'document';
+    const normalizedMessage = this.unwrapMessageContent(message);
+    if (normalizedMessage['conversation'] != null || normalizedMessage['extendedTextMessage'] != null) return 'text';
+    if (normalizedMessage['imageMessage'] != null) return 'image';
+    if (normalizedMessage['videoMessage'] != null) return 'video';
+    if (normalizedMessage['audioMessage'] != null || normalizedMessage['pttMessage'] != null) return 'audio';
+    if (normalizedMessage['documentMessage'] != null) return 'document';
     return 'unknown';
   }
 
@@ -666,10 +667,11 @@ export class WhatsappWebhookService {
     thumbnailUrl: string | null;
     durationSeconds: number | null;
   } {
+    const normalizedMessage = this.unwrapMessageContent(message);
     if (type === 'text') {
-      const extended = this.readMap(message['extendedTextMessage']);
+      const extended = this.readMap(normalizedMessage['extendedTextMessage']);
       return {
-        textBody: this.readString(message['conversation']) || this.readString(extended['text']) || 'Mensaje recibido',
+        textBody: this.readString(normalizedMessage['conversation']) || this.readString(extended['text']) || 'Mensaje recibido',
         caption: null,
         mimeType: null,
         mediaUrl: null,
@@ -682,12 +684,12 @@ export class WhatsappWebhookService {
 
     const media =
       type === 'image'
-        ? this.readMap(message['imageMessage'])
+        ? this.readMap(normalizedMessage['imageMessage'])
         : type === 'video'
-            ? this.readMap(message['videoMessage'])
+            ? this.readMap(normalizedMessage['videoMessage'])
             : type === 'audio'
-                ? this.readMap(message['audioMessage'] ?? message['pttMessage'])
-                : this.readMap(message['documentMessage']);
+                ? this.readMap(normalizedMessage['audioMessage'] ?? normalizedMessage['pttMessage'])
+                : this.readMap(normalizedMessage['documentMessage']);
 
     return {
       textBody: type === 'audio' ? 'Audio recibido' : this.readString(media['caption']) || `${type} recibido`,
@@ -699,6 +701,46 @@ export class WhatsappWebhookService {
       thumbnailUrl: this.readString(media['jpegThumbnail']) || null,
       durationSeconds: this.readOptionalNumber(media['seconds']),
     };
+  }
+
+  private unwrapMessageContent(message: Record<string, unknown>): Record<string, unknown> {
+    let current = message;
+
+    for (let depth = 0; depth < 6; depth += 1) {
+      const nestedCandidates = [
+        this.readMap(current['ephemeralMessage']),
+        this.readMap(current['viewOnceMessage']),
+        this.readMap(current['viewOnceMessageV2']),
+        this.readMap(current['viewOnceMessageV2Extension']),
+        this.readMap(current['documentWithCaptionMessage']),
+      ];
+
+      let advanced = false;
+      for (const candidate of nestedCandidates) {
+        if (Object.keys(candidate).length === 0) {
+          continue;
+        }
+
+        const nestedMessage = this.readMap(candidate['message']);
+        if (Object.keys(nestedMessage).length > 0) {
+          current = nestedMessage;
+          advanced = true;
+          break;
+        }
+
+        if (candidate['documentMessage'] != null) {
+          current = candidate;
+          advanced = true;
+          break;
+        }
+      }
+
+      if (!advanced) {
+        return current;
+      }
+    }
+
+    return current;
   }
 
   private normalizeEventName(value: unknown): string {
