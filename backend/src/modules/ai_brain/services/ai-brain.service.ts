@@ -792,6 +792,10 @@ export class AiBrainService {
     const behaviorGuardrails = [
       'Siempre responde primero la pregunta real del usuario antes de intentar vender o guiar la conversación.',
       'Después de responder, guía la conversación de forma natural hacia el siguiente paso comercial.',
+      'Responde como una persona real por WhatsApp, no como soporte genérico ni como folleto.',
+      'Usa normalmente 1 o 2 frases cortas; evita párrafos largos.',
+      'No uses lenguaje técnico, rebuscado o demasiado formal si el cliente no lo pide.',
+      'Haz como máximo una pregunta corta para mover la conversación.',
       'Nunca saltes directamente al registro o captura de datos si el usuario no lo pidió explícitamente.',
       'Nunca repitas en bloque "nombre, teléfono, email" ni solicites esos datos sin contexto.',
       'Si el usuario pregunta qué venden, explica productos o servicios primero.',
@@ -918,7 +922,8 @@ export class AiBrainService {
       });
     }
 
-    const normalizedDraft = trimmedDraft.toLowerCase();
+    const conversationalDraft = this.enforceConversationalStyle(trimmedDraft);
+    const normalizedDraft = conversationalDraft.toLowerCase();
     const looksLikeGenericShortMessageReply =
       normalizedDraft.includes('mensaje es muy breve') ||
       normalizedDraft.includes('mensaje sigue siendo breve') ||
@@ -932,8 +937,20 @@ export class AiBrainService {
       normalizedDraft.includes('la estamos procesando') ||
       normalizedDraft.includes('un asesor puede continuar') ||
       normalizedDraft.includes('respuesta inmediata con datos exactos') ||
+      normalizedDraft.includes('gracias por la descripción detallada') ||
+      normalizedDraft.includes('gracias por la descripcion detallada') ||
+      normalizedDraft.includes('si te interesa, puedo ayudarte a buscar más información') ||
+      normalizedDraft.includes('si te interesa, puedo ayudarte a buscar mas informacion') ||
+      normalizedDraft.includes('además, si buscas soluciones tecnológicas') ||
+      normalizedDraft.includes('ademas, si buscas soluciones tecnologicas') ||
+      normalizedDraft.includes('estoy aquí para ayudarte') ||
+      normalizedDraft.includes('estoy aqui para ayudarte') ||
       normalizedDraft.includes('nombre, teléfono, email') ||
       normalizedDraft.includes('nombre, telefono, email');
+
+    const isTooLong =
+      conversationalDraft.length > 280 ||
+      conversationalDraft.split(/\n+/).filter((chunk) => chunk.trim().length > 0).length > 2;
 
     const lastAssistantMessage = [...params.recentMessages]
       .reverse()
@@ -942,8 +959,8 @@ export class AiBrainService {
       !!lastAssistantMessage &&
       lastAssistantMessage.toLowerCase() == normalizedDraft;
 
-    if (!looksLikeGenericShortMessageReply && !soundsRobotic && !repeatsLastAssistant) {
-      return trimmedDraft;
+    if (!looksLikeGenericShortMessageReply && !soundsRobotic && !repeatsLastAssistant && !isTooLong) {
+      return conversationalDraft;
     }
 
     const fallback = this.buildHumanSalesReply({
@@ -952,7 +969,7 @@ export class AiBrainService {
       senderName: params.senderName,
       detectedIntent: params.detectedIntent,
     });
-    return fallback || trimmedDraft;
+    return fallback || conversationalDraft;
   }
 
   private buildHumanSalesReply(params: {
@@ -976,59 +993,81 @@ export class AiBrainService {
         : previousClientTopic;
 
     if (!normalized) {
-      return 'Hola 👋 Estoy aquí para ayudarte. Si quieres, te muestro opciones, precios o disponibilidad.';
+      return 'Hola. Dime qué necesitas y te ayudo rápido.';
     }
 
     if (/^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b/.test(normalized)) {
       return shortPreviousTopic != null
-        ? `Hola ${namePrefix}seguimos con ${shortPreviousTopic}. ¿Quieres que te muestre opciones, precios o disponibilidad?`
-        : `Hola ${namePrefix}👋 ¿Qué estás buscando hoy? Tengo varias opciones que podrían interesarte.`;
+        ? `Hola ${namePrefix}seguimos con ${shortPreviousTopic}. ¿Quieres precio o más detalles?`
+        : `Hola ${namePrefix}¿qué estás buscando?`;
     }
 
     if (/(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)/.test(normalized)) {
       return shortPreviousTopic != null
-        ? `Todo bien 👍 Seguimos con ${shortPreviousTopic}. ¿Prefieres que avancemos con opciones o con precios?`
-        : 'Todo bien 👍 Dime qué necesitas y lo vemos de una vez.';
+        ? `Todo bien. Seguimos con ${shortPreviousTopic}. ¿Te paso precio o detalles?`
+        : 'Todo bien. Dime qué necesitas.';
     }
 
     if (/^(si|sí|ok|oki|dale|perfecto|de acuerdo|claro|yes)\b/.test(normalized)) {
       return shortPreviousTopic != null
-        ? `Perfecto 👍 Sobre ${shortPreviousTopic}, ¿prefieres que te muestre precios o las opciones disponibles primero?`
-        : 'Perfecto 👍 ¿Quieres que te muestre precios o prefieres ver opciones primero?';
+        ? `Perfecto. Sobre ${shortPreviousTopic}, ¿quieres precio o detalles?`
+        : 'Perfecto. ¿Quieres precio o más detalles?';
     }
 
     if (/(que venden|qué venden|que ofrecen|qué ofrecen|productos|servicios)/.test(normalized)) {
-      return 'Ofrecemos productos y servicios según lo que necesites. Si me dices qué buscas, te explico primero las opciones más relevantes y luego te recomiendo la mejor.';
+      return 'Te cuento sin problema. Dime qué buscas y te recomiendo la mejor opción.';
     }
 
     if (/(donde estan|dónde están|ubicacion|ubicación|direccion|dirección)/.test(normalized)) {
-      return 'Te comparto nuestra ubicación con gusto. Si quieres, te doy primero la dirección o la zona y después te indico cómo llegar o qué opción te conviene.';
+      return 'Claro. Te paso la ubicación enseguida.';
     }
 
     if (/(precio|precios|cu[aá]nto cuesta|cu[aá]nto vale|costo|costos|cotiz)/.test(normalized)) {
-      return 'Claro, te ayudo con precios. Dime qué producto o servicio te interesa y te respondo primero con el precio o el rango correspondiente.';
+      return 'Claro. Dime cuál te interesa y te paso el precio.';
     }
 
     if (normalized.length <= 12) {
       if (params.detectedIntent === 'pricing') {
-        return 'Claro 👍 Te ayudo con precios. Dime cuál producto o servicio te interesa y te oriento.';
+        return 'Claro. Dime cuál te interesa y te paso el precio.';
       }
       return shortPreviousTopic != null
-        ? `Seguimos con ${shortPreviousTopic}. Te puedo mostrar opciones, precios o disponibilidad, como prefieras.`
-        : `Claro ${namePrefix}te puedo mostrar opciones, precios o disponibilidad. ¿Por cuál quieres empezar?`;
+        ? `Seguimos con ${shortPreviousTopic}. ¿Quieres precio, detalles o disponibilidad?`
+        : `Claro ${namePrefix}¿quieres precio, detalles o disponibilidad?`;
     }
 
     if (params.detectedIntent === 'pricing') {
-      return `Perfecto. Para ayudarte con precios sin hacerte perder tiempo, dime qué producto o servicio te interesa y te guío.`;
+      return 'Perfecto. Dime cuál te interesa y te cotizo.';
     }
 
     if (params.detectedIntent === 'support') {
-      return `Entiendo. Vamos a resolverlo. Dime qué parte te está dando problema y te guío paso a paso.`;
+      return 'Entiendo. Dime qué te está fallando y lo revisamos.';
     }
 
     return shortPreviousTopic != null
-      ? `Entiendo. Seguimos con ${shortPreviousTopic}. Si quieres, te doy opciones, precios o una recomendación puntual.`
-      : 'Entiendo. Te ayudo con eso. Si quieres, te doy opciones, precios o una recomendación puntual.';
+      ? `Entiendo. Seguimos con ${shortPreviousTopic}. ¿Quieres que te recomiende algo?`
+      : 'Entiendo. ¿Quieres que te recomiende una opción?';
+  }
+
+  private enforceConversationalStyle(draft: string): string {
+    const flattened = draft
+      .replace(/\s+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const sentences = flattened
+      .replace(/\n+/g, ' ')
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0);
+
+    const shortened = sentences.length <= 2
+      ? sentences.join(' ')
+      : sentences.slice(0, 2).join(' ');
+
+    return shortened
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+([,.!?])/g, '$1')
+      .trim();
   }
 
   private resolveResponseTemperature(

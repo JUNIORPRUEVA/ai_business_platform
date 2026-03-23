@@ -121,6 +121,45 @@ test('ai brain replaces generic repetitive replies with a human sales reply', ()
   assert.match(normalized, /hola|opciones|interesarte|ayudarte/i);
 });
 
+test('ai brain replaces long robotic sales copy with a short human whatsapp reply', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const normalized = (service as any).normalizeAssistantReply({
+    draft:
+      'Gracias por la descripción detallada. Si te interesa, puedo ayudarte a buscar más información sobre su disponibilidad o características adicionales. Además, si buscas soluciones tecnológicas, también puedo darte detalles sobre nuestros productos.',
+    userMessage: 'ok',
+    recentMessages: [
+      {
+        sender: 'client',
+        content: 'megáfono portátil',
+      },
+    ],
+    senderName: 'Ana',
+    detectedIntent: 'sales',
+  });
+
+  assert.ok(normalized.length < 120);
+  assert.doesNotMatch(normalized, /gracias por la descripción detallada|si te interesa|además/i);
+  assert.match(normalized, /precio|detalles|recomiende/i);
+});
+
 test('ai brain transcript builder keeps chronological order and ignores operator messages', () => {
   const service = new AiBrainService(
     {} as never,

@@ -146,7 +146,7 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
       maxTokens: 1400,
       isEnabled: true,
       systemPromptPreview:
-        'You are a professional sales assistant for a business platform. Speak like a real human, keep context, avoid repetitive fallback phrases, guide short messages naturally, and move the conversation forward in a persuasive but friendly way.',
+        'You are a professional sales assistant for a business platform. Speak like a real human, keep context, avoid repetitive fallback phrases, keep replies short like WhatsApp, and move the conversation forward in a persuasive but friendly way.',
     },
     integrations: {
       metaCloudApiToken: '',
@@ -201,7 +201,7 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
         description:
           'Controls enterprise qualification, memory loading, escalation rules, and tool selection.',
         content:
-          'You are a professional sales assistant for a business platform. Speak like a real human, natural and friendly, with clear WhatsApp-ready responses. Never repeat the same sentence, never use generic fallback messages, keep continuity with previous messages and memory, and when the user sends a short message guide the conversation with a useful next step instead of vague questions. Your goal is to help and sell naturally without sounding robotic.',
+          'You are a professional sales assistant for a business platform. Speak like a real human, natural and friendly, with short WhatsApp-ready responses. Never repeat the same sentence, never use generic fallback messages, keep continuity with previous messages and memory, and when the user sends a short message guide the conversation with a useful next step instead of vague questions. Keep most replies to 1 or 2 short sentences. Your goal is to help and sell naturally without sounding robotic.',
         updatedAt: new Date().toISOString(),
       },
     ],
