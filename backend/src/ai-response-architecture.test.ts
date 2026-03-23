@@ -160,6 +160,96 @@ test('ai brain replaces long robotic sales copy with a short human whatsapp repl
   assert.match(normalized, /precio|detalles|recomiende/i);
 });
 
+test('ai brain answers video questions using the stored video analysis context', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const normalized = (service as any).normalizeAssistantReply({
+    draft: 'No puedo transcribir el contenido del video directamente, pero parece mostrar algunos productos.',
+    userMessage: 'Que dice el video?',
+    recentMessages: [
+      {
+        sender: 'client',
+        type: 'video',
+        content: 'Contexto del cliente: envio un video. Resumen del video: una mujer muestra audifonos P9 Ultra 2 y varias correas de reloj sobre la mesa.',
+        metadata: {
+          videoAnalysis: {
+            status: 'completed',
+            text: 'una mujer muestra audifonos P9 Ultra 2 y varias correas de reloj sobre la mesa.',
+            transcript: 'presenta los audifonos P9 Ultra 2 y accesorios disponibles',
+          },
+        },
+      },
+    ],
+    senderName: 'Ana',
+    detectedIntent: 'general',
+  });
+
+  assert.doesNotMatch(normalized, /no puedo transcribir/i);
+  assert.match(normalized, /en el video se escucha esto|en resumen, el video muestra esto/i);
+  assert.match(normalized, /audifonos|correas|accesorios/i);
+});
+
+test('ai brain falls back to the visual summary when asking about a video without transcript', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const normalized = (service as any).normalizeAssistantReply({
+    draft: 'Parece que el video muestra productos interesantes. Si quieres te doy mas informacion.',
+    userMessage: 'Que muestra el video?',
+    recentMessages: [
+      {
+        sender: 'client',
+        type: 'video',
+        content: 'Contexto del cliente: envio un video. Resumen del video: se ve un molinillo electrico en primer plano y especias sobre la mesa.',
+        metadata: {
+          videoAnalysis: {
+            status: 'completed',
+            text: 'se ve un molinillo electrico en primer plano y especias sobre la mesa.',
+          },
+        },
+      },
+    ],
+    senderName: 'Ana',
+    detectedIntent: 'general',
+  });
+
+  assert.match(normalized, /en resumen, el video muestra esto/i);
+  assert.match(normalized, /molinillo|especias/i);
+});
+
 test('ai brain transcript builder keeps chronological order and ignores operator messages', () => {
   const service = new AiBrainService(
     {} as never,
