@@ -74,7 +74,7 @@ export class AiBrainVideoService {
         frames: artifacts.frames,
         transcriptText: artifacts.transcriptText,
       });
-      const text = analysis.text.trim();
+      const text = this.compactAnalysisText(analysis.text);
       if (!text) {
         throw new Error('empty_video_analysis');
       }
@@ -551,12 +551,29 @@ export class AiBrainVideoService {
   }
 
   private buildResolvedVideoContent(originalContent: string, analysis: string): string {
+    const compactAnalysis = this.compactAnalysisText(analysis);
     const normalizedOriginal = originalContent.trim();
     if (normalizedOriginal && !this.isGenericVideoPlaceholder(normalizedOriginal)) {
-      return `El cliente envió un video con este texto adjunto: "${normalizedOriginal}". Análisis del video: ${analysis}`;
+      return `Contexto del cliente: envio un video con este texto adjunto: "${normalizedOriginal}". Resumen del video: ${compactAnalysis}`;
     }
 
-    return `El cliente envió un video. Análisis del video: ${analysis}`;
+    return `Contexto del cliente: envio un video. Resumen del video: ${compactAnalysis}`;
+  }
+
+  private compactAnalysisText(analysis: string): string {
+    return analysis
+      .replace(/#{1,6}\s*/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/^\s*[-*]\s+/gm, '')
+      .replace(/\r/g, '')
+      .replace(/\n+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0)
+      .slice(0, 4)
+      .join(' ');
   }
 
   private isGenericVideoPlaceholder(content: string): boolean {
