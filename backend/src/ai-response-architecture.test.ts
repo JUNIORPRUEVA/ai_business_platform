@@ -231,7 +231,12 @@ test('ai brain prioriza el prompt configurado en bot-configuration sobre otras f
   assert.equal(resolved.mainBotPrompt, 'PROMPT DESDE CONFIGURACION');
   assert.equal(resolved.systemSource, 'bot_configuration.prompts[0]');
   assert.equal(resolved.mainSource, 'bot_configuration.prompts[0]');
-  assert.deepEqual(resolved.businessRules, ['REGLA DINAMICA']);
+  assert.ok(resolved.businessRules.includes('REGLA DINAMICA'));
+  assert.ok(
+    resolved.businessRules.some((rule: string) =>
+      /responde primero la pregunta real del usuario/i.test(rule),
+    ),
+  );
 });
 
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {

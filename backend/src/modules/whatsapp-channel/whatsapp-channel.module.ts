@@ -18,6 +18,7 @@ import { WhatsappChatEntity } from './entities/whatsapp-chat.entity';
 import { WhatsappMessageEntity } from './entities/whatsapp-message.entity';
 import { WhatsappWebhookProcessor } from './processors/whatsapp-webhook.processor';
 import { EvolutionApiClientService } from './services/evolution-api-client.service';
+import { FfmpegRuntimeService } from './services/ffmpeg-runtime.service';
 import { WhatsappAttachmentService } from './services/whatsapp-attachment.service';
 import { WhatsappChannelConfigService } from './services/whatsapp-channel-config.service';
 import { WhatsappChannelLogService } from './services/whatsapp-channel-log.service';
@@ -51,6 +52,7 @@ import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
     WhatsappSecretService,
     WhatsappChannelLogService,
     EvolutionApiClientService,
+    FfmpegRuntimeService,
     WhatsappJidResolverService,
     WhatsappChannelConfigService,
     WhatsappAttachmentService,
@@ -64,6 +66,7 @@ import { WhatsappWebhookService } from './services/whatsapp-webhook.service';
     WhatsappSecretService,
     WhatsappChannelLogService,
     EvolutionApiClientService,
+    FfmpegRuntimeService,
     WhatsappJidResolverService,
     WhatsappChannelConfigService,
     WhatsappAttachmentService,

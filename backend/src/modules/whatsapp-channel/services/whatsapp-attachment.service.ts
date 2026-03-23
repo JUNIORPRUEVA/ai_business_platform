@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,6 +10,7 @@ import { StorageService } from '../../storage/storage.service';
 import { WhatsappAttachmentEntity } from '../entities/whatsapp-attachment.entity';
 import { WhatsappChannelConfigEntity } from '../entities/whatsapp-channel-config.entity';
 import { EvolutionApiClientService } from './evolution-api-client.service';
+import { FfmpegRuntimeService } from './ffmpeg-runtime.service';
 
 @Injectable()
 export class WhatsappAttachmentService {
@@ -21,6 +21,7 @@ export class WhatsappAttachmentService {
     private readonly attachmentsRepository: Repository<WhatsappAttachmentEntity>,
     private readonly storageService: StorageService,
     private readonly evolutionApiClient: EvolutionApiClientService,
+    private readonly ffmpegRuntimeService: FfmpegRuntimeService,
   ) {}
 
   async uploadManual(params: {
@@ -41,6 +42,12 @@ export class WhatsappAttachmentService {
       !this.looksLikePlayableAudio(params.buffer, params.mimeType ?? null)
     ) {
       throw new BadRequestException('El archivo enviado no contiene un audio valido.');
+    }
+
+    if (params.fileType === 'audio') {
+      this.logger.log(
+        `[WHATSAPP ATTACHMENT] audio received source=manual companyId=${params.companyId} bytes=${params.buffer.length} file=${params.originalName}`,
+      );
     }
 
     const preparedUpload = await this.prepareUploadPayload({
@@ -141,6 +148,12 @@ export class WhatsappAttachmentService {
           `[WHATSAPP ATTACHMENT] inbound download skipped companyId=${params.companyId} messageId=${params.messageId} fileType=${params.fileType} sourceUrl=${params.sourceUrl ?? '(none)'} reason=empty_download`,
         );
         return null;
+      }
+
+      if (params.fileType === 'audio') {
+        this.logger.log(
+          `[WHATSAPP ATTACHMENT] audio received source=inbound companyId=${params.companyId} messageId=${params.messageId} bytes=${downloaded.buffer.length} file=${params.originalName}`,
+        );
       }
 
       const preparedUpload = await this.prepareUploadPayload({
@@ -701,7 +714,10 @@ export class WhatsappAttachmentService {
     mimeType: string | null;
     durationSeconds: number | null;
   } | null> {
-    if (!ffmpegPath) {
+    let ffmpegExecutable = '';
+    try {
+      ffmpegExecutable = await this.ffmpegRuntimeService.getExecutableOrThrow();
+    } catch {
       this.logger.warn('[VIDEO NORMALIZATION] skipped reason=missing_ffmpeg');
       return null;
     }
@@ -709,8 +725,6 @@ export class WhatsappAttachmentService {
     if (!this.looksLikePlayableVideo(params.buffer, params.mimeType)) {
       return null;
     }
-
-    const ffmpegExecutable = String(ffmpegPath);
     const inputExtension = this.resolveExtension(
       params.originalName,
       params.mimeType,
@@ -863,12 +877,16 @@ export class WhatsappAttachmentService {
     mimeType: string | null;
     durationSeconds: number | null;
   } | null> {
-    if (!ffmpegPath) {
-      this.logger.warn('[AUDIO NORMALIZATION] skipped reason=missing_ffmpeg');
+    let ffmpegExecutable = '';
+    try {
+      ffmpegExecutable = await this.ffmpegRuntimeService.getExecutableOrThrow();
+    } catch (error) {
+      this.logger.error(
+        `[AUDIO NORMALIZATION] failed file=${params.originalName} error=${error instanceof Error ? error.message : 'unknown'}`,
+      );
       return null;
     }
 
-    const ffmpegExecutable = String(ffmpegPath);
     const inputExtension = this.resolveExtension(
       params.originalName,
       params.mimeType,
@@ -880,6 +898,9 @@ export class WhatsappAttachmentService {
 
     try {
       await writeFile(inputPath, params.buffer);
+      this.logger.log(
+        `[AUDIO NORMALIZATION] converting file=${params.originalName} inputExtension=${inputExtension}`,
+      );
 
       const stderr = await new Promise<string>((resolve, reject) => {
         let collected = '';
@@ -918,6 +939,9 @@ export class WhatsappAttachmentService {
       });
 
       const outputBuffer = await readFile(outputPath);
+      this.logger.log(
+        `[AUDIO NORMALIZATION] converted file=${params.originalName} output=mp3 bytes=${outputBuffer.length}`,
+      );
       return {
         buffer: outputBuffer,
         originalName: this.ensureMp3FileName(params.originalName),
@@ -989,11 +1013,13 @@ export class WhatsappAttachmentService {
     originalName: string,
     mimeType: string | null,
   ): Promise<Buffer | null> {
-    if (!ffmpegPath) {
+    let ffmpegExecutable = '';
+    try {
+      ffmpegExecutable = await this.ffmpegRuntimeService.getExecutableOrThrow();
+    } catch {
       return null;
     }
 
-    const ffmpegExecutable = String(ffmpegPath);
     const extension = this.resolveExtension(originalName, mimeType, 'video');
     const tempDir = await mkdtemp(join(tmpdir(), 'botposvendedor-video-thumb-'));
     const inputPath = join(tempDir, `input.${extension}`);

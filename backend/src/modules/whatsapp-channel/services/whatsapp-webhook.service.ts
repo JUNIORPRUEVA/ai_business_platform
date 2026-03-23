@@ -371,7 +371,7 @@ export class WhatsappWebhookService {
       messageForRealtime.id,
       {
         messageType: messageForRealtime.messageType,
-        textBody: messageForRealtime.textBody,
+        textBody: messageForRealtime.textBody ?? content.textBody,
         mediaUrl: messageForRealtime.mediaStoragePath ?? messageForRealtime.mediaUrl,
         mimeType: messageForRealtime.mimeType,
         mediaOriginalName: messageForRealtime.mediaOriginalName,

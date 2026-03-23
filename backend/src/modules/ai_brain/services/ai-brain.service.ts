@@ -117,6 +117,11 @@ export class AiBrainService {
         Math.max(memoryWindowSize, 20),
       );
       const userMessage = resolvedInboundMessage.content.trim();
+      if (resolvedInboundMessage.type === 'audio') {
+        this.logger.log(
+          `[AI BRAIN] final text sent to AI conversationId=${params.conversationId} messageId=${params.messageId} text="${userMessage.slice(0, 160)}"`,
+        );
+      }
       const contactPhone = (params.contactPhone || contact.phone || '').trim();
       const outboundRemoteJid = (params.remoteJid || '').trim();
 
@@ -648,7 +653,7 @@ export class AiBrainService {
     if (!params.userMessage.trim()) {
       return { ok: false, reason: 'empty_inbound_message' };
     }
-    if (this.isAudioFallbackPlaceholder(params.userMessage)) {
+    if (this.isLegacyAudioPlaceholder(params.userMessage)) {
       return { ok: false, reason: 'audio_placeholder_ignored' };
     }
     return { ok: true, reason: 'ready' };
@@ -995,6 +1000,11 @@ export class AiBrainService {
     return typeof value === 'object' && value !== null
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private isLegacyAudioPlaceholder(content: string): boolean {
+    const normalized = content.trim().toLowerCase();
+    return normalized === 'audio recibido';
   }
 
   private isAudioFallbackPlaceholder(content: string): boolean {

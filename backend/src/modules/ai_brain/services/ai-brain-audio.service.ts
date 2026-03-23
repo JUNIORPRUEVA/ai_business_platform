@@ -1,9 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'node:child_process';
-import { constants as fsConstants } from 'node:fs';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { Repository } from 'typeorm';
@@ -12,10 +10,11 @@ import { MessageEntity } from '../../messages/entities/message.entity';
 import { OpenAiService } from '../../openai/services/openai.service';
 import { StorageService } from '../../storage/storage.service';
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
+import { FfmpegRuntimeService } from '../../whatsapp-channel/services/ffmpeg-runtime.service';
 
 @Injectable()
 export class AiBrainAudioService {
-  private static readonly transcriptionFallback = 'Recibí tu audio, ¿puedes escribirlo?';
+  private static readonly transcriptionFallback = 'El usuario envió un audio sin transcripción clara';
   private readonly logger = new Logger(AiBrainAudioService.name);
 
   constructor(
@@ -23,6 +22,7 @@ export class AiBrainAudioService {
     private readonly whatsappMessagesRepository: Repository<WhatsappMessageEntity>,
     private readonly storageService: StorageService,
     private readonly openAiService: OpenAiService,
+    private readonly ffmpegRuntimeService: FfmpegRuntimeService,
   ) {}
 
   async resolveInboundAudioText(params: {
@@ -33,12 +33,18 @@ export class AiBrainAudioService {
     metadataPatch: Record<string, unknown>;
   }> {
     try {
+      this.logger.log(
+        `[AI AUDIO] audio received companyId=${params.companyId} messageId=${params.message.id}`,
+      );
       const source = await this.resolveAudioSource(params.companyId, params.message);
       if (!source) {
         throw new Error('audio_source_not_found');
       }
 
       const converted = await this.convertAudioToWav(source);
+      this.logger.log(
+        `[AI AUDIO] audio converted companyId=${params.companyId} messageId=${params.message.id} file=${converted.filename} bytes=${converted.buffer.length}`,
+      );
       const transcript = await this.openAiService.transcribeAudio({
         companyId: params.companyId,
         buffer: converted.buffer,
@@ -50,6 +56,9 @@ export class AiBrainAudioService {
       if (!text) {
         throw new Error('empty_transcript');
       }
+      this.logger.log(
+        `[AI AUDIO] transcription success companyId=${params.companyId} messageId=${params.message.id} text="${text.slice(0, 160)}"`,
+      );
 
       return {
         content: text,
@@ -161,7 +170,7 @@ export class AiBrainAudioService {
     filename: string;
     contentType: string | null;
   }): Promise<{ buffer: Buffer; filename: string }> {
-    const executable = await this.resolveFfmpegExecutable();
+    const executable = await this.ffmpegRuntimeService.getExecutableOrThrow();
     const tempDir = await mkdtemp(join(tmpdir(), 'botposvendedor-audio-transcribe-'));
     const inputPath = join(
       tempDir,
@@ -212,20 +221,6 @@ export class AiBrainAudioService {
       };
     } finally {
       await rm(tempDir, { recursive: true, force: true });
-    }
-  }
-
-  private async resolveFfmpegExecutable(): Promise<string> {
-    const executable = typeof ffmpegPath === 'string' ? ffmpegPath.trim() : '';
-    if (!executable) {
-      throw new Error('FFMPEG NOT INSTALLED - AUDIO PROCESSING DISABLED');
-    }
-
-    try {
-      await access(executable, fsConstants.F_OK);
-      return executable;
-    } catch {
-      throw new Error('FFMPEG NOT INSTALLED - AUDIO PROCESSING DISABLED');
     }
   }
 
