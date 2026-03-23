@@ -22,7 +22,9 @@ import { ToolEntity } from '../../tools/entities/tool.entity';
 import { ToolsService } from '../../tools/tools.service';
 import { WhatsappMessagingService } from '../../whatsapp-channel/services/whatsapp-messaging.service';
 import { AiBrainLogEntity } from '../entities/ai-brain-log.entity';
+import { KnowledgeDocumentEntity } from '../entities/knowledge-document.entity';
 import { AiBrainAudioService } from './ai-brain-audio.service';
+import { AiBrainCacheService } from './ai-brain-cache.service';
 import { AiBrainContextBuilderService } from './ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './ai-brain-document.service';
 import { AiBrainToolRouterService } from './ai-brain-tool-router.service';
@@ -32,6 +34,8 @@ export class AiBrainService {
   private static readonly minimumResponseTemperature = 0.7;
   private static readonly responsePresencePenalty = 0.6;
   private static readonly responseFrequencyPenalty = 0.4;
+  private static readonly aiResourceCacheTtlSeconds = 30;
+  private static readonly audioResolutionCacheTtlSeconds = 21_600;
   private readonly logger = new Logger(AiBrainService.name);
 
   constructor(
@@ -54,6 +58,8 @@ export class AiBrainService {
     private readonly aiBrainLogsRepository: Repository<AiBrainLogEntity>,
     @Optional()
     private readonly aiBrainAudioService?: AiBrainAudioService,
+    @Optional()
+    private readonly aiBrainCacheService?: AiBrainCacheService,
   ) {}
 
   async processInboundMessage(params: {
@@ -87,35 +93,36 @@ export class AiBrainService {
         `[AI BRAIN] inbound received conversationId=${params.conversationId} companyId=${params.companyId} channelId=${params.channelId} messageId=${params.messageId}`,
       );
 
-      const company = await this.companiesService.getMyCompany(params.companyId);
-      channel = await this.channelsService.get(params.companyId, params.channelId);
-      const conversation = await this.conversationsService.get(
-        params.companyId,
-        params.conversationId,
-      );
-      const contact = await this.contactsService.get(params.companyId, conversation.contactId);
-      contactId = contact.id;
-
-      const currentInboundMessage = await this.messagesService.getById(
-        params.companyId,
-        params.conversationId,
-        params.messageId,
-      );
+      const [company, resolvedChannel, conversation, currentInboundMessage] = await Promise.all([
+        this.companiesService.getMyCompany(params.companyId),
+        this.channelsService.get(params.companyId, params.channelId),
+        this.conversationsService.get(params.companyId, params.conversationId),
+        this.messagesService.getById(
+          params.companyId,
+          params.conversationId,
+          params.messageId,
+        ),
+      ]);
+      channel = resolvedChannel;
       if (!currentInboundMessage) {
         throw new Error(
           `[AI BRAIN] inbound message not found conversationId=${params.conversationId} messageId=${params.messageId}`,
         );
       }
-      const resolvedInboundMessage = await this.resolveInboundMessageContent(
-        params.companyId,
-        params.conversationId,
-        currentInboundMessage,
-      );
-      const recentMessages = await this.messagesService.listRecent(
-        params.companyId,
-        params.conversationId,
-        Math.max(memoryWindowSize, 20),
-      );
+      const [contact, resolvedInboundMessage, recentMessages] = await Promise.all([
+        this.contactsService.get(params.companyId, conversation.contactId),
+        this.resolveInboundMessageContent(
+          params.companyId,
+          params.conversationId,
+          currentInboundMessage,
+        ),
+        this.messagesService.listRecent(
+          params.companyId,
+          params.conversationId,
+          Math.max(memoryWindowSize, 20),
+        ),
+      ]);
+      contactId = contact.id;
       const userMessage = resolvedInboundMessage.content.trim();
       if (resolvedInboundMessage.type === 'audio') {
         this.logger.log(
@@ -125,7 +132,7 @@ export class AiBrainService {
       const contactPhone = (params.contactPhone || contact.phone || '').trim();
       const outboundRemoteJid = (params.remoteJid || '').trim();
 
-      bot = await this.resolveActiveBot(params.companyId, channel);
+      bot = await this.resolveActiveBotCached(params.companyId, channel);
       this.logger.log(
         `[AI BRAIN] bot resolved botId=${bot.id} channelId=${channel.id} model=${bot.model}`,
       );
@@ -174,12 +181,12 @@ export class AiBrainService {
         return { ok: true };
       }
 
-      const activePrompts = await this.promptsService.listActive(params.companyId);
+      const activePromptsPromise = this.listActivePromptsCached(params.companyId);
       const promptInputs = this.resolvePromptInputs(
         configuration,
         bot,
         detectedIntent,
-        activePrompts,
+        await activePromptsPromise,
       );
       this.logger.log(
         `[AI BRAIN] prompt resolved systemSource=${promptInputs.systemSource} mainSource=${promptInputs.mainSource} rules=${promptInputs.businessRules.length}`,
@@ -241,10 +248,11 @@ export class AiBrainService {
         });
       }
 
-      const activeTools = configuration.orchestrator.enableToolExecution
-        ? await this.listActiveTools(params.companyId, bot.id)
-        : [];
-      const [assembledMemory, documents, contactMemoryMap] = await Promise.all([
+      const activeToolsPromise = configuration.orchestrator.enableToolExecution
+        ? this.listActiveToolsCached(params.companyId, bot.id)
+        : Promise.resolve([] as ToolEntity[]);
+      const [activeTools, assembledMemory, documents, contactMemoryMap] = await Promise.all([
+        activeToolsPromise,
         this.memoryService.assembleContext({
           companyId: params.companyId,
           contactId: contact.id,
@@ -252,7 +260,7 @@ export class AiBrainService {
           recentWindowSize: memoryWindowSize,
           incomingMessage: userMessage,
         }),
-        this.aiBrainDocumentService.listAvailable(params.companyId, bot.id),
+        this.listAvailableDocumentsCached(params.companyId, bot.id),
         this.memoryService.getContactMemoryMap(params.companyId, contact.id),
       ]);
 
@@ -329,12 +337,6 @@ export class AiBrainService {
       let finalContent = '';
       let executedTool: { tool: string; ok: boolean; result: unknown } | null = null;
 
-      console.log('LATEST USER MESSAGE:', userMessage);
-      console.log('ALL MESSAGES:', openAiMessages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      })));
-      console.log('[AI DEBUG] finalPrompt:', openAiMessages);
       this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
       firstDraft = await this.openAiService.draftResponse({
         companyId: params.companyId,
@@ -438,7 +440,6 @@ export class AiBrainService {
         senderName: contact.name || null,
         detectedIntent,
       });
-      console.log('[AI DEBUG] response:', finalContent);
 
       const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
         sender: 'bot',
@@ -480,8 +481,6 @@ export class AiBrainService {
             `[AI BRAIN] whatsapp send skipped conversationId=${params.conversationId} reason=missing_response_target`,
           );
         } else {
-          console.log('SENDING TO:', targetRemoteJid);
-          console.log('MESSAGE:', botMessage.content);
           const outboundDispatch = await this.whatsappMessagingService.sendText(
             params.companyId,
             {
@@ -624,6 +623,77 @@ export class AiBrainService {
   private async listActiveTools(companyId: string, botId: string): Promise<ToolEntity[]> {
     const tools = await this.toolsService.list(companyId);
     return tools.filter((tool) => tool.active && (!tool.botId || tool.botId === botId));
+  }
+
+  private async resolveActiveBotCached(
+    companyId: string,
+    channel: ChannelEntity,
+  ): Promise<BotEntity> {
+    const configuredBotId = this.readString(channel.config['botId']) || 'default';
+    const cacheKey = this.buildAiCacheKey('bot', companyId, channel.id, configuredBotId);
+    const cached = await this.aiBrainCacheService?.getJson<BotEntity>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const resolved = await this.resolveActiveBot(companyId, channel);
+    await this.aiBrainCacheService?.setJson(
+      cacheKey,
+      resolved,
+      AiBrainService.aiResourceCacheTtlSeconds,
+    );
+    return resolved;
+  }
+
+  private async listActivePromptsCached(companyId: string): Promise<PromptEntity[]> {
+    const cacheKey = this.buildAiCacheKey('prompts', companyId);
+    const cached = await this.aiBrainCacheService?.getJson<PromptEntity[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const resolved = await this.promptsService.listActive(companyId);
+    await this.aiBrainCacheService?.setJson(
+      cacheKey,
+      resolved,
+      AiBrainService.aiResourceCacheTtlSeconds,
+    );
+    return resolved;
+  }
+
+  private async listActiveToolsCached(companyId: string, botId: string): Promise<ToolEntity[]> {
+    const cacheKey = this.buildAiCacheKey('tools', companyId, botId);
+    const cached = await this.aiBrainCacheService?.getJson<ToolEntity[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const resolved = await this.listActiveTools(companyId, botId);
+    await this.aiBrainCacheService?.setJson(
+      cacheKey,
+      resolved,
+      AiBrainService.aiResourceCacheTtlSeconds,
+    );
+    return resolved;
+  }
+
+  private async listAvailableDocumentsCached(
+    companyId: string,
+    botId: string,
+  ): Promise<KnowledgeDocumentEntity[]> {
+    const cacheKey = this.buildAiCacheKey('documents', companyId, botId);
+    const cached = await this.aiBrainCacheService?.getJson<KnowledgeDocumentEntity[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const resolved = await this.aiBrainDocumentService.listAvailable(companyId, botId);
+    await this.aiBrainCacheService?.setJson(
+      cacheKey,
+      resolved,
+      AiBrainService.aiResourceCacheTtlSeconds,
+    );
+    return resolved;
   }
 
   private async resolveActiveBot(companyId: string, channel: ChannelEntity): Promise<BotEntity> {
@@ -1015,6 +1085,79 @@ export class AiBrainService {
       : {};
   }
 
+  private buildAiCacheKey(scope: string, ...parts: string[]): string {
+    return ['ai_brain', scope, ...parts.map((part) => part.trim()).filter(Boolean)].join(':');
+  }
+
+  private readResolvedAudioText(
+    message: MessageEntity,
+  ): { content: string; metadataPatch: Record<string, unknown> } | null {
+    const transcription = this.readRecord(message.metadata?.['audioTranscription']);
+    const status = this.readString(transcription['status']);
+    if (status === 'completed') {
+      const text = this.readString(transcription['text']);
+      if (!text) {
+        return null;
+      }
+
+      return {
+        content: text,
+        metadataPatch: {
+          audioTranscription: transcription,
+        },
+      };
+    }
+
+    if (status === 'failed') {
+      const fallback = this.readString(transcription['fallback']);
+      if (!fallback) {
+        return null;
+      }
+
+      return {
+        content: fallback,
+        metadataPatch: {
+          audioTranscription: transcription,
+        },
+      };
+    }
+
+    return null;
+  }
+
+  private async persistResolvedInboundAudioMessage(
+    companyId: string,
+    conversationId: string,
+    message: MessageEntity,
+    resolution: { content: string; metadataPatch: Record<string, unknown> },
+  ): Promise<MessageEntity> {
+    const mergedMetadata = {
+      ...(message.metadata ?? {}),
+      ...resolution.metadataPatch,
+    };
+    const shouldPersist =
+      message.content !== resolution.content ||
+      JSON.stringify(message.metadata ?? {}) !== JSON.stringify(mergedMetadata);
+
+    if (!shouldPersist) {
+      return {
+        ...message,
+        content: resolution.content,
+        metadata: mergedMetadata,
+      };
+    }
+
+    return this.messagesService.updateMessageContent(
+      companyId,
+      conversationId,
+      message.id,
+      {
+        content: resolution.content,
+        metadata: mergedMetadata,
+      },
+    );
+  }
+
   private hasFailedAudioTranscription(message: MessageEntity): boolean {
     if (message.type !== 'audio') {
       return false;
@@ -1108,22 +1251,47 @@ export class AiBrainService {
       return message;
     }
 
+    const existingResolution = this.readResolvedAudioText(message);
+    if (existingResolution) {
+      return this.persistResolvedInboundAudioMessage(
+        companyId,
+        conversationId,
+        message,
+        existingResolution,
+      );
+    }
+
+    const cacheKey = this.buildAiCacheKey('audio-resolution', companyId, message.id);
+    const cachedResolution =
+      await this.aiBrainCacheService?.getJson<{
+        content: string;
+        metadataPatch: Record<string, unknown>;
+      }>(cacheKey);
+    if (cachedResolution?.content?.trim()) {
+      return this.persistResolvedInboundAudioMessage(
+        companyId,
+        conversationId,
+        message,
+        cachedResolution,
+      );
+    }
+
     const resolution = await this.aiBrainAudioService.resolveInboundAudioText({
       companyId,
       message,
     });
 
-    return this.messagesService.updateMessageContent(
+    await this.aiBrainCacheService?.setJson(
+      cacheKey,
+      resolution,
+      AiBrainService.audioResolutionCacheTtlSeconds,
+    );
+
+    return this.persistResolvedInboundAudioMessage(
       companyId,
       conversationId,
-      message.id,
-      {
-        content: resolution.content,
-        metadata: {
-          ...(message.metadata ?? {}),
-          ...resolution.metadataPatch,
-        },
-      },
+      message,
+      resolution,
     );
   }
 }

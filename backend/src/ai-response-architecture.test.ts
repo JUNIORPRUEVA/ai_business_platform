@@ -316,6 +316,83 @@ test('ai brain audio recupera audio real desde rawPayloadJson cuando el storage 
   assert.equal(resolved?.buffer.subarray(0, 4).toString('ascii'), 'OggS');
 });
 
+test('ai brain reutiliza la transcripcion ya guardada del audio sin reprocesarlo', async () => {
+  let audioResolutionCalls = 0;
+  let updateMessageContentCalls = 0;
+
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      updateMessageContent: async () => {
+        updateMessageContentCalls += 1;
+        throw new Error('updateMessageContent should not be called');
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { save: async () => undefined } as never,
+    {
+      resolveInboundAudioText: async () => {
+        audioResolutionCalls += 1;
+        return {
+          content: 'Texto transcrito',
+          metadataPatch: {
+            audioTranscription: {
+              status: 'completed',
+              text: 'Texto transcrito',
+            },
+          },
+        };
+      },
+    } as never,
+    {
+      getJson: async () => null,
+      setJson: async () => undefined,
+    } as never,
+  );
+
+  const resolved = await (
+    service as unknown as {
+      resolveInboundMessageContent: (
+        companyId: string,
+        conversationId: string,
+        message: {
+          id: string;
+          type: string;
+          content: string;
+          metadata: Record<string, unknown>;
+        },
+      ) => Promise<{ content: string; metadata: Record<string, unknown> }>;
+    }
+  ).resolveInboundMessageContent('company-1', 'conversation-1', {
+    id: 'message-1',
+    type: 'audio',
+    content: 'Texto transcrito',
+    metadata: {
+      audioTranscription: {
+        status: 'completed',
+        text: 'Texto transcrito',
+        model: 'gpt-4o-mini-transcribe',
+      },
+    },
+  });
+
+  assert.equal(resolved.content, 'Texto transcrito');
+  assert.equal(audioResolutionCalls, 0);
+  assert.equal(updateMessageContentCalls, 0);
+});
+
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
   const service = new AiBrainService(
     {} as never,

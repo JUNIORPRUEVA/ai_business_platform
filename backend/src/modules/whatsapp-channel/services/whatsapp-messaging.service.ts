@@ -121,10 +121,6 @@ export class WhatsappMessagingService {
       canonicalNumber: resolution.canonicalNumber,
     };
 
-    console.log('CHAT REMOTE JID:', recipient.chatJid);
-    console.log('OUTBOUND:', recipient.replyJid);
-    console.log('OUTBOUND TARGET:', recipient.number);
-
     this.logger.log(
       `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${rawRemoteJid} normalizedRemoteJid=${normalizedJid} chatRemoteJid=${recipient.chatJid} canonicalJid=${recipient.canonicalJid ?? '(none)'} canonicalPhone=${recipient.canonicalNumber ?? '(none)'} finalSendTarget=${recipient.number} outboundRemoteJid=${recipient.replyJid} source=${resolution.source} safeToSend=true`,
     );
@@ -200,10 +196,6 @@ export class WhatsappMessagingService {
       canonicalJid: resolution.canonicalJid,
       canonicalNumber: resolution.canonicalNumber,
     };
-
-    console.log('CHAT REMOTE JID:', recipient.chatJid);
-    console.log('OUTBOUND:', recipient.replyJid);
-    console.log('OUTBOUND TARGET:', recipient.number);
 
     this.logger.log(
       `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} chatRemoteJid=${recipient.chatJid} canonicalJid=${recipient.canonicalJid ?? '(none)'} canonicalPhone=${recipient.canonicalNumber ?? '(none)'} finalSendTarget=${recipient.number} outboundRemoteJid=${recipient.replyJid} source=${resolution.source} safeToSend=true`,
@@ -292,10 +284,6 @@ export class WhatsappMessagingService {
       canonicalJid: resolution.canonicalJid,
       canonicalNumber: resolution.canonicalNumber,
     };
-
-    console.log('CHAT REMOTE JID:', recipient.chatJid);
-    console.log('OUTBOUND:', recipient.replyJid);
-    console.log('OUTBOUND TARGET:', recipient.number);
 
     this.logger.log(
       `[BOT SEND RESOLUTION] companyId=${companyId} remoteJidOriginal=${payload.remoteJid} normalizedRemoteJid=${normalizedJid} chatRemoteJid=${recipient.chatJid} canonicalJid=${recipient.canonicalJid ?? '(none)'} canonicalPhone=${recipient.canonicalNumber ?? '(none)'} finalSendTarget=${recipient.number} outboundRemoteJid=${recipient.replyJid} source=${resolution.source} safeToSend=true`,

@@ -44,6 +44,34 @@ export class AiBrainCacheService {
     return `chat_buffer:${phone}`;
   }
 
+  async getJson<T>(key: string): Promise<T | null> {
+    const client = this.client;
+    if (!client) {
+      return null;
+    }
+
+    const value = await client.get(key);
+    if (!value) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(value) as T;
+    } catch (error) {
+      this.logger.debug(`Redis JSON parse failed for ${key}: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  async setJson(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    const client = this.client;
+    if (!client) {
+      return;
+    }
+
+    await client.set(key, JSON.stringify(value), 'EX', Math.max(ttlSeconds, 1));
+  }
+
   async appendInboundBuffer(phone: string, message: string): Promise<void> {
     const client = this.client;
     if (!client) {

@@ -12,7 +12,12 @@ export interface MessageProcessingJob {
   messageId: string;
 }
 
-@Processor('message-processing')
+const messageProcessingConcurrency = Math.max(
+  Number.parseInt(process.env.MESSAGE_PROCESSING_CONCURRENCY ?? '4', 10) || 4,
+  1,
+);
+
+@Processor('message-processing', { concurrency: messageProcessingConcurrency })
 export class MessageProcessingProcessor extends WorkerHost {
   constructor(
     private readonly aiBrainService: AiBrainService,
