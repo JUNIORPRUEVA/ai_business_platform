@@ -807,6 +807,87 @@ test('ai brain reutiliza el analisis ya guardado del video sin reprocesarlo', as
   assert.equal(updateMessageContentCalls, 0);
 });
 
+test('ai brain reutiliza el texto ya extraido de un documento sin reprocesarlo', async () => {
+  let documentResolutionCalls = 0;
+  let updateMessageContentCalls = 0;
+
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      updateMessageContent: async () => {
+        updateMessageContentCalls += 1;
+        throw new Error('updateMessageContent should not be called');
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { save: async () => undefined } as never,
+    {} as never,
+    {} as never,
+    {
+      getJson: async () => null,
+      setJson: async () => undefined,
+    } as never,
+    {} as never,
+    {
+      resolveInboundDocumentText: async () => {
+        documentResolutionCalls += 1;
+        return {
+          content: 'El cliente envió un documento (catalogo.pdf). Texto extraído: catálogo de productos con precios y stock.',
+          metadataPatch: {
+            documentAnalysis: {
+              status: 'completed',
+              text: 'catálogo de productos con precios y stock.',
+              content: 'El cliente envió un documento (catalogo.pdf). Texto extraído: catálogo de productos con precios y stock.',
+            },
+          },
+        };
+      },
+    } as never,
+  );
+
+  const resolved = await (
+    service as unknown as {
+      resolveInboundMessageContent: (
+        companyId: string,
+        conversationId: string,
+        message: {
+          id: string;
+          type: string;
+          content: string;
+          metadata: Record<string, unknown>;
+        },
+      ) => Promise<{ content: string; metadata: Record<string, unknown> }>;
+    }
+  ).resolveInboundMessageContent('company-1', 'conversation-1', {
+    id: 'message-document-1',
+    type: 'document',
+    content: 'El cliente envió un documento (catalogo.pdf). Texto extraído: catálogo de productos con precios y stock.',
+    metadata: {
+      documentAnalysis: {
+        status: 'completed',
+        text: 'catálogo de productos con precios y stock.',
+        content: 'El cliente envió un documento (catalogo.pdf). Texto extraído: catálogo de productos con precios y stock.',
+      },
+    },
+  });
+
+  assert.match(resolved.content, /cat[aá]logo de productos con precios y stock/i);
+  assert.equal(documentResolutionCalls, 0);
+  assert.equal(updateMessageContentCalls, 0);
+});
+
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
   const service = new AiBrainService(
     {} as never,

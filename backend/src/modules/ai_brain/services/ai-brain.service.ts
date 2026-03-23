@@ -27,6 +27,7 @@ import { AiBrainAudioService } from './ai-brain-audio.service';
 import { AiBrainCacheService } from './ai-brain-cache.service';
 import { AiBrainContextBuilderService } from './ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './ai-brain-document.service';
+import { AiBrainInboundDocumentService } from './ai-brain-inbound-document.service';
 import { AiBrainImageService } from './ai-brain-image.service';
 import { AiBrainToolRouterService } from './ai-brain-tool-router.service';
 import { AiBrainVideoService } from './ai-brain-video.service';
@@ -66,6 +67,8 @@ export class AiBrainService {
     private readonly aiBrainCacheService?: AiBrainCacheService,
     @Optional()
     private readonly aiBrainVideoService?: AiBrainVideoService,
+    @Optional()
+    private readonly aiBrainInboundDocumentService?: AiBrainInboundDocumentService,
   ) {}
 
   async processInboundMessage(params: {
@@ -1415,6 +1418,42 @@ export class AiBrainService {
     return null;
   }
 
+  private readResolvedDocumentText(
+    message: MessageEntity,
+  ): { content: string; metadataPatch: Record<string, unknown> } | null {
+    const analysis = this.readRecord(message.metadata?.['documentAnalysis']);
+    const status = this.readString(analysis['status']);
+    if (status === 'completed') {
+      const content = this.readString(analysis['content']) || this.readString(analysis['text']);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        content,
+        metadataPatch: {
+          documentAnalysis: analysis,
+        },
+      };
+    }
+
+    if (status === 'failed') {
+      const content = this.readString(analysis['content']) || this.readString(analysis['fallback']);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        content,
+        metadataPatch: {
+          documentAnalysis: analysis,
+        },
+      };
+    }
+
+    return null;
+  }
+
   private async persistResolvedInboundMediaMessage(
     companyId: string,
     conversationId: string,
@@ -1533,6 +1572,55 @@ export class AiBrainService {
     conversationId: string,
     message: MessageEntity,
   ): Promise<MessageEntity> {
+    if (message.type === 'document') {
+      if (!this.aiBrainInboundDocumentService) {
+        return message;
+      }
+
+      const existingDocumentResolution = this.readResolvedDocumentText(message);
+      if (existingDocumentResolution) {
+        return this.persistResolvedInboundMediaMessage(
+          companyId,
+          conversationId,
+          message,
+          existingDocumentResolution,
+        );
+      }
+
+      const documentCacheKey = this.buildAiCacheKey('document-resolution', companyId, message.id);
+      const cachedDocumentResolution =
+        await this.aiBrainCacheService?.getJson<{
+          content: string;
+          metadataPatch: Record<string, unknown>;
+        }>(documentCacheKey);
+      if (cachedDocumentResolution?.content?.trim()) {
+        return this.persistResolvedInboundMediaMessage(
+          companyId,
+          conversationId,
+          message,
+          cachedDocumentResolution,
+        );
+      }
+
+      const documentResolution =
+        await this.aiBrainInboundDocumentService.resolveInboundDocumentText({
+          companyId,
+          message,
+        });
+      await this.aiBrainCacheService?.setJson(
+        documentCacheKey,
+        documentResolution,
+        AiBrainService.mediaResolutionCacheTtlSeconds,
+      );
+
+      return this.persistResolvedInboundMediaMessage(
+        companyId,
+        conversationId,
+        message,
+        documentResolution,
+      );
+    }
+
     if (message.type === 'video') {
       if (!this.aiBrainVideoService) {
         return message;
