@@ -19,10 +19,9 @@ import { WhatsappChatEntity } from '../../whatsapp-channel/entities/whatsapp-cha
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappChannelConfigService } from '../../whatsapp-channel/services/whatsapp-channel-config.service';
 import {
+  extractWhatsappIdentity,
   normalizeEvolutionWebhookEvent,
   normalizeComparableWebhookUrl,
-  normalizeWhatsappJid,
-  normalizeWhatsappPhoneNumber,
   readEvolutionWebhookEvents,
   readEvolutionWebhookUrl,
 } from '../../whatsapp-channel/services/whatsapp-normalization.util';
@@ -891,43 +890,7 @@ export class WhatsappInstancesService {
     phoneNumber: string | null;
     jid: string | null;
   } {
-    const candidates: Array<unknown> = [
-      data['phone_number'],
-      data['phoneNumber'],
-      data['phone'],
-      data['number'],
-      data['user'],
-      data['owner'],
-      data['jid'],
-      data['id'],
-      this.readMap(data['instance'])['phone_number'],
-      this.readMap(data['instance'])['phoneNumber'],
-      this.readMap(data['instance'])['phone'],
-      this.readMap(data['instance'])['number'],
-      this.readMap(data['instance'])['owner'],
-      this.readMap(data['instance'])['jid'],
-      this.readMap(data['instance'])['id'],
-      this.readMap(data['me'])['id'],
-      this.readMap(data['me'])['jid'],
-    ];
-
-    for (const candidate of candidates) {
-      const raw = this.readString(candidate);
-      if (!raw) {
-        continue;
-      }
-
-      const jid = normalizeWhatsappJid(raw, { allowGroup: false, allowLid: false });
-      const phoneNumber = normalizeWhatsappPhoneNumber(raw);
-      if (jid || phoneNumber) {
-        return {
-          phoneNumber: phoneNumber ?? (jid ? jid.replace(/@.+$/, '') : null),
-          jid: jid ?? (phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null),
-        };
-      }
-    }
-
-    return { phoneNumber: null, jid: null };
+    return extractWhatsappIdentity(data);
   }
 
   private extractInstanceIdentityFromRuntimePayload(
@@ -1065,7 +1028,9 @@ export class WhatsappInstancesService {
 
     if (!identity.phoneNumber && !identity.jid) {
       this.logger.warn(
-        `[EVOLUTION INSTANCE IDENTITY] instance=${instanceName} source=all phone=(none) jid=(none)`,
+        `[EVOLUTION INSTANCE IDENTITY] instance=${instanceName} source=all phone=(none) jid=(none) payloads=${runtimePayloads
+          .map((candidate) => `${candidate.source}:${this.describePayloadShape(candidate.payload)}`)
+          .join(' | ')}`,
       );
     }
 
@@ -1112,19 +1077,24 @@ export class WhatsappInstancesService {
   }
 
   private selectMatchingInstancePayload(value: unknown, instanceName: string): unknown {
+    return this.findMatchingInstancePayload(value, instanceName) ?? value;
+  }
+
+  private findMatchingInstancePayload(value: unknown, instanceName: string): unknown | null {
     if (Array.isArray(value)) {
       for (const item of value) {
-        const matched = this.selectMatchingInstancePayload(item, instanceName);
+        const matched = this.findMatchingInstancePayload(item, instanceName);
         if (matched != null) {
           return matched;
         }
       }
-      return value;
+
+      return null;
     }
 
     const map = this.readMap(value);
     if (Object.keys(map).length === 0) {
-      return value;
+      return null;
     }
 
     const candidateNames = [
@@ -1148,13 +1118,36 @@ export class WhatsappInstancesService {
       map['payload'],
       map['instances'],
     ]) {
-      const matched = this.selectMatchingInstancePayload(nested, instanceName);
+      const matched = this.findMatchingInstancePayload(nested, instanceName);
       if (matched != null) {
         return matched;
       }
     }
 
-    return candidateNames.length === 0 ? map : null;
+    return null;
+  }
+
+  private describePayloadShape(value: unknown, depth = 0): string {
+    if (depth > 2 || value == null) {
+      return '(none)';
+    }
+
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return 'array(0)';
+      }
+
+      return `array(${value.length})[${this.describePayloadShape(value[0], depth + 1)}]`;
+    }
+
+    const map = this.readMap(value);
+    const keys = Object.keys(map);
+    if (keys.length === 0) {
+      return typeof value;
+    }
+
+    const preview = keys.slice(0, 6).join(',');
+    return `{${preview}${keys.length > 6 ? ',…' : ''}}`;
   }
 
   private async syncChannelInstanceIdentity(

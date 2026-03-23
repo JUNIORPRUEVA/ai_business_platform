@@ -20,6 +20,7 @@ import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappJidResolverService } from './whatsapp-jid-resolver.service';
 import { WhatsappMessagingService } from './whatsapp-messaging.service';
 import {
+  extractWhatsappIdentity,
   normalizeEvolutionWebhookEvent,
   normalizeWhatsappJid,
   normalizeWhatsappPhoneNumber,
@@ -670,31 +671,7 @@ export class WhatsappWebhookService {
   }
 
   private extractInstancePhoneNumber(data: Record<string, unknown>): string | null {
-    const candidates: Array<unknown> = [
-      data['phone'],
-      data['phoneNumber'],
-      data['number'],
-      data['owner'],
-      data['ownerJid'],
-      data['jid'],
-      data['id'],
-      this.readMap(data['instance'])['phone'],
-      this.readMap(data['instance'])['phoneNumber'],
-      this.readMap(data['instance'])['number'],
-      this.readMap(data['instance'])['owner'],
-      this.readMap(data['instance'])['jid'],
-      this.readMap(data['me'])['id'],
-      this.readMap(data['me'])['jid'],
-    ];
-
-    for (const candidate of candidates) {
-      const normalized = normalizeWhatsappPhoneNumber(this.readString(candidate));
-      if (normalized) {
-        return normalized;
-      }
-    }
-
-    return null;
+    return extractWhatsappIdentity(data).phoneNumber;
   }
 
   private async resolveCanonicalRemoteJid(

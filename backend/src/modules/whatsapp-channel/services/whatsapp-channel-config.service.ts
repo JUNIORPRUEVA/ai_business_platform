@@ -14,11 +14,10 @@ import { EvolutionApiClientService } from './evolution-api-client.service';
 import { WhatsappSecretService } from './whatsapp-secret.service';
 import {
   buildEvolutionWebhookPayload,
+  extractWhatsappIdentity,
   normalizeEvolutionWebhookEvent,
   normalizeEvolutionWebhookEvents,
   normalizeComparableWebhookUrl,
-  normalizeWhatsappJid,
-  normalizeWhatsappPhoneNumber,
   readEvolutionWebhookEvents,
   readEvolutionWebhookUrl,
 } from './whatsapp-normalization.util';
@@ -464,103 +463,29 @@ export class WhatsappChannelConfigService {
     return null;
   }
 
-  private extractPhoneFromPayload(value: unknown, depth = 0): string | null {
-    if (depth > 5 || value == null) {
-      return null;
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const resolved = this.extractPhoneFromPayload(item, depth + 1);
-        if (resolved) {
-          return resolved;
-        }
-      }
-      return null;
-    }
-
-    const map = this.readMap(value);
-    if (Object.keys(map).length === 0) {
-      return null;
-    }
-
-    const candidates: Array<unknown> = [
-      map['phone_number'],
-      map['phoneNumber'],
-      map['phone'],
-      map['number'],
-      map['owner'],
-      map['jid'],
-      map['id'],
-      this.readMap(map['instance'])['phone_number'],
-      this.readMap(map['instance'])['phoneNumber'],
-      this.readMap(map['instance'])['phone'],
-      this.readMap(map['instance'])['number'],
-      this.readMap(map['instance'])['owner'],
-      this.readMap(map['instance'])['jid'],
-      this.readMap(map['instance'])['id'],
-      this.readMap(map['me'])['id'],
-      this.readMap(map['me'])['jid'],
-    ];
-
-    for (const candidate of candidates) {
-      const raw = this.readString(candidate);
-      if (!raw) {
-        continue;
-      }
-
-      const phone = normalizeWhatsappPhoneNumber(raw);
-      if (phone) {
-        return phone;
-      }
-
-      const jid = normalizeWhatsappJid(raw, { allowGroup: false, allowLid: false });
-      if (jid) {
-        return jid.replace(/@.+$/, '');
-      }
-    }
-
-    const nestedCandidates: Array<unknown> = [
-      map['instance'],
-      map['data'],
-      map['response'],
-      map['me'],
-      map['instances'],
-      map['result'],
-      map['payload'],
-    ];
-
-    for (const nested of nestedCandidates) {
-      const resolved = this.extractPhoneFromPayload(nested, depth + 1);
-      if (resolved) {
-        return resolved;
-      }
-    }
-
-    for (const nestedValue of Object.values(map)) {
-      const resolved = this.extractPhoneFromPayload(nestedValue, depth + 1);
-      if (resolved) {
-        return resolved;
-      }
-    }
-
-    return null;
+  private extractPhoneFromPayload(value: unknown): string | null {
+    return extractWhatsappIdentity(value).phoneNumber;
   }
 
   private selectMatchingInstancePayload(value: unknown, instanceName: string): unknown {
+    return this.findMatchingInstancePayload(value, instanceName) ?? value;
+  }
+
+  private findMatchingInstancePayload(value: unknown, instanceName: string): unknown | null {
     if (Array.isArray(value)) {
       for (const item of value) {
-        const matched = this.selectMatchingInstancePayload(item, instanceName);
+        const matched = this.findMatchingInstancePayload(item, instanceName);
         if (matched != null) {
           return matched;
         }
       }
-      return value;
+
+      return null;
     }
 
     const map = this.readMap(value);
     if (Object.keys(map).length === 0) {
-      return value;
+      return null;
     }
 
     const candidateNames = [
@@ -584,13 +509,13 @@ export class WhatsappChannelConfigService {
       map['payload'],
       map['instances'],
     ]) {
-      const matched = this.selectMatchingInstancePayload(nested, instanceName);
+      const matched = this.findMatchingInstancePayload(nested, instanceName);
       if (matched != null) {
         return matched;
       }
     }
 
-    return candidateNames.length === 0 ? map : null;
+    return null;
   }
 
   private readString(value: unknown): string {

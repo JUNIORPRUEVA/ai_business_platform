@@ -471,6 +471,60 @@ test('WhatsappChannelConfigService sincroniza el numero desde fetchInstances cua
   assert.equal(saved?.instanceStatus, 'connected');
 });
 
+test('WhatsappChannelConfigService sincroniza el numero cuando fetchInstances devuelve owner como objeto anidado', async () => {
+  const entity = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    evolutionServerUrl: 'https://evolution.example.com',
+    evolutionApiKeyEncrypted: 'encrypted',
+    instanceName: 'demo-instance',
+    webhookEnabled: true,
+    webhookUrl: null,
+    webhookByEvents: true,
+    webhookBase64: false,
+    webhookEventsJson: [],
+    isActive: true,
+    instancePhone: null,
+    instanceStatus: 'disconnected',
+    lastSyncAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const repository = new InMemoryRepository([entity]);
+  const service = new WhatsappChannelConfigService(
+    repository as never,
+    {
+      getInstanceStatus: async () => ({ instance: { state: 'open' } }),
+      getQr: async () => ({ qrcode: 'abc' }),
+      fetchInstances: async () => ({
+        data: [
+          {
+            instance: {
+              instanceName: 'demo-instance',
+              owner: {
+                user: '18295319445',
+                server: 's.whatsapp.net',
+              },
+            },
+          },
+        ],
+      }),
+    } as never,
+    {
+      decrypt: () => 'secret',
+      encrypt: (value: string) => value,
+      mask: (value: string) => value,
+    } as never,
+  );
+
+  const result = await service.syncInstance('company-1');
+
+  assert.equal(result['instancePhone'], '18295319445');
+  const saved = await repository.findOne({ where: { companyId: 'company-1', provider: 'evolution' } });
+  assert.equal(saved?.instancePhone, '18295319445');
+});
+
 test('WhatsappInstancesService lee respuestas anidadas de webhook.find devueltas por Evolution', () => {
   const service = Object.create(WhatsappInstancesService.prototype) as WhatsappInstancesService;
   const remote = {
@@ -1356,6 +1410,75 @@ test('WhatsappInstancesService refresca y persiste el numero de la instancia des
           },
         },
       ]),
+    } as never,
+    { get: () => undefined } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const result = await service.refreshStatus('company-1', 'demo-instance');
+
+  assert.equal(result.status, 'connected');
+  assert.equal(result.phoneNumber, '18295319445');
+  assert.equal(instance.phoneNumber, '18295319445');
+  assert.equal(instance.jid, '18295319445@s.whatsapp.net');
+  assert.equal(config.instancePhone, '18295319445');
+});
+
+test('WhatsappInstancesService extrae el numero cuando fetchInstances devuelve owner como objeto user/server', async () => {
+  const instance = {
+    id: 'instance-1',
+    tenantId: 'company-1',
+    instanceName: 'demo-instance',
+    status: 'connecting',
+    qrCode: 'stub-qr',
+    phoneNumber: null,
+    jid: null,
+    sessionData: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instancePhone: null,
+    instanceStatus: 'connecting',
+    lastSyncAt: null,
+  };
+
+  const service = new WhatsappInstancesService(
+    new InMemoryRepository([instance]) as never,
+    { findOne: async () => ({ payload: { whatsapp: {} } }) } as never,
+    new InMemoryRepository([config]) as never,
+    new InMemoryRepository([]) as never,
+    new InMemoryRepository([]) as never,
+    new InMemoryRepository([]) as never,
+    {
+      checkConnection: async () => ({
+        status: 'connected',
+        raw: { instance: { instanceName: 'demo-instance', state: 'open' } },
+      }),
+      getInstanceStatus: async () => ({
+        status: 'connected',
+        raw: { instance: { instanceName: 'demo-instance', status: 'open' } },
+      }),
+      fetchInstances: async () => ({
+        data: [
+          {
+            instance: {
+              instanceName: 'demo-instance',
+              owner: {
+                user: '18295319445',
+                server: 's.whatsapp.net',
+              },
+            },
+          },
+        ],
+      }),
     } as never,
     { get: () => undefined } as never,
     {} as never,

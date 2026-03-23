@@ -193,6 +193,112 @@ export function extractDigitsFromWhatsappJid(value: string): string {
   return value.replace(/@.+$/, '').replace(/\D/g, '');
 }
 
+export function extractWhatsappIdentity(
+  value: unknown,
+  depth = 0,
+): { phoneNumber: string | null; jid: string | null } {
+  if (depth > 5 || value == null) {
+    return { phoneNumber: null, jid: null };
+  }
+
+  if (typeof value === 'string') {
+    return normalizeWhatsappIdentityString(value);
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const resolved = extractWhatsappIdentity(item, depth + 1);
+      if (resolved.phoneNumber || resolved.jid) {
+        return resolved;
+      }
+    }
+
+    return { phoneNumber: null, jid: null };
+  }
+
+  const map = readMap(value);
+  if (Object.keys(map).length === 0) {
+    return { phoneNumber: null, jid: null };
+  }
+
+  const directCandidates: Array<unknown> = [
+    map['phone_number'],
+    map['phoneNumber'],
+    map['phone'],
+    map['number'],
+    map['owner'],
+    map['ownerJid'],
+    map['owner_jid'],
+    map['ownerWid'],
+    map['owner_wid'],
+    map['ownerNumber'],
+    map['owner_number'],
+    map['wid'],
+    map['wuid'],
+    map['jid'],
+    map['id'],
+    map['user'],
+  ];
+
+  for (const candidate of directCandidates) {
+    const resolved = extractWhatsappIdentity(candidate, depth + 1);
+    if (resolved.phoneNumber || resolved.jid) {
+      return resolved;
+    }
+  }
+
+  const compositeCandidates = [
+    composeWhatsappIdentityString(
+      readString(map['user']) || readString(map['id']),
+      readString(map['server']) || readString(map['domain']),
+    ),
+    composeWhatsappIdentityString(
+      readString(readMap(map['me'])['user']) || readString(readMap(map['me'])['id']),
+      readString(readMap(map['me'])['server']) || readString(readMap(map['me'])['domain']),
+    ),
+    composeWhatsappIdentityString(
+      readString(readMap(map['owner'])['user']) || readString(readMap(map['owner'])['id']),
+      readString(readMap(map['owner'])['server']) || readString(readMap(map['owner'])['domain']),
+    ),
+    composeWhatsappIdentityString(
+      readString(readMap(map['instance'])['user']) || readString(readMap(map['instance'])['id']),
+      readString(readMap(map['instance'])['server']) || readString(readMap(map['instance'])['domain']),
+    ),
+  ];
+
+  for (const candidate of compositeCandidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    const resolved = normalizeWhatsappIdentityString(candidate);
+    if (resolved.phoneNumber || resolved.jid) {
+      return resolved;
+    }
+  }
+
+  const nestedCandidates: Array<unknown> = [
+    map['instance'],
+    map['me'],
+    map['owner'],
+    map['wid'],
+    map['data'],
+    map['response'],
+    map['result'],
+    map['payload'],
+    map['instances'],
+  ];
+
+  for (const candidate of nestedCandidates) {
+    const resolved = extractWhatsappIdentity(candidate, depth + 1);
+    if (resolved.phoneNumber || resolved.jid) {
+      return resolved;
+    }
+  }
+
+  return { phoneNumber: null, jid: null };
+}
+
 function collectEvolutionWebhookMaps(source: Record<string, unknown>): Record<string, unknown>[] {
   const collected: Record<string, unknown>[] = [];
   const queue: Record<string, unknown>[] = [source];
@@ -233,6 +339,32 @@ function readStringArray(value: unknown): string[] {
 
   return value
     .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+}
+
+function composeWhatsappIdentityString(user: string, server: string): string | null {
+  const normalizedUser = user.trim();
+  const normalizedServer = server.trim();
+  if (!normalizedUser || !normalizedServer || normalizedUser.includes('@')) {
+    return null;
+  }
+
+  return `${normalizedUser}@${normalizedServer}`;
+}
+
+function normalizeWhatsappIdentityString(
+  value: string,
+): { phoneNumber: string | null; jid: string | null } {
+  const jid = normalizeWhatsappJid(value, { allowGroup: false, allowLid: false });
+  const phoneNumber = normalizeWhatsappPhoneNumber(value);
+
+  if (!jid && !phoneNumber) {
+    return { phoneNumber: null, jid: null };
+  }
+
+  return {
+    phoneNumber: phoneNumber ?? (jid ? extractDigitsFromWhatsappJid(jid) : null),
+    jid: jid ?? (phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null),
+  };
 }
