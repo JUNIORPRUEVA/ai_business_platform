@@ -368,7 +368,7 @@ test('EvolutionApiClientService decodifica texto base64 plano en descargas media
   assert.deepEqual(resolved?.buffer, pngHeader);
 });
 
-test('EvolutionApiClientService prioriza data.key + data.message al construir payloads para getBase64FromMediaMessage', () => {
+test('EvolutionApiClientService prioriza un WebMessageInfo envuelto en message para getBase64FromMediaMessage', () => {
   const service = Object.create(EvolutionApiClientService.prototype) as EvolutionApiClientService;
   const buildDownloadMediaMessageCandidates = (
     service as unknown as {
@@ -394,10 +394,17 @@ test('EvolutionApiClientService prioriza data.key + data.message al construir pa
   };
 
   const candidates = buildDownloadMediaMessageCandidates(payload);
-  assert.ok(candidates.length >= 3);
-  assert.deepEqual(candidates[0], payload);
-  assert.deepEqual(candidates[1], payload.data);
-  assert.deepEqual(candidates[2], {
+  assert.ok(candidates.length >= 5);
+  assert.deepEqual(candidates[0], {
+    message: {
+      key: payload.data.key,
+      message: payload.data.message,
+      messageType: payload.data.messageType,
+    },
+  });
+  assert.deepEqual(candidates[1], payload);
+  assert.deepEqual(candidates[2], payload.data);
+  assert.deepEqual(candidates[3], {
     key: payload.data.key,
     message: payload.data.message,
   });

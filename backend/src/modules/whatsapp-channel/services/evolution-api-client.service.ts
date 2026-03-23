@@ -280,6 +280,15 @@ export class EvolutionApiClientService {
     const key = this.readMap(messagePayload['key']);
     const dataMessage = this.readMap(data['message']);
     const dataKey = this.readMap(data['key']);
+    const rootWebMessageInfo = this.buildWebMessageInfoCandidate(messagePayload);
+    const dataWebMessageInfo = this.buildWebMessageInfoCandidate(data);
+
+    if (rootWebMessageInfo) {
+      push({ message: rootWebMessageInfo });
+    }
+    if (dataWebMessageInfo) {
+      push({ message: dataWebMessageInfo });
+    }
 
     push(messagePayload);
     push(data);
@@ -308,6 +317,38 @@ export class EvolutionApiClientService {
     }
 
     return candidates;
+  }
+
+  private buildWebMessageInfoCandidate(source: JsonRecord): JsonRecord | null {
+    const key = this.readMap(source['key']);
+    const message = this.readMap(source['message']);
+    if (Object.keys(key).length === 0 || Object.keys(message).length === 0) {
+      return null;
+    }
+
+    const candidate: JsonRecord = {
+      key,
+      message,
+    };
+
+    const optionalScalarKeys = [
+      'pushName',
+      'participant',
+      'status',
+      'messageTimestamp',
+      'messageType',
+      'instanceId',
+      'source',
+    ] as const;
+
+    for (const field of optionalScalarKeys) {
+      const value = source[field];
+      if (value !== undefined && value !== null) {
+        candidate[field] = value;
+      }
+    }
+
+    return candidate;
   }
 
   private assertValidSendTarget(body: JsonRecord, action: string): void {
