@@ -204,7 +204,7 @@ export class ChannelsService {
       throw new NotFoundException('Channel has no Evolution instance configured.');
     }
 
-    const { status, raw } = await this.evolutionService.getInstanceStatus(channel.instanceName);
+    const { status, raw } = await this.evolutionService.checkConnection(channel.instanceName);
     channel.connectionStatus = status;
     await this.channelsRepository.save(channel);
     return { status, raw };

@@ -236,14 +236,13 @@ export class EvolutionService {
     raw: unknown;
   }> {
     try {
-      const raw = await this.requestJson<unknown>(
-        `/instance/connectionState/${encodeURIComponent(instanceName)}`,
-        { method: 'GET' },
-      );
+      const raw = await this.requestConnectionState(instanceName);
       const status = this.normalizeStatus(raw);
       return { status, raw };
     } catch {
-      return this.getInstanceStatus(instanceName);
+      const raw = await this.requestLegacyInstanceStatus(instanceName);
+      const status = this.normalizeStatus(raw);
+      return { status, raw };
     }
   }
 
@@ -353,10 +352,12 @@ export class EvolutionService {
     status: EvolutionInstanceConnectionStatus;
     raw: unknown;
   }> {
-    const raw = await this.requestJson<unknown>(
-      `/instance/status/${encodeURIComponent(instanceName)}`,
-      { method: 'GET' },
-    );
+    let raw: unknown;
+    try {
+      raw = await this.requestConnectionState(instanceName);
+    } catch {
+      raw = await this.requestLegacyInstanceStatus(instanceName);
+    }
 
     const status = this.normalizeStatus(raw);
     return { status, raw };
@@ -438,6 +439,20 @@ export class EvolutionService {
     if (s.includes('close') || s.includes('disconnect') || s.includes('offline')) return 'disconnected';
 
     return 'disconnected';
+  }
+
+  private requestConnectionState(instanceName: string): Promise<unknown> {
+    return this.requestJson<unknown>(
+      `/instance/connectionState/${encodeURIComponent(instanceName)}`,
+      { method: 'GET' },
+    );
+  }
+
+  private requestLegacyInstanceStatus(instanceName: string): Promise<unknown> {
+    return this.requestJson<unknown>(
+      `/instance/status/${encodeURIComponent(instanceName)}`,
+      { method: 'GET' },
+    );
   }
 
   private async getRuntimeSettings(): Promise<{ baseUrl: string; apiKey: string }> {

@@ -17,6 +17,7 @@ import {
   normalizeEvolutionWebhookEvent,
   normalizeEvolutionWebhookEvents,
   normalizeComparableWebhookUrl,
+  normalizeWhatsappJid,
   normalizeWhatsappPhoneNumber,
   readEvolutionWebhookEvents,
   readEvolutionWebhookUrl,
@@ -122,15 +123,18 @@ export class WhatsappChannelConfigService {
     const entity = await this.getEntity(companyId);
     const response = await this.evolutionApiClient.getInstanceStatus(entity);
     const status = this.normalizeInstanceStatus(response);
+    const instancePhone =
+      (await this.resolveInstancePhone(entity, [response])) ?? entity.instancePhone;
 
     entity.instanceStatus = status;
+    entity.instancePhone = instancePhone;
     entity.lastSyncAt = new Date();
     await this.configsRepository.save(entity);
 
     return {
       companyId,
       instanceName: entity.instanceName,
-      instancePhone: entity.instancePhone,
+      instancePhone,
       instanceStatus: status,
       raw: response,
       lastSyncAt: entity.lastSyncAt?.toISOString(),
@@ -139,13 +143,16 @@ export class WhatsappChannelConfigService {
 
   async syncInstance(companyId: string): Promise<Record<string, unknown>> {
     const entity = await this.getEntity(companyId);
-    const [status, qr] = await Promise.all([
+    const [status, qr, fetchedInstances] = await Promise.all([
       this.evolutionApiClient.getInstanceStatus(entity),
       this.evolutionApiClient.getQr(entity).catch(() => ({})),
+      this.evolutionApiClient.fetchInstances(entity, entity.instanceName).catch(() => ({})),
     ]);
 
     entity.instanceStatus = this.normalizeInstanceStatus(status);
-    entity.instancePhone = this.extractPhone(status) ?? entity.instancePhone;
+    entity.instancePhone =
+      (await this.resolveInstancePhone(entity, [status, fetchedInstances])) ??
+      entity.instancePhone;
     entity.lastSyncAt = new Date();
     await this.configsRepository.save(entity);
 
@@ -431,13 +438,111 @@ export class WhatsappChannelConfigService {
   }
 
   private extractPhone(payload: Record<string, unknown>): string | null {
-    const direct = this.readString(payload['number']) ||
-      this.readString(payload['phone']) ||
-      this.readString(payload['owner']) ||
-      this.readString(this.readMap(payload['instance'])['number']) ||
-      this.readString(this.readMap(payload['instance'])['phone']) ||
-      this.readString(this.readMap(payload['instance'])['owner']);
-    return direct.length === 0 ? null : normalizeWhatsappPhoneNumber(direct);
+    return this.extractPhoneFromPayload(payload);
+  }
+
+  private async resolveInstancePhone(
+    entity: WhatsappChannelConfigEntity,
+    payloads: Array<Record<string, unknown>>,
+  ): Promise<string | null> {
+    for (const payload of payloads) {
+      const resolved = this.extractPhoneFromPayload(payload);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    const fetchedInstances = await this.evolutionApiClient
+      .fetchInstances(entity, entity.instanceName)
+      .catch(() => null);
+    if (fetchedInstances) {
+      return this.extractPhoneFromPayload(fetchedInstances);
+    }
+
+    return null;
+  }
+
+  private extractPhoneFromPayload(value: unknown, depth = 0): string | null {
+    if (depth > 5 || value == null) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const resolved = this.extractPhoneFromPayload(item, depth + 1);
+        if (resolved) {
+          return resolved;
+        }
+      }
+      return null;
+    }
+
+    const map = this.readMap(value);
+    if (Object.keys(map).length === 0) {
+      return null;
+    }
+
+    const candidates: Array<unknown> = [
+      map['phone_number'],
+      map['phoneNumber'],
+      map['phone'],
+      map['number'],
+      map['owner'],
+      map['jid'],
+      map['id'],
+      this.readMap(map['instance'])['phone_number'],
+      this.readMap(map['instance'])['phoneNumber'],
+      this.readMap(map['instance'])['phone'],
+      this.readMap(map['instance'])['number'],
+      this.readMap(map['instance'])['owner'],
+      this.readMap(map['instance'])['jid'],
+      this.readMap(map['instance'])['id'],
+      this.readMap(map['me'])['id'],
+      this.readMap(map['me'])['jid'],
+    ];
+
+    for (const candidate of candidates) {
+      const raw = this.readString(candidate);
+      if (!raw) {
+        continue;
+      }
+
+      const phone = normalizeWhatsappPhoneNumber(raw);
+      if (phone) {
+        return phone;
+      }
+
+      const jid = normalizeWhatsappJid(raw, { allowGroup: false, allowLid: false });
+      if (jid) {
+        return jid.replace(/@.+$/, '');
+      }
+    }
+
+    const nestedCandidates: Array<unknown> = [
+      map['instance'],
+      map['data'],
+      map['response'],
+      map['me'],
+      map['instances'],
+      map['result'],
+      map['payload'],
+    ];
+
+    for (const nested of nestedCandidates) {
+      const resolved = this.extractPhoneFromPayload(nested, depth + 1);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    for (const nestedValue of Object.values(map)) {
+      const resolved = this.extractPhoneFromPayload(nestedValue, depth + 1);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    return null;
   }
 
   private readString(value: unknown): string {

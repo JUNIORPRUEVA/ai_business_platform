@@ -303,6 +303,23 @@ export class EvolutionApiClientService {
     }
   }
 
+  async fetchInstances(
+    config: WhatsappChannelConfigEntity,
+    instanceName?: string,
+  ): Promise<JsonRecord> {
+    const normalizedInstanceName = (instanceName ?? config.instanceName).trim();
+    const query = normalizedInstanceName
+      ? `?instanceName=${encodeURIComponent(normalizedInstanceName)}`
+      : '';
+
+    return this.request(
+      config,
+      `/instance/fetchInstances${query}`,
+      { method: 'GET' },
+      'fetch-instances',
+    );
+  }
+
   async getQr(config: WhatsappChannelConfigEntity): Promise<JsonRecord> {
     try {
       return await this.request(

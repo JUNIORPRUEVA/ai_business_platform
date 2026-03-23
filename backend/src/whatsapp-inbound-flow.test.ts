@@ -8,6 +8,7 @@ import { WhatsappMessageEntity } from './modules/whatsapp-channel/entities/whats
 import { WhatsappMessagingService } from './modules/whatsapp-channel/services/whatsapp-messaging.service';
 import { WhatsappJidResolverService } from './modules/whatsapp-channel/services/whatsapp-jid-resolver.service';
 import { WhatsappWebhookService } from './modules/whatsapp-channel/services/whatsapp-webhook.service';
+import { WhatsappChannelConfigService } from './modules/whatsapp-channel/services/whatsapp-channel-config.service';
 import { WhatsappInstancesService } from './modules/whatsapp-instances/services/whatsapp-instances.service';
 import { EvolutionWebhookService } from './modules/evolution-webhook/services/evolution-webhook.service';
 import { BotCenterService } from './modules/bot-center/services/bot-center.service';
@@ -397,6 +398,77 @@ test('EvolutionService reaplica webhook con wrapper compat cuando Evolution lo e
       events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
     },
   });
+});
+
+test('EvolutionService usa connectionState como endpoint principal al consultar estado de instancia', async () => {
+  const service = Object.create(EvolutionService.prototype) as EvolutionService;
+  const requestedPaths: string[] = [];
+
+  (
+    service as unknown as {
+      requestJson: (path: string, init: RequestInit) => Promise<unknown>;
+    }
+  ).requestJson = async (path) => {
+    requestedPaths.push(path);
+    if (path.startsWith('/instance/connectionState/')) {
+      return { instance: { state: 'open' } };
+    }
+
+    throw new Error(`unexpected path ${path}`);
+  };
+
+  const result = await service.getInstanceStatus('demo-instance');
+
+  assert.equal(result.status, 'connected');
+  assert.deepEqual(requestedPaths, ['/instance/connectionState/demo-instance']);
+});
+
+test('WhatsappChannelConfigService sincroniza el numero desde fetchInstances cuando connectionState no lo trae', async () => {
+  const entity = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    evolutionServerUrl: 'https://evolution.example.com',
+    evolutionApiKeyEncrypted: 'encrypted',
+    instanceName: 'demo-instance',
+    webhookEnabled: true,
+    webhookUrl: null,
+    webhookByEvents: true,
+    webhookBase64: false,
+    webhookEventsJson: [],
+    isActive: true,
+    instancePhone: null,
+    instanceStatus: 'disconnected',
+    lastSyncAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const repository = new InMemoryRepository([entity]);
+  const service = new WhatsappChannelConfigService(
+    repository as never,
+    {
+      getInstanceStatus: async () => ({ instance: { state: 'open' } }),
+      getQr: async () => ({ qrcode: 'abc' }),
+      fetchInstances: async () => ({
+        instance: {
+          instanceName: 'demo-instance',
+          owner: '18295319445@s.whatsapp.net',
+        },
+      }),
+    } as never,
+    {
+      decrypt: () => 'secret',
+      encrypt: (value: string) => value,
+      mask: (value: string) => value,
+    } as never,
+  );
+
+  const result = await service.syncInstance('company-1');
+
+  assert.equal(result['instancePhone'], '18295319445');
+  const saved = await repository.findOne({ where: { companyId: 'company-1', provider: 'evolution' } });
+  assert.equal(saved?.instancePhone, '18295319445');
+  assert.equal(saved?.instanceStatus, 'connected');
 });
 
 test('WhatsappInstancesService lee respuestas anidadas de webhook.find devueltas por Evolution', () => {
