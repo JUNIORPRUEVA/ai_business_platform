@@ -1104,7 +1104,7 @@ export class AiBrainService {
       return false;
     }
 
-    return /(que dice|qu[eé] dice|a nombre de|nombre|cliente|empresa|monto|total|importe|precio|valor|n[uú]mero|folio|resumen|qu[eé] tiene|qu[eé] aparece|de qu[eé] trata)/.test(normalized);
+    return /(que dice|qu[eé] dice|a nombre de|nombre|cliente|empresa|monto|total|importe|precio|valor|n[uú]mero|folio|resumen|resume|res[uú]melo|qu[eé] tiene|qu[eé] aparece|de qu[eé] trata|de qu[eé] habla|qu[eé] contiene|explica|expl[ií]came)/.test(normalized);
   }
 
   private extractRecentVideoContext(

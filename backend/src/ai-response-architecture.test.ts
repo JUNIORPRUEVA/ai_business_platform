@@ -954,6 +954,77 @@ test('ai brain responde preguntas de cotizacion usando campos estructurados del 
   assert.equal(reply, 'La cotización está a nombre de FULLTECH SRL.');
 });
 
+test('ai brain responde preguntas amplias sobre el contenido de la factura usando el resumen del documento', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const reply = (service as unknown as {
+    normalizeAssistantReply: (params: {
+      draft: string;
+      userMessage: string;
+      recentMessages: Array<{
+        sender: string;
+        type: string;
+        content: string;
+        createdAt: Date;
+        metadata?: Record<string, unknown>;
+      }>;
+      senderName: string | null;
+      detectedIntent: string;
+    }) => string;
+  }).normalizeAssistantReply({
+    draft: 'No tengo acceso al contenido de la factura.',
+    userMessage: 'Y de que habla la factura?',
+    recentMessages: [
+      {
+        sender: 'client',
+        type: 'document',
+        content: 'Documento recibido',
+        createdAt: new Date('2026-03-23T21:09:18.000Z'),
+        metadata: {
+          documentAnalysis: {
+            status: 'completed',
+            text: 'COT-00047 Cliente JONAS J. CELL total RD$ 25,000 equipos y accesorios',
+            content:
+              'El cliente enviÃ³ un documento (COT-00047.pdf). Texto extraÃ­do: cotizaciÃ³n COT-00047 a nombre de JONAS J. CELL para equipos y accesorios por RD$ 25,000.',
+            businessSummary: {
+              quoteNumber: 'COT-00047',
+              customerName: 'JONAS J. CELL',
+              totalAmount: 'RD$ 25,000',
+              validUntil: null,
+              summary:
+                'una cotizaciÃ³n COT-00047 a nombre de JONAS J. CELL para equipos y accesorios por RD$ 25,000',
+            },
+          },
+        },
+      },
+    ],
+    senderName: 'Junior',
+    detectedIntent: 'general',
+  });
+
+  assert.equal(
+    reply,
+    'En el documento aparece una cotizaciÃ³n COT-00047 a nombre de JONAS J. CELL para equipos y accesorios por RD$ 25,000.',
+  );
+});
+
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
   const service = new AiBrainService(
     {} as never,
