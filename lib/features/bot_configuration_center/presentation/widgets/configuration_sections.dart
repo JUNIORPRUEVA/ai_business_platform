@@ -356,8 +356,24 @@ class OpenAiSettingsSection extends StatelessWidget {
                 onChanged: controller.toggleOpenAiEnabled,
               ),
               const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Text(
+                  'Si existe un prompt principal en el Editor de prompts, ese es el que manda. Este campo queda como respaldo operativo.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              const SizedBox(height: 16),
               LabeledTextField(
-                label: 'Vista previa del prompt del sistema',
+                label: 'Prompt del sistema de respaldo',
                 controller: controller.openAiSystemPromptPreviewController,
                 maxLines: 5,
               ),
@@ -667,6 +683,24 @@ class PromptsSettingsSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: Text(
+                    controller.selectedPromptIndex == 0
+                        ? 'Este es el prompt principal que el bot usa en runtime. Los demás prompts se suman como reglas complementarias.'
+                        : 'Este prompt se conserva y se envía como contexto complementario junto al prompt principal.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(

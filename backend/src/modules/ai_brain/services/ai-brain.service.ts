@@ -158,6 +158,9 @@ export class AiBrainService {
         detectedIntent,
         activePrompts,
       );
+      this.logger.log(
+        `[AI BRAIN] prompt resolved systemSource=${promptInputs.systemSource} mainSource=${promptInputs.mainSource} rules=${promptInputs.businessRules.length}`,
+      );
 
       if (configuration.memory.enableShortTermMemory) {
         await this.backfillConversationMemoryIfNeeded(
@@ -494,6 +497,10 @@ export class AiBrainService {
           messageId: params.messageId,
           outboundMessageId: botMessage.id,
           outboundTransportMessageId,
+          promptSource: {
+            system: promptInputs.systemSource,
+            main: promptInputs.mainSource,
+          },
           promptApproxTokens: approximatePromptTokens,
           summaryLoaded: assembledMemory.summary != null,
           keyFactsCount: assembledMemory.keyFacts.length,
@@ -642,22 +649,49 @@ export class AiBrainService {
     systemInstructions: string;
     mainBotPrompt: string;
     businessRules: string[];
+    systemSource: string;
+    mainSource: string;
   } {
+    const configuredPrimaryPrompt =
+      configuration.prompts
+        .map((prompt) => prompt.content.trim())
+        .find((content) => content.length > 0) || '';
+    const activeSystemPrompt =
+      activePrompts.find((prompt) => prompt.type === 'system')?.content?.trim() || '';
+    const previewSystemPrompt = configuration.openai.systemPromptPreview.trim();
+
     const systemInstructions =
-      activePrompts.find((prompt) => prompt.type === 'system')?.content?.trim() ||
-      configuration.prompts[0]?.content ||
-      configuration.openai.systemPromptPreview;
-    const mainBotPrompt = bot.systemPrompt?.trim() || systemInstructions;
+      configuredPrimaryPrompt || activeSystemPrompt || previewSystemPrompt;
+    const systemSource = configuredPrimaryPrompt
+      ? 'bot_configuration.prompts[0]'
+      : activeSystemPrompt
+        ? 'prompts.system.active'
+        : 'openai.systemPromptPreview';
+
+    const botSystemPrompt = bot.systemPrompt?.trim() || '';
+    const mainBotPrompt = configuredPrimaryPrompt || botSystemPrompt || systemInstructions;
+    const mainSource = configuredPrimaryPrompt
+      ? 'bot_configuration.prompts[0]'
+      : botSystemPrompt
+        ? 'bots.systemPrompt'
+        : systemSource;
     const promptTypes = this.resolvePromptTypesForIntent(detectedIntent);
-    const businessRules = activePrompts
+    const configuredBusinessRules = configuration.prompts
+      .slice(1)
+      .map((prompt) => prompt.content.trim())
+      .filter((value) => value.length > 0);
+    const dynamicBusinessRules = activePrompts
       .filter((prompt) => prompt.type === 'behavior' || promptTypes.includes(prompt.type))
       .map((prompt) => prompt.content.trim())
       .filter((value) => value.length > 0);
+    const businessRules = [...new Set([...configuredBusinessRules, ...dynamicBusinessRules])];
 
     return {
       systemInstructions,
       mainBotPrompt,
       businessRules,
+      systemSource,
+      mainSource,
     };
   }
 

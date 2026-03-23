@@ -173,6 +173,64 @@ test('ai brain transcript builder keeps chronological order and ignores operator
   ]);
 });
 
+test('ai brain prioriza el prompt configurado en bot-configuration sobre otras fuentes', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const resolved = (service as any).resolvePromptInputs(
+    {
+      prompts: [
+        {
+          id: 'prompt-1',
+          title: 'Principal',
+          description: 'Prompt principal',
+          content: 'PROMPT DESDE CONFIGURACION',
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      openai: {
+        systemPromptPreview: 'PROMPT PREVIEW',
+      },
+    },
+    {
+      systemPrompt: 'PROMPT DEL BOT',
+    },
+    'sales',
+    [
+      {
+        type: 'system',
+        content: 'PROMPT ACTIVO EN TABLA',
+      },
+      {
+        type: 'behavior',
+        content: 'REGLA DINAMICA',
+      },
+    ],
+  );
+
+  assert.equal(resolved.systemInstructions, 'PROMPT DESDE CONFIGURACION');
+  assert.equal(resolved.mainBotPrompt, 'PROMPT DESDE CONFIGURACION');
+  assert.equal(resolved.systemSource, 'bot_configuration.prompts[0]');
+  assert.equal(resolved.mainSource, 'bot_configuration.prompts[0]');
+  assert.deepEqual(resolved.businessRules, ['REGLA DINAMICA']);
+});
+
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
   const service = new AiBrainService(
     {} as never,
