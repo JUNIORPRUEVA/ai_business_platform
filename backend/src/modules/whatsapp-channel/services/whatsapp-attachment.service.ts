@@ -507,7 +507,11 @@ export class WhatsappAttachmentService {
     }
 
     const normalizedMimeType = mimeType?.toLowerCase() ?? '';
-    if (normalizedMimeType.startsWith('audio/') && !this.looksLikeStructuredTextPayload(buffer, mimeType)) {
+    if (
+      normalizedMimeType.startsWith('audio/') &&
+      !this.looksLikeStructuredTextPayload(buffer, mimeType) &&
+      normalizedMimeType !== 'application/octet-stream'
+    ) {
       return true;
     }
 
@@ -539,7 +543,7 @@ export class WhatsappAttachmentService {
       return true;
     }
 
-    return !this.looksLikeStructuredTextPayload(buffer, mimeType) && buffer.length > 512;
+    return false;
   }
 
   private looksLikeStructuredTextPayload(buffer: Buffer, mimeType: string | null): boolean {

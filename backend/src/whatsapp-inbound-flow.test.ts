@@ -260,6 +260,59 @@ test('WhatsappAttachmentService prioriza la firma binaria real cuando el mime de
   assert.equal(resolveMimeType(oggHeader, 'audio/mpeg', 'audio'), 'audio/ogg');
 });
 
+test('WhatsappAttachmentService rechaza blobs octet-stream cifrados como audio reproducible', () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const looksLikePlayableAudio = (
+    service as unknown as {
+      looksLikePlayableAudio: (buffer: Buffer, mimeType: string | null) => boolean;
+    }
+  ).looksLikePlayableAudio.bind(service);
+
+  const encryptedLikePayload = Buffer.alloc(4096, 0xab);
+  assert.equal(looksLikePlayableAudio(encryptedLikePayload, 'application/octet-stream'), false);
+});
+
+test('WhatsappAttachmentService usa el endpoint de Evolution cuando la URL trae audio cifrado no reproducible', async () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  Object.assign(service as object, {
+    logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+    evolutionApiClient: {
+      downloadMediaUrl: async () => ({
+        buffer: Buffer.alloc(4096, 0xab),
+        contentType: 'application/octet-stream',
+      }),
+      downloadMediaMessage: async () => ({
+        buffer: Buffer.from([0x4f, 0x67, 0x67, 0x53, 0x00, 0x02, 0x00, 0x00]),
+        contentType: 'audio/ogg',
+      }),
+    },
+  });
+
+  const resolveInboundDownload = (
+    service as unknown as {
+      resolveInboundDownload: (params: {
+        config: Record<string, unknown>;
+        fileType: string;
+        mimeType?: string | null;
+        sourceUrl?: string | null;
+        messagePayload: Record<string, unknown>;
+      }) => Promise<{ buffer: Buffer; contentType: string | null } | null>;
+    }
+  ).resolveInboundDownload.bind(service);
+
+  const resolved = await resolveInboundDownload({
+    config: {},
+    fileType: 'audio',
+    mimeType: 'audio/ogg; codecs=opus',
+    sourceUrl: 'https://mmg.whatsapp.net/fake.enc',
+    messagePayload: { audioMessage: { mimetype: 'audio/ogg; codecs=opus' } },
+  });
+
+  assert.ok(resolved);
+  assert.equal(resolved?.contentType, 'audio/ogg');
+  assert.equal(resolved?.buffer.subarray(0, 4).toString('ascii'), 'OggS');
+});
+
 test('WhatsappAttachmentService decodifica payload base64 antes de persistir media', async () => {
   const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
   const prepareUploadPayload = (
