@@ -997,10 +997,10 @@ export class WhatsappInstancesService {
     entity: WhatsappInstanceEntity,
     instanceName: string,
   ): Promise<{ phoneNumber: string | null; jid: string | null }> {
-    const runtimePayloads: unknown[] = [];
+    const runtimePayloads: Array<{ source: string; payload: unknown }> = [];
 
     if (entity.sessionData) {
-      runtimePayloads.push(entity.sessionData);
+      runtimePayloads.push({ source: 'sessionData', payload: entity.sessionData });
     }
 
     const connectionState =
@@ -1008,7 +1008,7 @@ export class WhatsappInstancesService {
         ? await this.evolutionService.checkConnection(instanceName).catch(() => null)
         : null;
     if (connectionState?.raw != null) {
-      runtimePayloads.push(connectionState.raw);
+      runtimePayloads.push({ source: 'connectionState', payload: connectionState.raw });
     }
 
     const status =
@@ -1016,7 +1016,7 @@ export class WhatsappInstancesService {
         ? await this.evolutionService.getInstanceStatus(instanceName).catch(() => null)
         : null;
     if (status?.raw != null) {
-      runtimePayloads.push(status.raw);
+      runtimePayloads.push({ source: 'instanceStatus', payload: status.raw });
     }
 
     const fetchedInstances =
@@ -1031,21 +1031,30 @@ export class WhatsappInstancesService {
             .catch(() => null)
         : null;
     if (fetchedInstances != null) {
-      runtimePayloads.push(fetchedInstances);
+      runtimePayloads.push({ source: 'fetchInstances', payload: fetchedInstances });
     }
 
     let identity: { phoneNumber: string | null; jid: string | null } = {
       phoneNumber: null,
       jid: null,
     };
-    for (const payload of runtimePayloads) {
+    for (const candidate of runtimePayloads) {
       identity = this.extractInstanceIdentityFromRuntimePayload(
-        payload,
+        candidate.payload,
         instanceName,
       );
       if (identity.phoneNumber || identity.jid) {
+        this.logger.log(
+          `[EVOLUTION INSTANCE IDENTITY] instance=${instanceName} source=${candidate.source} phone=${identity.phoneNumber ?? '(none)'} jid=${identity.jid ?? '(none)'}`,
+        );
         break;
       }
+    }
+
+    if (!identity.phoneNumber && !identity.jid) {
+      this.logger.warn(
+        `[EVOLUTION INSTANCE IDENTITY] instance=${instanceName} source=all phone=(none) jid=(none)`,
+      );
     }
 
     if (identity.phoneNumber) {
