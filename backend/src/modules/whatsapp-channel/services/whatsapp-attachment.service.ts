@@ -498,11 +498,15 @@ export class WhatsappAttachmentService {
       return this.looksLikeSupportedImage(value.buffer, resolvedMimeType);
     }
 
-    if (fileType !== 'audio') {
-      return true;
+    if (fileType === 'video') {
+      return this.looksLikePlayableVideo(value.buffer, resolvedMimeType);
     }
 
-    return this.looksLikePlayableAudio(value.buffer, resolvedMimeType);
+    if (fileType === 'audio') {
+      return this.looksLikePlayableAudio(value.buffer, resolvedMimeType);
+    }
+
+    return true;
   }
 
   private looksLikeSupportedImage(buffer: Buffer, mimeType: string | null): boolean {
@@ -879,7 +883,11 @@ export class WhatsappAttachmentService {
     }
 
     const normalizedMimeType = mimeType?.toLowerCase() ?? '';
-    if (normalizedMimeType.startsWith('video/') && !this.looksLikeStructuredTextPayload(buffer, mimeType)) {
+    if (
+      normalizedMimeType.startsWith('video/') &&
+      normalizedMimeType !== 'application/octet-stream' &&
+      !this.looksLikeStructuredTextPayload(buffer, mimeType)
+    ) {
       return true;
     }
 
@@ -905,7 +913,7 @@ export class WhatsappAttachmentService {
       return true;
     }
 
-    return !this.looksLikeStructuredTextPayload(buffer, mimeType) && buffer.length > 1024;
+    return false;
   }
 
   private async normalizeAudioBuffer(params: {

@@ -355,6 +355,51 @@ test('WhatsappAttachmentService usa el endpoint de Evolution cuando la URL trae 
   assert.deepEqual(resolved?.buffer, pngHeader);
 });
 
+test('WhatsappAttachmentService usa el endpoint de Evolution cuando la URL trae un video octet-stream no reproducible', async () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const mp4Header = Buffer.from([
+    0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70,
+    0x6d, 0x70, 0x34, 0x32, 0x00, 0x00, 0x00, 0x00,
+  ]);
+  Object.assign(service as object, {
+    logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+    evolutionApiClient: {
+      downloadMediaUrl: async () => ({
+        buffer: Buffer.alloc(4096, 0xab),
+        contentType: 'application/octet-stream',
+      }),
+      downloadMediaMessage: async () => ({
+        buffer: mp4Header,
+        contentType: 'video/mp4',
+      }),
+    },
+  });
+
+  const resolveInboundDownload = (
+    service as unknown as {
+      resolveInboundDownload: (params: {
+        config: Record<string, unknown>;
+        fileType: string;
+        mimeType?: string | null;
+        sourceUrl?: string | null;
+        messagePayload: Record<string, unknown>;
+      }) => Promise<{ buffer: Buffer; contentType: string | null } | null>;
+    }
+  ).resolveInboundDownload.bind(service);
+
+  const resolved = await resolveInboundDownload({
+    config: {},
+    fileType: 'video',
+    mimeType: 'video/mp4',
+    sourceUrl: 'https://mmg.whatsapp.net/fake-video.enc',
+    messagePayload: { videoMessage: { mimetype: 'video/mp4' } },
+  });
+
+  assert.ok(resolved);
+  assert.equal(resolved?.contentType, 'video/mp4');
+  assert.deepEqual(resolved?.buffer, mp4Header);
+});
+
 test('WhatsappAttachmentService decodifica payload base64 antes de persistir media', async () => {
   const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
   const prepareUploadPayload = (

@@ -164,6 +164,106 @@ export class OpenAiService {
     }
   }
 
+  async describeVideo(params: {
+    companyId: string;
+    frames: Array<{
+      buffer: Buffer;
+      filename: string;
+      contentType?: string | null;
+    }>;
+    transcriptText?: string | null;
+    model?: string;
+    timeoutMs?: number;
+  }): Promise<{ text: string; provider: 'openai' | 'mock'; model: string }> {
+    const model = params.model ?? 'gpt-4o-mini';
+    const runtime = await this.botConfigurationService.getResolvedOpenAiRuntimeSettings(
+      params.companyId,
+      { model },
+    );
+
+    if (!this.hasUsableCredentials(runtime.apiKey) || !runtime.runtimeEnabled) {
+      const transcriptFallback = params.transcriptText?.trim();
+      return {
+        text: transcriptFallback
+          ? `Transcripción detectada en el video: ${transcriptFallback.slice(0, 600)}`
+          : '',
+        provider: 'mock',
+        model,
+      };
+    }
+
+    const timeoutMs = params.timeoutMs ?? 90000;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const transcriptText = params.transcriptText?.trim();
+      const content: Array<Record<string, unknown>> = [
+        {
+          type: 'text',
+          text: transcriptText
+            ? `Analiza este video completo usando los fotogramas en orden cronológico y la transcripción parcial del audio. Resume lo que ocurre de inicio a fin, identifica productos, marcas, texto visible, acciones, contexto comercial y cualquier detalle útil para una respuesta de ventas por WhatsApp. Transcripción del audio: ${transcriptText.slice(0, 4000)}`
+            : 'Analiza este video completo usando los fotogramas en orden cronológico. Resume lo que ocurre de inicio a fin, identifica productos, marcas, texto visible, acciones, contexto comercial y cualquier detalle útil para una respuesta de ventas por WhatsApp.',
+        },
+      ];
+
+      for (const frame of params.frames) {
+        const mimeType = frame.contentType?.trim() || 'image/jpeg';
+        content.push({
+          type: 'image_url',
+          image_url: {
+            url: `data:${mimeType};base64,${frame.buffer.toString('base64')}`,
+            detail: 'high',
+          },
+        });
+      }
+
+      const response = await fetch(runtime.apiUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_completion_tokens: 1200,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Analizas videos de clientes para WhatsApp. Responde en español con una descripción cronológica, clara y útil. Usa los fotogramas como secuencia temporal del video y combina eso con la transcripción si existe. Si algo no es seguro, dilo como probable y no inventes.',
+            },
+            {
+              role: 'user',
+              content,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(
+          `OpenAI video analysis failed status=${response.status} detail=${detail.slice(0, 300)}`,
+        );
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+
+      return {
+        text: data.choices?.[0]?.message?.content?.trim() ?? '',
+        provider: 'openai',
+        model,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   async draftResponse(
     request: OpenAiDraftRequest,
   ): Promise<OpenAiDraftResponse> {

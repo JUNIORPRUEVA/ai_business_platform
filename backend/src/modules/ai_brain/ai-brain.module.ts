@@ -31,6 +31,7 @@ import { AiBrainImageService } from './services/ai-brain-image.service';
 import { AiBrainMemoryService } from './services/ai-brain-memory.service';
 import { AiBrainService } from './services/ai-brain.service';
 import { AiBrainToolRouterService } from './services/ai-brain-tool-router.service';
+import { AiBrainVideoService } from './services/ai-brain-video.service';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { AiBrainToolRouterService } from './services/ai-brain-tool-router.servic
     AiBrainDocumentService,
     AiBrainImageService,
     AiBrainMemoryService,
+    AiBrainVideoService,
     AiBrainContextBuilderService,
     AiBrainToolRouterService,
     AiBrainService,

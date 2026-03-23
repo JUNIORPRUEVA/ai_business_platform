@@ -511,6 +511,86 @@ test('ai brain reutiliza el analisis ya guardado de la imagen sin reprocesarla',
   assert.equal(updateMessageContentCalls, 0);
 });
 
+test('ai brain reutiliza el analisis ya guardado del video sin reprocesarlo', async () => {
+  let videoResolutionCalls = 0;
+  let updateMessageContentCalls = 0;
+
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      updateMessageContent: async () => {
+        updateMessageContentCalls += 1;
+        throw new Error('updateMessageContent should not be called');
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { save: async () => undefined } as never,
+    {} as never,
+    {} as never,
+    {
+      getJson: async () => null,
+      setJson: async () => undefined,
+    } as never,
+    {
+      resolveInboundVideoText: async () => {
+        videoResolutionCalls += 1;
+        return {
+          content: 'El cliente envió un video. Análisis del video: se muestra un producto girando sobre una mesa.',
+          metadataPatch: {
+            videoAnalysis: {
+              status: 'completed',
+              text: 'se muestra un producto girando sobre una mesa',
+              content: 'El cliente envió un video. Análisis del video: se muestra un producto girando sobre una mesa.',
+            },
+          },
+        };
+      },
+    } as never,
+  );
+
+  const resolved = await (
+    service as unknown as {
+      resolveInboundMessageContent: (
+        companyId: string,
+        conversationId: string,
+        message: {
+          id: string;
+          type: string;
+          content: string;
+          metadata: Record<string, unknown>;
+        },
+      ) => Promise<{ content: string; metadata: Record<string, unknown> }>;
+    }
+  ).resolveInboundMessageContent('company-1', 'conversation-1', {
+    id: 'message-video-1',
+    type: 'video',
+    content: 'El cliente envió un video. Análisis del video: se muestra un producto girando sobre una mesa.',
+    metadata: {
+      videoAnalysis: {
+        status: 'completed',
+        text: 'se muestra un producto girando sobre una mesa',
+        content: 'El cliente envió un video. Análisis del video: se muestra un producto girando sobre una mesa.',
+      },
+    },
+  });
+
+  assert.match(resolved.content, /producto girando sobre una mesa/i);
+  assert.equal(videoResolutionCalls, 0);
+  assert.equal(updateMessageContentCalls, 0);
+});
+
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
   const service = new AiBrainService(
     {} as never,

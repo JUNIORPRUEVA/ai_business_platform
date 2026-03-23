@@ -29,6 +29,7 @@ import { AiBrainContextBuilderService } from './ai-brain-context-builder.service
 import { AiBrainDocumentService } from './ai-brain-document.service';
 import { AiBrainImageService } from './ai-brain-image.service';
 import { AiBrainToolRouterService } from './ai-brain-tool-router.service';
+import { AiBrainVideoService } from './ai-brain-video.service';
 
 @Injectable()
 export class AiBrainService {
@@ -63,6 +64,8 @@ export class AiBrainService {
     private readonly aiBrainImageService?: AiBrainImageService,
     @Optional()
     private readonly aiBrainCacheService?: AiBrainCacheService,
+    @Optional()
+    private readonly aiBrainVideoService?: AiBrainVideoService,
   ) {}
 
   async processInboundMessage(params: {
@@ -1203,6 +1206,42 @@ export class AiBrainService {
     return null;
   }
 
+  private readResolvedVideoText(
+    message: MessageEntity,
+  ): { content: string; metadataPatch: Record<string, unknown> } | null {
+    const analysis = this.readRecord(message.metadata?.['videoAnalysis']);
+    const status = this.readString(analysis['status']);
+    if (status === 'completed') {
+      const content = this.readString(analysis['content']) || this.readString(analysis['text']);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        content,
+        metadataPatch: {
+          videoAnalysis: analysis,
+        },
+      };
+    }
+
+    if (status === 'failed') {
+      const content = this.readString(analysis['content']) || this.readString(analysis['fallback']);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        content,
+        metadataPatch: {
+          videoAnalysis: analysis,
+        },
+      };
+    }
+
+    return null;
+  }
+
   private async persistResolvedInboundMediaMessage(
     companyId: string,
     conversationId: string,
@@ -1321,6 +1360,54 @@ export class AiBrainService {
     conversationId: string,
     message: MessageEntity,
   ): Promise<MessageEntity> {
+    if (message.type === 'video') {
+      if (!this.aiBrainVideoService) {
+        return message;
+      }
+
+      const existingVideoResolution = this.readResolvedVideoText(message);
+      if (existingVideoResolution) {
+        return this.persistResolvedInboundMediaMessage(
+          companyId,
+          conversationId,
+          message,
+          existingVideoResolution,
+        );
+      }
+
+      const videoCacheKey = this.buildAiCacheKey('video-resolution', companyId, message.id);
+      const cachedVideoResolution =
+        await this.aiBrainCacheService?.getJson<{
+          content: string;
+          metadataPatch: Record<string, unknown>;
+        }>(videoCacheKey);
+      if (cachedVideoResolution?.content?.trim()) {
+        return this.persistResolvedInboundMediaMessage(
+          companyId,
+          conversationId,
+          message,
+          cachedVideoResolution,
+        );
+      }
+
+      const videoResolution = await this.aiBrainVideoService.resolveInboundVideoText({
+        companyId,
+        message,
+      });
+      await this.aiBrainCacheService?.setJson(
+        videoCacheKey,
+        videoResolution,
+        AiBrainService.mediaResolutionCacheTtlSeconds,
+      );
+
+      return this.persistResolvedInboundMediaMessage(
+        companyId,
+        conversationId,
+        message,
+        videoResolution,
+      );
+    }
+
     if (message.type === 'image') {
       if (!this.aiBrainImageService) {
         return message;
