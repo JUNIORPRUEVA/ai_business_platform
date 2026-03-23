@@ -337,6 +337,15 @@ export class WhatsappInstancesService {
     activityLabel: string;
     channelReady: boolean;
   }> {
+    try {
+      await this.refreshStatus(tenantId, instanceName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_refresh_error';
+      this.logger.warn(
+        `[EVOLUTION INSTANCE HEALTH] refresh skipped instance=${instanceName} reason=${message}`,
+      );
+    }
+
     const entity = await this.getByInstanceName(tenantId, instanceName);
     await this.ensureWhatsappChannelBridge(entity.tenantId, entity.instanceName, entity.status);
 
@@ -1031,7 +1040,10 @@ export class WhatsappInstancesService {
             .catch(() => null)
         : null;
     if (fetchedInstances != null) {
-      runtimePayloads.push({ source: 'fetchInstances', payload: fetchedInstances });
+      runtimePayloads.push({
+        source: 'fetchInstances',
+        payload: this.selectMatchingInstancePayload(fetchedInstances, instanceName),
+      });
     }
 
     let identity: { phoneNumber: string | null; jid: string | null } = {
@@ -1097,6 +1109,52 @@ export class WhatsappInstancesService {
     ];
 
     return candidateNames.some((candidate) => candidate === instanceName);
+  }
+
+  private selectMatchingInstancePayload(value: unknown, instanceName: string): unknown {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const matched = this.selectMatchingInstancePayload(item, instanceName);
+        if (matched != null) {
+          return matched;
+        }
+      }
+      return value;
+    }
+
+    const map = this.readMap(value);
+    if (Object.keys(map).length === 0) {
+      return value;
+    }
+
+    const candidateNames = [
+      this.readString(map['instanceName']),
+      this.readString(map['instance_name']),
+      this.readString(map['name']),
+      this.readString(this.readMap(map['instance'])['instanceName']),
+      this.readString(this.readMap(map['instance'])['instance_name']),
+      this.readString(this.readMap(map['instance'])['name']),
+    ].filter((candidate) => candidate.length > 0);
+
+    if (candidateNames.includes(instanceName)) {
+      return map;
+    }
+
+    for (const nested of [
+      map['instance'],
+      map['data'],
+      map['response'],
+      map['result'],
+      map['payload'],
+      map['instances'],
+    ]) {
+      const matched = this.selectMatchingInstancePayload(nested, instanceName);
+      if (matched != null) {
+        return matched;
+      }
+    }
+
+    return candidateNames.length === 0 ? map : null;
   }
 
   private async syncChannelInstanceIdentity(

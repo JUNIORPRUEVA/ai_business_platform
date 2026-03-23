@@ -364,12 +364,23 @@ export class EvolutionService {
   }
 
   async fetchInstances(instanceName?: string): Promise<unknown> {
-    const query = instanceName?.trim()
-      ? `?instanceName=${encodeURIComponent(instanceName.trim())}`
-      : '';
+    const normalizedInstanceName = instanceName?.trim() ?? '';
+    if (normalizedInstanceName) {
+      try {
+        return await this.requestJson(
+          `/instance/fetchInstances?instanceName=${encodeURIComponent(normalizedInstanceName)}`,
+          { method: 'GET' },
+        );
+      } catch {
+        return this.requestJson(
+          '/instance/fetchInstances',
+          { method: 'GET' },
+        );
+      }
+    }
 
     return this.requestJson(
-      `/instance/fetchInstances${query}`,
+      '/instance/fetchInstances',
       { method: 'GET' },
     );
   }

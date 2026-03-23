@@ -456,7 +456,9 @@ export class WhatsappChannelConfigService {
       .fetchInstances(entity, entity.instanceName)
       .catch(() => null);
     if (fetchedInstances) {
-      return this.extractPhoneFromPayload(fetchedInstances);
+      return this.extractPhoneFromPayload(
+        this.selectMatchingInstancePayload(fetchedInstances, entity.instanceName),
+      );
     }
 
     return null;
@@ -543,6 +545,52 @@ export class WhatsappChannelConfigService {
     }
 
     return null;
+  }
+
+  private selectMatchingInstancePayload(value: unknown, instanceName: string): unknown {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const matched = this.selectMatchingInstancePayload(item, instanceName);
+        if (matched != null) {
+          return matched;
+        }
+      }
+      return value;
+    }
+
+    const map = this.readMap(value);
+    if (Object.keys(map).length === 0) {
+      return value;
+    }
+
+    const candidateNames = [
+      this.readString(map['instanceName']),
+      this.readString(map['instance_name']),
+      this.readString(map['name']),
+      this.readString(this.readMap(map['instance'])['instanceName']),
+      this.readString(this.readMap(map['instance'])['instance_name']),
+      this.readString(this.readMap(map['instance'])['name']),
+    ].filter((candidate) => candidate.length > 0);
+
+    if (candidateNames.includes(instanceName)) {
+      return map;
+    }
+
+    for (const nested of [
+      map['instance'],
+      map['data'],
+      map['response'],
+      map['result'],
+      map['payload'],
+      map['instances'],
+    ]) {
+      const matched = this.selectMatchingInstancePayload(nested, instanceName);
+      if (matched != null) {
+        return matched;
+      }
+    }
+
+    return candidateNames.length === 0 ? map : null;
   }
 
   private readString(value: unknown): string {

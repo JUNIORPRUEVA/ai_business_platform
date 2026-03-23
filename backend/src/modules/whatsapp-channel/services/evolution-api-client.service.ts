@@ -308,15 +308,29 @@ export class EvolutionApiClientService {
     instanceName?: string,
   ): Promise<JsonRecord> {
     const normalizedInstanceName = (instanceName ?? config.instanceName).trim();
-    const query = normalizedInstanceName
-      ? `?instanceName=${encodeURIComponent(normalizedInstanceName)}`
-      : '';
+    if (normalizedInstanceName) {
+      try {
+        return await this.request(
+          config,
+          `/instance/fetchInstances?instanceName=${encodeURIComponent(normalizedInstanceName)}`,
+          { method: 'GET' },
+          'fetch-instances',
+        );
+      } catch {
+        return this.request(
+          config,
+          '/instance/fetchInstances',
+          { method: 'GET' },
+          'fetch-instances-all',
+        );
+      }
+    }
 
     return this.request(
       config,
-      `/instance/fetchInstances${query}`,
+      '/instance/fetchInstances',
       { method: 'GET' },
-      'fetch-instances',
+      'fetch-instances-all',
     );
   }
 
