@@ -860,6 +860,13 @@ class _FloatingComposer extends StatelessWidget {
                                   onTap: () => Navigator.of(sheetContext)
                                       .pop(BotMessageType.video),
                                 ),
+                                ListTile(
+                                  leading: const Icon(
+                                      Icons.insert_drive_file_outlined),
+                                  title: const Text('Enviar documento'),
+                                  onTap: () => Navigator.of(sheetContext)
+                                      .pop(BotMessageType.document),
+                                ),
                               ],
                             ),
                           );
@@ -1117,7 +1124,9 @@ class _MessageBubble extends StatelessWidget {
     final displayText = message.caption?.trim().isNotEmpty == true
         ? message.caption!
         : message.body;
-    final hasDisplayText = !message.isAudio && displayText.trim().isNotEmpty;
+    final hasDisplayText = !message.isAudio &&
+        (!message.isDocument || message.caption?.trim().isNotEmpty == true) &&
+        displayText.trim().isNotEmpty;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1191,6 +1200,12 @@ class _MessageBubble extends StatelessWidget {
                             message: message,
                             isOutgoing: isOutgoing,
                           )
+                        else if (message.isDocument)
+                          _DocumentMessageCard(
+                            controller: controller,
+                            message: message,
+                            isOutgoing: isOutgoing,
+                          )
                         else if (message.hasVisualMedia)
                           _MessageMedia(
                             controller: controller,
@@ -1198,7 +1213,9 @@ class _MessageBubble extends StatelessWidget {
                             isOutgoing: isOutgoing,
                           ),
                         if (hasDisplayText) ...[
-                          if (message.hasVisualMedia || message.isAudio)
+                          if (message.hasVisualMedia ||
+                              message.isAudio ||
+                              message.isDocument)
                             const SizedBox(height: 8),
                           Text(
                             displayText,
@@ -2042,6 +2059,119 @@ class _VideoThumbnailCache {
       message.fileName ?? '',
       '${message.localFileBytes?.length ?? 0}',
     ].join('|');
+  }
+}
+
+class _DocumentMessageCard extends StatelessWidget {
+  const _DocumentMessageCard({
+    required this.controller,
+    required this.message,
+    required this.isOutgoing,
+  });
+
+  final BotCenterController controller;
+  final BotMessage message;
+  final bool isOutgoing;
+
+  @override
+  Widget build(BuildContext context) {
+    final surfaceColor =
+        isOutgoing ? const Color(0xFFEFFBD8) : const Color(0xFFFFFFFF);
+    final borderColor =
+        isOutgoing ? const Color(0xFFB7E3AE) : const Color(0xFFE2E8F0);
+    final accentColor =
+        isOutgoing ? const Color(0xFF00A884) : const Color(0xFF334155);
+    final label = message.fileName?.trim().isNotEmpty == true
+        ? message.fileName!
+        : 'Documento';
+    final subtitle = _documentTypeLabel(message.mimeType);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: surfaceColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                _documentIcon(message.mimeType),
+                color: accentColor,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFF0F172A),
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Descargar documento',
+              onPressed: () async {
+                try {
+                  await controller.ensureMessagePlayableLoaded(message);
+                  final savedPath =
+                      await controller.downloadMessageAsset(message);
+                  if (!context.mounted || savedPath == null) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Archivo guardado en $savedPath')),
+                  );
+                } catch (error) {
+                  if (!context.mounted) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('No se pudo descargar el archivo. $error'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.download_rounded),
+              color: accentColor,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -3442,6 +3572,53 @@ String _formatAudioDuration(Duration duration) {
   final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
   final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
   return '$minutes:$seconds';
+}
+
+String _documentTypeLabel(String? mimeType) {
+  switch ((mimeType ?? '').toLowerCase()) {
+    case 'application/pdf':
+      return 'PDF';
+    case 'text/plain':
+      return 'TXT';
+    case 'text/csv':
+      return 'CSV';
+    case 'application/msword':
+      return 'DOC';
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      return 'DOCX';
+    case 'application/vnd.ms-excel':
+      return 'XLS';
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      return 'XLSX';
+    case 'application/vnd.ms-powerpoint':
+      return 'PPT';
+    case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+      return 'PPTX';
+    case 'application/zip':
+      return 'ZIP';
+    case 'application/vnd.rar':
+      return 'RAR';
+    default:
+      return 'Archivo';
+  }
+}
+
+IconData _documentIcon(String? mimeType) {
+  switch ((mimeType ?? '').toLowerCase()) {
+    case 'application/pdf':
+      return Icons.picture_as_pdf_outlined;
+    case 'text/plain':
+    case 'text/csv':
+      return Icons.description_outlined;
+    case 'application/msword':
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      return Icons.article_outlined;
+    case 'application/vnd.ms-excel':
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      return Icons.table_chart_outlined;
+    default:
+      return Icons.insert_drive_file_outlined;
+  }
 }
 
 String? _resolveSelectedContactPhoneNumber(BotCenterController controller) {

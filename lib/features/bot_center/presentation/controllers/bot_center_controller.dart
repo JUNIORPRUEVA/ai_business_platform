@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -734,7 +733,9 @@ class BotCenterController extends ChangeNotifier {
     if (_selectedConversationId.isEmpty ||
         _isSendingMessage ||
         _isProcessingWithAi ||
-        (type != BotMessageType.image && type != BotMessageType.video)) {
+        (type != BotMessageType.image &&
+            type != BotMessageType.video &&
+            type != BotMessageType.document)) {
       return;
     }
 
@@ -954,6 +955,32 @@ class BotCenterController extends ChangeNotifier {
       assignToPreview: message.isImage,
       assignToFile: true,
     );
+  }
+
+  Future<String?> downloadMessageAsset(BotMessage message) async {
+    if (!message.hasDownloadableAsset) {
+      return null;
+    }
+
+    final bytes = message.localFileBytes ??
+        await _repository.fetchMessageAssetBytes(
+          conversationId: message.conversationId,
+          messageId: message.id,
+          thumbnailOnly: false,
+        );
+    final savePath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Guardar archivo',
+      fileName: _resolvedDownloadFileName(message),
+      bytes: bytes,
+    );
+
+    if (savePath == null || savePath.trim().isEmpty) {
+      return null;
+    }
+
+    final file = File(savePath);
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
   }
 
   void _applyOverview(
@@ -1531,9 +1558,24 @@ class BotCenterController extends ChangeNotifier {
   }
 
   Future<_PickedMedia?> _pickMedia(BotMessageType type) async {
-    final allowedExtensions = type == BotMessageType.image
-        ? const ['jpg', 'jpeg', 'png', 'webp']
-        : const ['mp4', 'mov', 'm4v', 'webm'];
+    final allowedExtensions = switch (type) {
+      BotMessageType.image => const ['jpg', 'jpeg', 'png', 'webp'],
+      BotMessageType.video => const ['mp4', 'mov', 'm4v', 'webm'],
+      BotMessageType.document => const [
+          'pdf',
+          'txt',
+          'csv',
+          'doc',
+          'docx',
+          'xls',
+          'xlsx',
+          'ppt',
+          'pptx',
+          'zip',
+          'rar'
+        ],
+      _ => const <String>[],
+    };
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: allowedExtensions,
@@ -1553,6 +1595,13 @@ class BotCenterController extends ChangeNotifier {
       return null;
     }
 
+    if (type == BotMessageType.document && rawBytes.length > 25 * 1024 * 1024) {
+      _actionMessage =
+          'El documento supera 25 MB. Selecciona un archivo mÃ¡s liviano para evitar fallos de carga.';
+      notifyListeners();
+      return null;
+    }
+
     if (type == BotMessageType.image) {
       final compressed = _compressImage(rawBytes, file.name);
       return _PickedMedia(
@@ -1567,7 +1616,12 @@ class BotCenterController extends ChangeNotifier {
       bytes: rawBytes,
       previewBytes: null,
       fileName: file.name,
-      mimeType: _inferMimeType(file.name, fallback: 'video/mp4'),
+      mimeType: _inferMimeType(
+        file.name,
+        fallback: type == BotMessageType.document
+            ? 'application/octet-stream'
+            : 'video/mp4',
+      ),
     );
   }
 
@@ -1634,7 +1688,96 @@ class BotCenterController extends ChangeNotifier {
     if (normalized.endsWith('.mp4') || normalized.endsWith('.m4v')) {
       return 'video/mp4';
     }
+    if (normalized.endsWith('.pdf')) {
+      return 'application/pdf';
+    }
+    if (normalized.endsWith('.txt')) {
+      return 'text/plain';
+    }
+    if (normalized.endsWith('.csv')) {
+      return 'text/csv';
+    }
+    if (normalized.endsWith('.doc')) {
+      return 'application/msword';
+    }
+    if (normalized.endsWith('.docx')) {
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+    if (normalized.endsWith('.xls')) {
+      return 'application/vnd.ms-excel';
+    }
+    if (normalized.endsWith('.xlsx')) {
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
+    if (normalized.endsWith('.ppt')) {
+      return 'application/vnd.ms-powerpoint';
+    }
+    if (normalized.endsWith('.pptx')) {
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    }
+    if (normalized.endsWith('.zip')) {
+      return 'application/zip';
+    }
+    if (normalized.endsWith('.rar')) {
+      return 'application/vnd.rar';
+    }
     return fallback;
+  }
+
+  String _resolvedDownloadFileName(BotMessage message) {
+    final explicitName = message.fileName?.trim();
+    if (explicitName != null && explicitName.isNotEmpty) {
+      return explicitName;
+    }
+
+    final prefix = switch (message.type) {
+      BotMessageType.image => 'imagen',
+      BotMessageType.video => 'video',
+      BotMessageType.audio => 'audio',
+      BotMessageType.document => 'documento',
+      _ => 'archivo',
+    };
+    final extension = _extensionFromMimeType(message.mimeType);
+    return extension == null
+        ? '$prefix-${message.id}'
+        : '$prefix-${message.id}.$extension';
+  }
+
+  String? _extensionFromMimeType(String? mimeType) {
+    switch ((mimeType ?? '').toLowerCase()) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'video/mp4':
+        return 'mp4';
+      case 'video/webm':
+        return 'webm';
+      case 'audio/mpeg':
+      case 'audio/mp3':
+        return 'mp3';
+      case 'audio/ogg':
+      case 'audio/opus':
+        return 'ogg';
+      case 'application/pdf':
+        return 'pdf';
+      case 'text/plain':
+        return 'txt';
+      case 'text/csv':
+        return 'csv';
+      case 'application/msword':
+        return 'doc';
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        return 'docx';
+      case 'application/vnd.ms-excel':
+        return 'xls';
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        return 'xlsx';
+      default:
+        return null;
+    }
   }
 
   void _replaceMessage(

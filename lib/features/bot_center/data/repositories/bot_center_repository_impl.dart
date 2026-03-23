@@ -361,9 +361,11 @@ class BotCenterRepositoryImpl implements BotCenterRepository {
         return 'video';
       case BotMessageType.audio:
         return 'audio';
+      case BotMessageType.document:
+        return 'document';
       default:
         throw const BotCenterApiException(
-          'Solo se admiten imágenes, videos y audios en el envío de archivos.',
+          'Solo se admiten imágenes, videos, audios y documentos en el envío de archivos.',
         );
     }
   }

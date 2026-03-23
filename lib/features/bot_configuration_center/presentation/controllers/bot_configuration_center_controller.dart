@@ -391,7 +391,10 @@ class BotConfigurationCenterController extends ChangeNotifier {
 
     final updatedPrompts = _bundle.prompts.toList(growable: true);
     updatedPrompts[_selectedPromptIndex] =
-        updatedPrompts[_selectedPromptIndex].copyWith(content: value);
+        updatedPrompts[_selectedPromptIndex].copyWith(
+      content: value,
+      updatedAt: DateTime.now(),
+    );
     _bundle = _bundle.copyWith(prompts: updatedPrompts);
     _scheduleLocalPersist();
     final promptId = updatedPrompts[_selectedPromptIndex].id;

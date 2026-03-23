@@ -68,9 +68,11 @@ class BotMessage {
 
   bool get isAudio => type == BotMessageType.audio;
 
+  bool get isDocument => type == BotMessageType.document;
+
   bool get hasVisualMedia => isImage || isVideo;
 
-  bool get hasDownloadableAsset => hasVisualMedia || isAudio;
+  bool get hasDownloadableAsset => hasVisualMedia || isAudio || isDocument;
 
   bool get canRetry =>
       state == BotMessageState.failed &&

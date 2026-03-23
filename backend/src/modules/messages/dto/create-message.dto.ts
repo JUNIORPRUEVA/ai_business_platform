@@ -15,6 +15,14 @@ export class CreateMessageDto {
   mediaUrl?: string;
 
   @IsOptional()
+  @IsString()
+  mimeType?: string;
+
+  @IsOptional()
+  @IsString()
+  fileName?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   duration?: number;

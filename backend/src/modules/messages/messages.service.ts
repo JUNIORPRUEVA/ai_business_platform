@@ -63,6 +63,8 @@ export class MessagesService {
       content: dto.content,
       type: dto.type ?? 'text',
       mediaUrl: dto.mediaUrl ?? null,
+      mimeType: dto.mimeType ?? null,
+      fileName: dto.fileName ?? null,
       duration: dto.duration ?? null,
       metadata: {},
     });
@@ -76,6 +78,8 @@ export class MessagesService {
       content: string;
       type: MessageType;
       mediaUrl?: string | null;
+      mimeType?: string | null;
+      fileName?: string | null;
       duration?: number | null;
       metadata?: Record<string, unknown>;
     },
@@ -90,6 +94,8 @@ export class MessagesService {
       content: params.content,
       type: params.type,
       mediaUrl: params.mediaUrl ?? null,
+      mimeType: params.mimeType ?? null,
+      fileName: params.fileName ?? null,
       duration: params.duration ?? null,
       metadata: params.metadata ?? {},
     });

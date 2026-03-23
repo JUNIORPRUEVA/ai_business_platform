@@ -5,6 +5,8 @@ import '../../domain/entities/bot_configuration_section.dart';
 import '../controllers/bot_configuration_center_controller.dart';
 import 'configuration_shell_widgets.dart';
 
+const int _recommendedPromptMaxChars = 3000;
+
 class GeneralSettingsSection extends StatelessWidget {
   const GeneralSettingsSection({required this.controller, super.key});
 
@@ -20,6 +22,13 @@ class GeneralSettingsSection extends StatelessWidget {
               'Controla la identidad pública y la postura del entorno del bot.',
           child: Column(
             children: [
+              const _CompactInfoCard(
+                icon: Icons.info_outline_rounded,
+                title: 'Uso',
+                message:
+                    'El prompt principal se edita en la sección Prompts. Aquí configuras la identidad general del bot y, por separado, el motor de IA.',
+              ),
+              const SizedBox(height: 16),
               _twoColumn(
                 context,
                 LabeledTextField(
@@ -96,7 +105,7 @@ class EvolutionApiSettingsSection extends StatelessWidget {
               _twoColumn(
                 context,
                 LabeledTextField(
-                  label: 'Clave API',
+                  label: 'API key',
                   controller: controller.evolutionApiKeyController,
                   obscureText: true,
                 ),
@@ -165,9 +174,8 @@ class EvolutionApiSettingsSection extends StatelessWidget {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outlineVariant,
+                              color:
+                                  Theme.of(context).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Image.memory(
@@ -179,7 +187,9 @@ class EvolutionApiSettingsSection extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if ((controller.evolutionPairingCode ?? '').trim().isNotEmpty) ...[
+                    if ((controller.evolutionPairingCode ?? '')
+                        .trim()
+                        .isNotEmpty) ...[
                       const SizedBox(height: 16),
                       Text(
                         'Codigo de pareado',
@@ -196,9 +206,7 @@ class EvolutionApiSettingsSection extends StatelessWidget {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .outlineVariant,
+                            color: Theme.of(context).colorScheme.outlineVariant,
                           ),
                         ),
                         child: SelectableText(
@@ -240,7 +248,9 @@ class EvolutionApiSettingsSection extends StatelessWidget {
                             ),
                       ),
                     ],
-                    if ((controller.evolutionQrPayloadPreview ?? '').trim().isNotEmpty) ...[
+                    if ((controller.evolutionQrPayloadPreview ?? '')
+                        .trim()
+                        .isNotEmpty) ...[
                       const SizedBox(height: 12),
                       Text(
                         'Respuesta tecnica de Evolution',
@@ -313,17 +323,17 @@ class OpenAiSettingsSection extends StatelessWidget {
     return ListView(
       children: [
         ConfigurationShellCard(
-          title: 'Runtime de OpenAI',
-          subtitle:
-              'Gestiona el acceso al modelo, el sesgo de seguridad y la política de generación.',
+          title: 'Motor de IA',
+          subtitle: 'Modelo, clave y prompt técnico de respaldo para el motor.',
           child: Column(
             children: [
               _twoColumn(
                 context,
                 LabeledTextField(
-                  label: 'Clave API',
+                  label: 'API key',
                   controller: controller.openAiApiKeyController,
                   obscureText: true,
+                  hintText: 'sk-...',
                 ),
                 LabeledDropdownField(
                   label: 'Modelo',
@@ -336,22 +346,22 @@ class OpenAiSettingsSection extends StatelessWidget {
               _twoColumn(
                 context,
                 LabeledTextField(
-                  label: 'Temperatura',
+                  label: 'Creatividad',
                   controller: controller.openAiTemperatureController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                 ),
                 LabeledTextField(
-                  label: 'Máximo de tokens',
+                  label: 'Max. tokens',
                   controller: controller.openAiMaxTokensController,
                   keyboardType: TextInputType.number,
+                  hintText: '1400',
                 ),
               ),
               const SizedBox(height: 16),
               SettingSwitchTile(
-                label: 'Habilitar runtime de OpenAI',
-                description:
-                    'Permite que el bot empresarial enrute conversaciones a través de la capa LLM.',
+                label: 'IA activa',
+                description: 'Permite respuestas con OpenAI en produccion.',
                 value: controller.bundle.openAi.isEnabled,
                 onChanged: controller.toggleOpenAiEnabled,
               ),
@@ -360,22 +370,38 @@ class OpenAiSettingsSection extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: const Color(0xFFFFF7ED),
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
+                    color: const Color(0xFFFDBA74),
                   ),
                 ),
-                child: Text(
-                  'Si existe un prompt principal en el Editor de prompts, ese es el que manda. Este campo queda como respaldo operativo.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: Color(0xFF9A3412),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'El prompt principal se edita en la sección Prompts. Este bloque es solo un respaldo técnico para OpenAI y no reemplaza el prompt principal del bot.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFF9A3412),
+                            ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
               LabeledTextField(
-                label: 'Prompt del sistema de respaldo',
+                label: 'Respaldo técnico del sistema',
                 controller: controller.openAiSystemPromptPreviewController,
-                maxLines: 5,
+                maxLines: 6,
+                hintText:
+                    'Solo úsalo como respaldo corto para el motor. El prompt principal se edita en Prompts.',
               ),
               const SizedBox(height: 18),
               Align(
@@ -621,137 +647,204 @@ class PromptsSettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final prompts = controller.bundle.prompts;
+    final selectedPrompt = controller.selectedPrompt;
+    final selectedPromptContent = selectedPrompt.content;
+    final promptLength = selectedPromptContent.trim().length;
+    final isPromptTooLong = promptLength > _recommendedPromptMaxChars;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 280,
-          child: ConfigurationShellCard(
-            title: 'Activos de prompts',
-            subtitle:
-                'Selecciona un paquete de prompts para inspeccionar o actualizar.',
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: prompts.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final prompt = prompts[index];
-                final isSelected = index == controller.selectedPromptIndex;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isStacked = constraints.maxWidth < 1100;
 
-                return InkWell(
-                  onTap: () => controller.selectPrompt(index),
-                  borderRadius: BorderRadius.circular(18),
-                  child: Ink(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFFEEF4FF)
-                          : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFFB2CCFF)
-                            : Theme.of(context).colorScheme.outlineVariant,
+        final promptList = _WorkspaceSurface(
+          title: 'Prompts editables',
+          subtitle: 'Selecciona y edita.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ListView.separated(
+                  itemCount: prompts.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final prompt = prompts[index];
+                    final isSelected = index == controller.selectedPromptIndex;
+
+                    return InkWell(
+                      onTap: () => controller.selectPrompt(index),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Ink(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFF1F5F9)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF94A3B8)
+                                : Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    prompt.title,
+                                    style:
+                                        Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                ),
+                                _EditorStatusChip(
+                                  label: index == 0 ? 'Principal' : 'Apoyo',
+                                  backgroundColor: index == 0
+                                      ? const Color(0xFFDCFCE7)
+                                      : const Color(0xFFE2E8F0),
+                                  foregroundColor: index == 0
+                                      ? const Color(0xFF166534)
+                                      : const Color(0xFF334155),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              prompt.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+
+        final promptEditor = _WorkspaceSurface(
+          title: selectedPrompt.title,
+          subtitle: null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _EditorStatusChip(
+                    label: controller.selectedPromptIndex == 0
+                        ? 'Prompt principal'
+                        : 'Prompt de apoyo',
+                    backgroundColor: controller.selectedPromptIndex == 0
+                        ? const Color(0xFFDCFCE7)
+                        : const Color(0xFFE2E8F0),
+                    foregroundColor: controller.selectedPromptIndex == 0
+                        ? const Color(0xFF166534)
+                        : const Color(0xFF334155),
+                  ),
+                  _EditorStatusChip(
+                    label: '${selectedPromptContent.trim().length} caracteres',
+                    backgroundColor: const Color(0xFFF8FAFC),
+                    foregroundColor: const Color(0xFF475569),
+                  ),
+                  _EditorStatusChip(
+                    label:
+                        'Actualizado ${_formatTimestamp(selectedPrompt.updatedAt)}',
+                    backgroundColor: const Color(0xFFF8FAFC),
+                    foregroundColor: const Color(0xFF475569),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, editorConstraints) {
+                    final canShowPreview = editorConstraints.maxHeight >= 260;
+                    final showPreviewBelow =
+                        canShowPreview && editorConstraints.maxWidth < 980;
+
+                    final editorSurface = _InnerPanelSurface(
+                      title: 'Contenido del prompt',
+                      subtitle: null,
+                      child: _PromptTextEditor(
+                        promptId: selectedPrompt.id,
+                        initialText: selectedPromptContent,
+                        onChanged: controller.updatePromptContent,
+                      ),
+                    );
+
+                    final previewSurface = _PromptPreviewWorkbench(
+                      key: ValueKey<String>('preview-${selectedPrompt.id}'),
+                      promptTitle: selectedPrompt.title,
+                      promptText: selectedPromptContent,
+                      isPrimaryPrompt: controller.selectedPromptIndex == 0,
+                    );
+
+                    if (!canShowPreview) {
+                      return editorSurface;
+                    }
+
+                    if (showPreviewBelow) {
+                      return Column(
+                        children: [
+                          Expanded(flex: 6, child: editorSurface),
+                          const SizedBox(height: 16),
+                          Expanded(flex: 4, child: previewSurface),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(prompt.title,
-                            style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 6),
-                        Text(
-                          prompt.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
+                        Flexible(flex: 7, child: editorSurface),
+                        const SizedBox(width: 16),
+                        Flexible(flex: 5, child: previewSurface),
                       ],
-                    ),
-                  ),
-                );
-              },
-            ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: SectionActionBar(
+                  onSave: () =>
+                      controller.saveSection(BotConfigurationSection.prompts),
+                  isSaving: controller.activeSaveSection ==
+                      BotConfigurationSection.prompts,
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(width: 18),
-        Expanded(
-          child: ConfigurationShellCard(
-            title: controller.selectedPrompt.title,
-            subtitle: controller.selectedPrompt.description,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  child: Text(
-                    controller.selectedPromptIndex == 0
-                        ? 'Este es el prompt principal que el bot usa en runtime. Los demás prompts se suman como reglas complementarias.'
-                        : 'Este prompt se conserva y se envía como contexto complementario junto al prompt principal.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.history_toggle_off_rounded),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Última actualización: ${_formatTimestamp(controller.selectedPrompt.updatedAt)}',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: TextField(
-                    key: ValueKey<String>(controller.selectedPrompt.id),
-                    controller: controller.promptContentController,
-                    onChanged: controller.updatePromptContent,
-                    expands: true,
-                    minLines: null,
-                    maxLines: null,
-                    decoration: const InputDecoration(
-                      hintText: 'Contenido del prompt',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: SectionActionBar(
-                    onSave: () =>
-                        controller.saveSection(BotConfigurationSection.prompts),
-                    isSaving: controller.activeSaveSection ==
-                        BotConfigurationSection.prompts,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+        );
+
+        if (isStacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(height: 320, child: promptList),
+              const SizedBox(height: 16),
+              Expanded(child: promptEditor),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(flex: 3, child: promptList),
+            const SizedBox(width: 16),
+            Flexible(flex: 7, child: promptEditor),
+          ],
+        );
+      },
     );
   }
 }
@@ -809,171 +902,510 @@ class DocumentsSettingsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedDocument = controller.selectedDocument;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 320,
-          child: ConfigurationShellCard(
-            title: 'Base documental',
-            subtitle:
-                'Activos indexados que alimentan el cerebro con conocimiento verificable.',
-            trailing: OutlinedButton.icon(
-              onPressed: controller.isUploadingDocument
-                  ? null
-                  : controller.addDocument,
-              icon: const Icon(Icons.add_rounded),
-              label: Text(
-                controller.isUploadingDocument ? 'Cargando...' : 'Registrar',
-              ),
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: controller.bundle.documents.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final document = controller.bundle.documents[index];
-                final isSelected = index == controller.selectedDocumentIndex;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isStacked = constraints.maxWidth < 1100;
 
-                return InkWell(
-                  onTap: () => controller.selectDocument(index),
-                  borderRadius: BorderRadius.circular(18),
-                  child: Ink(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFFEEF4FF)
-                          : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFFB2CCFF)
-                            : Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(document.name,
-                            style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${document.kind} • ${document.status} • ${document.sizeLabel}',
-                          style: Theme.of(context).textTheme.bodySmall,
+        final knowledgeList = _WorkspaceSurface(
+          title: 'Base de conocimiento',
+          subtitle: 'Archivos disponibles.',
+          trailing: OutlinedButton.icon(
+            onPressed:
+                controller.isUploadingDocument ? null : controller.addDocument,
+            icon: const Icon(Icons.add_rounded),
+            label: Text(
+              controller.isUploadingDocument ? 'Cargando...' : 'Agregar',
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ListView.separated(
+                  itemCount: controller.bundle.documents.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final document = controller.bundle.documents[index];
+                    final isSelected =
+                        index == controller.selectedDocumentIndex;
+
+                    return InkWell(
+                      onTap: () => controller.selectDocument(index),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Ink(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFF1F5F9)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF94A3B8)
+                                : Theme.of(context).colorScheme.outlineVariant,
+                          ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          document.summary,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              document.name,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${document.kind} • ${document.status} • ${document.sizeLabel}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              document.summary,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+
+        final knowledgeEditor = _WorkspaceSurface(
+          title: selectedDocument?.name ?? 'Sin documentos',
+          subtitle: selectedDocument == null ? 'Sin archivos.' : null,
+          child: selectedDocument == null
+              ? Center(
+                  child: Text(
+                    'Agrega el primer archivo para empezar.',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _EditorStatusChip(
+                          label: selectedDocument.kind,
+                          backgroundColor: const Color(0xFFF8FAFC),
+                          foregroundColor: const Color(0xFF334155),
+                        ),
+                        _EditorStatusChip(
+                          label: selectedDocument.sizeLabel,
+                          backgroundColor: const Color(0xFFF8FAFC),
+                          foregroundColor: const Color(0xFF334155),
+                        ),
+                        _EditorStatusChip(
+                          label: selectedDocument.isEnabled
+                              ? 'Disponible para respuestas'
+                              : 'Excluido de respuestas',
+                          backgroundColor: selectedDocument.isEnabled
+                              ? const Color(0xFFDCFCE7)
+                              : const Color(0xFFFEE2E2),
+                          foregroundColor: selectedDocument.isEnabled
+                              ? const Color(0xFF166534)
+                              : const Color(0xFF991B1B),
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 18),
-        Expanded(
-          child: ConfigurationShellCard(
-            title: selectedDocument?.name ?? 'Sin documentos',
-            subtitle: selectedDocument == null
-                ? 'Aún no hay activos documentales registrados.'
-                : 'Edita el resumen operativo que el cerebro usa en el contexto.',
-            child: selectedDocument == null
-                ? Center(
-                    child: Text(
-                      'Registra el primer documento empresarial para habilitar contexto documental.',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _twoColumn(
-                        context,
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color:
-                                  Theme.of(context).colorScheme.outlineVariant,
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Tipo',
-                                  style:
-                                      Theme.of(context).textTheme.labelLarge),
-                              const SizedBox(height: 8),
-                              Text(selectedDocument.kind),
-                            ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Activa o desactiva este material para el runtime y documenta aquí lo que el bot debe aprender de él.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: const Color(0xFF64748B),
+                                ),
                           ),
                         ),
-                        SettingSwitchTile(
-                          label: 'Documento activo',
-                          description:
-                              'Permite que este activo participe del contexto y recuperación del cerebro.',
+                        const SizedBox(width: 12),
+                        Switch(
                           value: selectedDocument.isEnabled,
                           onChanged: (value) => controller.toggleDocument(
                             selectedDocument.id,
                             value,
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: _InnerPanelSurface(
+                        title: 'Resumen operativo para el bot',
+                        subtitle:
+                            'Describe el contenido útil del archivo, restricciones, políticas y respuestas aprobadas.',
+                        child: TextFormField(
+                          key: ValueKey<String>(selectedDocument.id),
+                          initialValue: selectedDocument.summary,
+                          expands: true,
+                          minLines: null,
+                          maxLines: null,
+                          onChanged: (value) =>
+                              controller.updateDocumentSummary(
+                            selectedDocument.id,
+                            value,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText:
+                                'Ejemplo: catálogo con productos, variantes, precios aprobados, restricciones de entrega y respuestas frecuentes.',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Resumen indexado',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            key: ValueKey<String>(selectedDocument.id),
-                            initialValue: selectedDocument.summary,
-                            maxLines: 8,
-                            onChanged: (value) =>
-                                controller.updateDocumentSummary(
-                                    selectedDocument.id, value),
-                            decoration: const InputDecoration(
-                              hintText:
-                                  'Resume el conocimiento que debe usar el cerebro.',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      const Spacer(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          TextButton.icon(
-                            onPressed: controller.isUploadingDocument
-                                ? null
-                                : () => controller
-                                    .removeDocument(selectedDocument.id),
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            label: const Text('Eliminar'),
-                          ),
-                          SectionActionBar(
-                            onSave: () => controller
-                                .saveSection(BotConfigurationSection.documents),
-                            isSaving: controller.activeSaveSection ==
-                                BotConfigurationSection.documents,
-                          ),
-                        ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton.icon(
+                          onPressed: controller.isUploadingDocument
+                              ? null
+                              : () => controller.removeDocument(
+                                    selectedDocument.id,
+                                  ),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Eliminar'),
+                        ),
+                        SectionActionBar(
+                          onSave: () => controller
+                              .saveSection(BotConfigurationSection.documents),
+                          isSaving: controller.activeSaveSection ==
+                              BotConfigurationSection.documents,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+        );
+
+        if (isStacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(height: 320, child: knowledgeList),
+              const SizedBox(height: 16),
+              Expanded(child: knowledgeEditor),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(flex: 3, child: knowledgeList),
+            const SizedBox(width: 16),
+            Flexible(flex: 7, child: knowledgeEditor),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EditorStatusChip extends StatelessWidget {
+  const _EditorStatusChip({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: foregroundColor.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: foregroundColor,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceSurface extends StatelessWidget {
+  const _WorkspaceSurface({
+    required this.title,
+    required this.child,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.98),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F0F172A),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.titleLarge),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFF64748B),
+                          height: 1.4,
+                        ),
                       ),
                     ],
-                  ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                trailing!,
+              ],
+            ],
           ),
+          const SizedBox(height: 16),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class _InnerPanelSurface extends StatelessWidget {
+  const _InnerPanelSurface({
+    required this.title,
+    required this.child,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class _PromptTextEditor extends StatefulWidget {
+  const _PromptTextEditor({
+    required this.promptId,
+    required this.initialText,
+    required this.onChanged,
+  });
+
+  final String promptId;
+  final String initialText;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_PromptTextEditor> createState() => _PromptTextEditorState();
+}
+
+class _PromptTextEditorState extends State<_PromptTextEditor> {
+  late final TextEditingController _textController;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController = TextEditingController(text: widget.initialText);
+    _focusNode = FocusNode(debugLabel: 'prompt-editor-focus');
+  }
+
+  @override
+  void didUpdateWidget(covariant _PromptTextEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final promptChanged = oldWidget.promptId != widget.promptId;
+    final externalTextChanged = oldWidget.initialText != widget.initialText;
+
+    if ((promptChanged || externalTextChanged) &&
+        _textController.text != widget.initialText) {
+      _textController.value = TextEditingValue(
+        text: widget.initialText,
+        selection: TextSelection.collapsed(offset: widget.initialText.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textLength = _textController.text.trim().length;
+    final isTooLong = textLength > _recommendedPromptMaxChars;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextField(
+            key: ValueKey<String>('prompt-editor-${widget.promptId}'),
+            controller: _textController,
+            focusNode: _focusNode,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            textCapitalization: TextCapitalization.sentences,
+            maxLength: _recommendedPromptMaxChars,
+            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+            expands: true,
+            minLines: null,
+            maxLines: null,
+            enableInteractiveSelection: true,
+            autocorrect: true,
+            onChanged: (value) {
+              setState(() {});
+              widget.onChanged(value);
+            },
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  height: 1.45,
+                ),
+            decoration: InputDecoration(
+              hintText:
+                  'Escribe aquí el prompt principal. Ejemplo: Eres el asistente comercial oficial de la empresa. Responde con tono claro, breve y sin inventar precios ni stock.',
+              alignLabelWithHint: true,
+              counterText: '',
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.all(18),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 1.6,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                isTooLong
+                    ? 'El prompt ya alcanzó el máximo recomendado. Manténlo en 3000 caracteres o menos para evitar respuestas más lentas o instrucciones confusas.'
+                    : 'Máximo recomendado: 3000 caracteres. Rango ideal: 1200 a 2500 para mantener claridad, velocidad y buen seguimiento de instrucciones.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: isTooLong
+                          ? const Color(0xFFB42318)
+                          : const Color(0xFF64748B),
+                      height: 1.35,
+                    ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '$textLength/$_recommendedPromptMaxChars',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: isTooLong
+                        ? const Color(0xFFB42318)
+                        : const Color(0xFF475569),
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
         ),
       ],
     );
@@ -1044,6 +1476,299 @@ class SecuritySettingsSection extends StatelessWidget {
       ],
     );
   }
+}
+
+class _CompactInfoCard extends StatelessWidget {
+  const _CompactInfoCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color:
+            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: theme.colorScheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(message, style: theme.textTheme.bodyMedium),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PromptPreviewWorkbench extends StatefulWidget {
+  const _PromptPreviewWorkbench({
+    required this.promptTitle,
+    required this.promptText,
+    required this.isPrimaryPrompt,
+    super.key,
+  });
+
+  final String promptTitle;
+  final String promptText;
+  final bool isPrimaryPrompt;
+
+  @override
+  State<_PromptPreviewWorkbench> createState() =>
+      _PromptPreviewWorkbenchState();
+}
+
+class _PromptPreviewWorkbenchState extends State<_PromptPreviewWorkbench> {
+  late final TextEditingController _testMessageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _testMessageController = TextEditingController(
+      text: 'Cliente: Hola, ¿tienen iPhone 15 en stock y cuál es el precio?',
+    )..addListener(_handleDraftChanged);
+  }
+
+  @override
+  void dispose() {
+    _testMessageController
+      ..removeListener(_handleDraftChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleDraftChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final syntaxPreview = widget.promptText.trim().isEmpty
+        ? 'Escribe un prompt para ver la vista previa estructurada.'
+        : widget.promptText.trim();
+    final simulatedReply = _buildSimulatedPromptReply(
+      promptTitle: widget.promptTitle,
+      promptText: widget.promptText,
+      customerMessage: _testMessageController.text,
+      isPrimaryPrompt: widget.isPrimaryPrompt,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Vista previa y simulación',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ListView(
+              children: [
+                _PreviewPanel(
+                  title: 'Vista del prompt',
+                  child: SelectableText(
+                    syntaxPreview,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontFamily: 'Consolas',
+                          height: 1.45,
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _PreviewPanel(
+                  title: 'Simulación de respuesta',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: _testMessageController,
+                        minLines: 2,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText:
+                              'Escribe un mensaje de prueba del cliente...',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                        ),
+                        child: SelectableText(
+                          simulatedReply,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(height: 1.45),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewPanel extends StatelessWidget {
+  const _PreviewPanel({
+    required this.title,
+    required this.child,
+  });
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compactHeader = constraints.maxHeight < 120;
+
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(compactHeader ? 10 : 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
+              ),
+              SizedBox(height: compactHeader ? 6 : 10),
+              child,
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+String _buildSimulatedPromptReply({
+  required String promptTitle,
+  required String promptText,
+  required String customerMessage,
+  required bool isPrimaryPrompt,
+}) {
+  final normalizedPrompt = promptText.trim();
+  final normalizedMessage = customerMessage.trim();
+
+  if (normalizedPrompt.isEmpty) {
+    return 'No hay contenido en este prompt todavía. Escribe el prompt para ver una simulación de comportamiento.';
+  }
+
+  if (normalizedMessage.isEmpty) {
+    return 'Escribe un mensaje de prueba del cliente para generar una respuesta simulada.';
+  }
+
+  final lowerMessage = normalizedMessage.toLowerCase();
+  final enforcesCatalogSafety = RegExp(
+    'no invent|precio|stock|disponibilidad|catalog',
+    caseSensitive: false,
+  ).hasMatch(normalizedPrompt);
+  final asksForAvailability = lowerMessage.contains('stock') ||
+      lowerMessage.contains('disponib') ||
+      lowerMessage.contains('tienen');
+  final asksForPrice =
+      lowerMessage.contains('precio') || lowerMessage.contains('cuesta');
+  final asksForWarranty =
+      lowerMessage.contains('garant') || lowerMessage.contains('devoluci');
+
+  var probableReply =
+      'Hola, puedo ayudarte con eso. Voy a revisar la información disponible antes de confirmar detalles.';
+
+  if (asksForAvailability && asksForPrice) {
+    probableReply = enforcesCatalogSafety
+        ? 'Hola, puedo ayudarte con disponibilidad y precio. Primero reviso el catálogo y el stock confirmado para no inventar datos. Si me indicas la sucursal o variante exacta, te respondo con mayor precisión.'
+        : 'Hola, puedo ayudarte con disponibilidad y precio. Si me dices la sucursal o variante exacta, te doy una respuesta más precisa.';
+  } else if (asksForAvailability) {
+    probableReply = enforcesCatalogSafety
+        ? 'Hola, puedo revisar la disponibilidad, pero solo confirmaré stock cuando exista información validada en el sistema. Si me indicas sucursal o modelo exacto, continúo.'
+        : 'Hola, puedo revisar la disponibilidad. Si me indicas el modelo exacto o la sucursal, continúo.';
+  } else if (asksForPrice) {
+    probableReply = enforcesCatalogSafety
+        ? 'Hola, puedo ayudarte con el precio. Voy a usar solo precios aprobados en el catálogo para evitar información incorrecta.'
+        : 'Hola, puedo ayudarte con el precio. Si me das el modelo exacto, te respondo mejor.';
+  } else if (asksForWarranty) {
+    probableReply =
+        'Hola, puedo ayudarte con garantía y políticas. Voy a responder usando únicamente las condiciones aprobadas por la empresa.';
+  }
+
+  return 'Prompt activo: $promptTitle (${isPrimaryPrompt ? 'principal' : 'de apoyo'})\n'
+      'Entrada de prueba: $normalizedMessage\n\n'
+      'Lectura rápida de la intención del prompt:\n'
+      '- Prompt cargado con ${normalizedPrompt.length} caracteres.\n'
+      '- ${enforcesCatalogSafety ? 'Incluye reglas de seguridad para no inventar datos.' : 'No se detectan reglas explícitas de validación comercial en esta simulación.'}\n\n'
+      'Respuesta simulada:\n'
+      '$probableReply';
 }
 
 Widget _twoColumn(BuildContext context, Widget left, Widget right) {

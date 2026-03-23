@@ -9,8 +9,8 @@ export class SendTestMediaDto {
   @IsNotEmpty()
   attachmentId!: string;
 
-  @IsIn(['image', 'video', 'audio'])
-  mediaType!: 'image' | 'video' | 'audio';
+  @IsIn(['image', 'video', 'audio', 'document'])
+  mediaType!: 'image' | 'video' | 'audio' | 'document';
 
   @IsOptional()
   @IsString()

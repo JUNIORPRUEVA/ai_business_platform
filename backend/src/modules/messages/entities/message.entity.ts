@@ -23,6 +23,12 @@ export class MessageEntity extends BaseEntity {
   @Column({ type: 'text', name: 'media_url', nullable: true })
   mediaUrl!: string | null;
 
+  @Column({ type: 'text', name: 'mime_type', nullable: true })
+  mimeType!: string | null;
+
+  @Column({ type: 'text', name: 'file_name', nullable: true })
+  fileName!: string | null;
+
   @Column({ type: 'integer', nullable: true })
   duration!: number | null;
 

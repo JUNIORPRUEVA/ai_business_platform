@@ -1352,7 +1352,7 @@ export class BotCenterService {
     variant: 'media' | 'thumbnail',
   ): Promise<{ buffer: Buffer; contentType: string; fileName: string } | null> {
     let hydratedMessage = message;
-    if (['image', 'video', 'audio'].includes(message.messageType)) {
+    if (['image', 'video', 'audio', 'document'].includes(message.messageType)) {
       const storedAttachment = await this.attachmentsService.repairStoredMessageMedia({
         companyId,
         conversationId: message.chatId,
@@ -1456,6 +1456,10 @@ export class BotCenterService {
       return this.resolveVideoContentType(message.mimeType);
     }
 
+    if (message.messageType === 'document') {
+      return message.mimeType ?? 'application/octet-stream';
+    }
+
     return message.mimeType ?? 'application/octet-stream';
   }
 
@@ -1472,6 +1476,18 @@ export class BotCenterService {
 
   private resolveMediaExtension(mimeType: string | null): string {
     switch (mimeType?.toLowerCase()) {
+      case 'application/pdf':
+        return 'pdf';
+      case 'text/plain':
+        return 'txt';
+      case 'application/msword':
+        return 'doc';
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        return 'docx';
+      case 'application/vnd.ms-excel':
+        return 'xls';
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        return 'xlsx';
       case 'image/png':
         return 'png';
       case 'image/webp':

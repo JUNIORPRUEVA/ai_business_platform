@@ -35,7 +35,7 @@ class ConfigurationShellCard extends StatelessWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -48,8 +48,13 @@ class ConfigurationShellCard extends StatelessWidget {
                   children: [
                     Text(title, style: theme.textTheme.titleLarge),
                     if (subtitle != null) ...[
-                      const SizedBox(height: 4),
-                      Text(subtitle!, style: theme.textTheme.bodyMedium),
+                      const SizedBox(height: 6),
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          height: 1.45,
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -57,7 +62,7 @@ class ConfigurationShellCard extends StatelessWidget {
               if (trailing != null) trailing!,
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           if (expandContent) Expanded(child: child) else child,
         ],
       ),
@@ -140,7 +145,7 @@ class ConfigurationSummaryTile extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color:
             theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
@@ -154,7 +159,10 @@ class ConfigurationSummaryTile extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             value,
-            style: theme.textTheme.titleLarge?.copyWith(color: accent),
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: accent,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 8),
           Text(description, style: theme.textTheme.bodyMedium),
@@ -189,12 +197,12 @@ class SectionActionBar extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: isTesting ? null : onTestConnection,
             icon: const Icon(Icons.radar_outlined),
-            label: Text(isTesting ? 'Probando...' : 'Probar conexión'),
+            label: Text(isTesting ? 'Probando...' : 'Probar'),
           ),
         FilledButton.icon(
           onPressed: isSaving ? null : onSave,
           icon: const Icon(Icons.save_outlined),
-          label: Text(isSaving ? 'Guardando...' : 'Guardar cambios'),
+          label: Text(isSaving ? 'Guardando...' : 'Guardar'),
         ),
       ],
     );
@@ -308,17 +316,48 @@ class LabeledTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.labelLarge),
+        Text(label, style: theme.textTheme.labelLarge),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
           keyboardType: keyboardType,
           obscureText: obscureText,
           maxLines: maxLines,
-          decoration: InputDecoration(hintText: hintText),
+          style: theme.textTheme.titleMedium,
+          decoration: InputDecoration(
+            hintText: hintText,
+            filled: true,
+            fillColor:
+                theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.26),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 18,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outlineVariant,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outlineVariant,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(18),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 1.4,
+              ),
+            ),
+          ),
         ),
       ],
     );

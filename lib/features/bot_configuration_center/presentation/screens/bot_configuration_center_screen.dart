@@ -203,10 +203,10 @@ class _Header extends StatelessWidget {
             accent: const Color(0xFF165DFF),
           ),
           ConfigurationSummaryTile(
-            label: 'Modelo de OpenAI',
+            label: 'Motor de IA',
             value: controller.bundle.openAi.model,
             description:
-                'Modelo principal de razonamiento configurado para tráfico del runtime empresarial.',
+                'Modelo principal y configuración operativa del motor de inteligencia.',
             accent: const Color(0xFF067647),
           ),
           ConfigurationSummaryTile(

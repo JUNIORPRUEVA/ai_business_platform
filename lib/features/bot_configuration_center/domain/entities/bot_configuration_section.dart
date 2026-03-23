@@ -18,7 +18,7 @@ extension BotConfigurationSectionX on BotConfigurationSection {
       case BotConfigurationSection.evolutionApi:
         return 'Evolution API';
       case BotConfigurationSection.openAi:
-        return 'OpenAI';
+        return 'Motor de IA';
       case BotConfigurationSection.memory:
         return 'Memoria';
       case BotConfigurationSection.orchestrator:
@@ -28,7 +28,7 @@ extension BotConfigurationSectionX on BotConfigurationSection {
       case BotConfigurationSection.tools:
         return 'Herramientas';
       case BotConfigurationSection.documents:
-        return 'Documentos';
+        return 'Conocimiento';
       case BotConfigurationSection.security:
         return 'Seguridad';
     }
@@ -41,17 +41,17 @@ extension BotConfigurationSectionX on BotConfigurationSection {
       case BotConfigurationSection.evolutionApi:
         return 'Conectividad del canal de WhatsApp y credenciales de webhook.';
       case BotConfigurationSection.openAi:
-        return 'Enrutamiento de modelo, política de generación y acceso al runtime.';
+        return 'Modelo, acceso al motor y prompt técnico de respaldo.';
       case BotConfigurationSection.memory:
         return 'Comportamiento de memoria de conversación y estrategia de persistencia.';
       case BotConfigurationSection.orchestrator:
         return 'Política de razonamiento, autonomía y confirmaciones de seguridad.';
       case BotConfigurationSection.prompts:
-        return 'Activos de prompt usados por el “cerebro” del bot empresarial.';
+        return 'Prompt principal y prompts de apoyo que se editan desde aquí.';
       case BotConfigurationSection.tools:
         return 'Estado de activación de herramientas internas e integraciones empresariales.';
       case BotConfigurationSection.documents:
-        return 'Base documental del cerebro: catálogos, políticas, fichas y activos empresariales.';
+        return 'Base de conocimiento: catálogos, políticas, fichas y activos empresariales.';
       case BotConfigurationSection.security:
         return 'Gestión de secretos, confianza de webhooks y políticas de auditoría.';
     }

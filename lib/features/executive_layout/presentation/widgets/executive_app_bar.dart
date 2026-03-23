@@ -16,6 +16,7 @@ class ExecutiveAppBar extends ConsumerWidget {
     required this.onToggleSidebar,
     this.height = 70,
     this.minimal = false,
+    this.singleLine = false,
     this.whatsappStyle = false,
   });
 
@@ -23,6 +24,7 @@ class ExecutiveAppBar extends ConsumerWidget {
   final VoidCallback onToggleSidebar;
   final double height;
   final bool minimal;
+  final bool singleLine;
   final bool whatsappStyle;
 
   @override
@@ -77,7 +79,7 @@ class ExecutiveAppBar extends ConsumerWidget {
                 ),
                 const SizedBox(width: 14),
               ],
-              if (minimal) ...[
+              if (minimal || singleLine) ...[
                 Expanded(
                   child: Text(
                     title,
@@ -91,19 +93,43 @@ class ExecutiveAppBar extends ConsumerWidget {
                     ),
                   ),
                 ),
-                _HoverIconButton(
-                  icon: Icons.search_rounded,
-                  tooltip: 'Buscar',
-                  onPressed: () {},
-                  size: iconSize,
-                ),
-                SizedBox(width: iconGap),
+                if (singleLine && !isMobile) ...[
+                  _TenantSwitcher(isCompact: true),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: math
+                        .min(260.0, math.max(180.0, width * 0.24))
+                        .toDouble(),
+                    child: const _SearchField(),
+                  ),
+                  SizedBox(width: iconGap),
+                ] else ...[
+                  _HoverIconButton(
+                    icon: Icons.search_rounded,
+                    tooltip: 'Buscar',
+                    onPressed: () {},
+                    size: iconSize,
+                  ),
+                  SizedBox(width: iconGap),
+                ],
                 _HoverIconButton(
                   icon: Icons.notifications_none_rounded,
                   tooltip: 'Notificaciones',
                   onPressed: () {},
                   size: iconSize,
                 ),
+                if (singleLine) ...[
+                  SizedBox(width: iconGap),
+                  _HoverIconButton(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    tooltip: 'Mensajes',
+                    onPressed: () {
+                      ref.read(executiveSelectedIndexProvider.notifier).state =
+                          executiveMessagesIndex;
+                    },
+                    size: iconSize,
+                  ),
+                ],
                 SizedBox(width: isMobile ? 8 : 12),
                 _UserMenu(isCompact: true, isMobile: isMobile),
               ] else ...[
@@ -113,7 +139,7 @@ class ExecutiveAppBar extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Enterprise workspace',
+                        'Espacio de trabajo empresarial',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.primary,
                           fontWeight: FontWeight.w800,

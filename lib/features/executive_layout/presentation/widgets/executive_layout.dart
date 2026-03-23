@@ -65,7 +65,11 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
 
     final pageTitle = _pageTitleForIndex(selectedIndex);
     final isMessagesPage = pageTitle.toLowerCase().contains('mensajes');
+    final isPromptsKnowledgePage =
+        pageTitle.toLowerCase().contains('prompts y conocimiento');
     final useWhatsappShell = isMessagesPage;
+    final useFullWidthWorkspace = isMessagesPage || isPromptsKnowledgePage;
+    final useSingleLineAppBar = isPromptsKnowledgePage;
 
     if (!_didAutoCollapseOnce && isNarrow) {
       _didAutoCollapseOnce = true;
@@ -140,8 +144,11 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                       children: [
                         ExecutiveAppBar(
                           title: pageTitle,
-                          height: useWhatsappShell ? 58 : 84,
+                          height: useWhatsappShell
+                              ? 58
+                              : (useSingleLineAppBar ? 68 : 84),
                           minimal: useWhatsappShell,
+                          singleLine: useSingleLineAppBar,
                           whatsappStyle: useWhatsappShell,
                           onToggleSidebar: () {
                             if (isMobile) {
@@ -156,12 +163,12 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                           child: Column(
                             children: [
                               Expanded(
-                                child: isMessagesPage
+                                child: useFullWidthWorkspace
                                     ? Padding(
                                         padding: const EdgeInsets.fromLTRB(
-                                          10,
-                                          2,
-                                          10,
+                                          14,
+                                          8,
+                                          14,
                                           0,
                                         ),
                                         child: widget.builder(
@@ -173,8 +180,10 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
                                       ),
                               ),
                               const SizedBox(height: 8),
-                              if (useWhatsappShell)
-                                const _FooterFullWidth(whatsappStyle: true)
+                              if (useFullWidthWorkspace)
+                                _FooterFullWidth(
+                                  whatsappStyle: useWhatsappShell,
+                                )
                               else
                                 const _FooterMaxWidth(),
                             ],

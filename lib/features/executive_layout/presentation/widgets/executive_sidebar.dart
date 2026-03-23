@@ -50,80 +50,96 @@ class ExecutiveSidebar extends ConsumerWidget {
 
     final theme = Theme.of(context);
     final width = isCollapsed ? collapsedWidth : expandedWidth;
-    final shellPadding = EdgeInsets.all(isCollapsed ? 10 : 14);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
       width: width,
-      child: Padding(
-        padding: shellPadding,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x120F172A),
-                blurRadius: 36,
-                offset: Offset(0, 20),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compactHeight = constraints.maxHeight < 780;
+          final showFooter = !compactHeight && !isCollapsed;
+          final shellPadding = EdgeInsets.all(
+            isCollapsed ? 8 : (compactHeight ? 10 : 14),
+          );
+
+          return Padding(
+            padding: shellPadding,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFFFEFB),
-                    Color(0xFFF8F2E8),
-                    Color(0xFFF1E8DC),
-                  ],
-                ),
-                border: Border.all(
-                  color:
-                      theme.colorScheme.outlineVariant.withValues(alpha: 0.86),
-                ),
-              ),
-              child: Column(
-                children: [
-                  _SidebarHeader(
-                    isCollapsed: isCollapsed,
-                    onToggleCollapse: onToggleCollapse,
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: ListView.separated(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: isCollapsed ? 6 : 8),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final item = items[index];
-                        final isActive = selectedIndex == index;
-                        return _SidebarItem(
-                          label: item.label,
-                          icon: item.icon,
-                          isCollapsed: isCollapsed,
-                          isActive: isActive,
-                          onTap: () => onSelect(index),
-                          activeColor: theme.colorScheme.primary,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-                    child: _SidebarFooterPill(isCollapsed: isCollapsed),
+                borderRadius: BorderRadius.circular(compactHeight ? 22 : 28),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x120F172A),
+                    blurRadius: 36,
+                    offset: Offset(0, 20),
                   ),
                 ],
               ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(compactHeight ? 22 : 28),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFFFFEFB),
+                        Color(0xFFF8F2E8),
+                        Color(0xFFF1E8DC),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: theme.colorScheme.outlineVariant
+                          .withValues(alpha: 0.86),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      _SidebarHeader(
+                        isCollapsed: isCollapsed,
+                        compact: compactHeight,
+                        onToggleCollapse: onToggleCollapse,
+                      ),
+                      SizedBox(height: compactHeight ? 6 : 10),
+                      Expanded(
+                        child: ListView.separated(
+                          padding: EdgeInsets.symmetric(
+                            horizontal:
+                                isCollapsed ? 6 : (compactHeight ? 6 : 8),
+                          ),
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) => SizedBox(
+                            height: compactHeight ? 6 : 8,
+                          ),
+                          itemBuilder: (context, index) {
+                            final item = items[index];
+                            final isActive = selectedIndex == index;
+                            return _SidebarItem(
+                              label: item.label,
+                              icon: item.icon,
+                              isCollapsed: isCollapsed,
+                              isActive: isActive,
+                              onTap: () => onSelect(index),
+                              activeColor: theme.colorScheme.primary,
+                            );
+                          },
+                        ),
+                      ),
+                      if (showFooter) ...[
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: _SidebarFooterPill(isCollapsed: isCollapsed),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -334,10 +350,12 @@ class _WhatsappAvatarPill extends StatelessWidget {
 class _SidebarHeader extends StatelessWidget {
   const _SidebarHeader({
     required this.isCollapsed,
+    required this.compact,
     required this.onToggleCollapse,
   });
 
   final bool isCollapsed;
+  final bool compact;
   final VoidCallback onToggleCollapse;
 
   @override
@@ -370,11 +388,11 @@ class _SidebarHeader extends StatelessWidget {
 
     if (isCollapsed) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(10, 14, 10, 8),
+        padding: EdgeInsets.fromLTRB(8, compact ? 10 : 14, 8, compact ? 6 : 8),
         child: Column(
           children: [
             logo,
-            const SizedBox(height: 10),
+            SizedBox(height: compact ? 8 : 10),
             _HoverIconButton(
               icon: Icons.chevron_right_rounded,
               tooltip: 'Expandir barra lateral',
@@ -386,11 +404,11 @@ class _SidebarHeader extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+      padding: EdgeInsets.fromLTRB(12, compact ? 10 : 14, 12, compact ? 6 : 8),
       child: Row(
         children: [
           logo,
-          const SizedBox(width: 12),
+          SizedBox(width: compact ? 8 : 12),
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
@@ -402,6 +420,8 @@ class _SidebarHeader extends StatelessWidget {
                 children: [
                   Text(
                     'FULLTECH',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: theme.colorScheme.onSurface,
                       fontWeight: FontWeight.w800,
@@ -411,6 +431,8 @@ class _SidebarHeader extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     'Consola ejecutiva',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color:
                           theme.colorScheme.onSurface.withValues(alpha: 0.62),
@@ -533,7 +555,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                         curve: Curves.easeOutCubic,
                         width: 4,
                         height: 22,
-                        margin: const EdgeInsets.only(right: 12),
+                        margin: const EdgeInsets.only(right: 10),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(999),
                           color: widget.isActive
@@ -542,7 +564,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                         ),
                       ),
                       SizedBox(
-                        width: 44,
+                        width: 40,
                         child: Center(
                           child: AnimatedScale(
                             duration: const Duration(milliseconds: 140),
@@ -625,6 +647,8 @@ class _SidebarFooterPill extends StatelessWidget {
               children: [
                 Text(
                   'Espacio de trabajo seguro',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 13,
@@ -634,6 +658,8 @@ class _SidebarFooterPill extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   'Controles de acceso de nivel empresarial.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Theme.of(context)
                         .colorScheme
