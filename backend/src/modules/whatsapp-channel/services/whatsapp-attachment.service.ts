@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
@@ -425,6 +426,11 @@ export class WhatsappAttachmentService {
     sourceUrl?: string | null;
     messagePayload: Record<string, unknown>;
   }): Promise<{ buffer: Buffer; contentType: string | null } | null> {
+    if (params.fileType === 'audio') {
+      this.logger.log(
+        `[WHATSAPP ATTACHMENT] audio download attempt sourceUrl=${params.sourceUrl ?? '(none)'} mimeType=${params.mimeType ?? '(none)'}`,
+      );
+    }
     const sourceDownload = params.sourceUrl
       ? await this.evolutionApiClient.downloadMediaUrl(params.config, params.sourceUrl)
       : null;
@@ -442,6 +448,12 @@ export class WhatsappAttachmentService {
     if (sourceDownload) {
       this.logger.warn(
         `[WHATSAPP ATTACHMENT] inbound download fallback source=url fileType=${params.fileType} bytes=${sourceDownload.buffer.length} contentType=${sourceDownload.contentType ?? params.mimeType ?? '(none)'}`,
+      );
+    }
+
+    if (params.fileType === 'audio') {
+      this.logger.log(
+        `[WHATSAPP ATTACHMENT] audio download fallback source=message-endpoint mimeType=${params.mimeType ?? '(none)'}`,
       );
     }
 
@@ -898,6 +910,10 @@ export class WhatsappAttachmentService {
 
     try {
       await writeFile(inputPath, params.buffer);
+      this.logger.log(`[AUDIO NORMALIZATION] file_path=${inputPath}`);
+      if (!existsSync(inputPath)) {
+        throw new Error('AUDIO FILE NOT FOUND - DOWNLOAD FAILED');
+      }
       this.logger.log(
         `[AUDIO NORMALIZATION] converting file=${params.originalName} inputExtension=${inputExtension}`,
       );
@@ -939,6 +955,9 @@ export class WhatsappAttachmentService {
       });
 
       const outputBuffer = await readFile(outputPath);
+      if (!existsSync(outputPath)) {
+        throw new Error('AUDIO FILE NOT FOUND - DOWNLOAD FAILED');
+      }
       this.logger.log(
         `[AUDIO NORMALIZATION] converted file=${params.originalName} output=mp3 bytes=${outputBuffer.length}`,
       );

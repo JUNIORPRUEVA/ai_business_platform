@@ -304,6 +304,11 @@ export class WhatsappWebhookService {
     this.logger.log(
       `[EVOLUTION INBOUND] instance=${config.instanceName} companyId=${config.companyId} remoteJid=${remoteJid} messageId=${messageId ?? '(none)'} type=${type} accepted=${type !== 'unknown' || content.textBody != null}`,
     );
+    if (type === 'audio') {
+      this.logger.log(
+        `[AUDIO RECEIVED] companyId=${config.companyId} messageId=${messageId ?? '(none)'} mediaUrl=${content.mediaUrl ?? '(none)'} mediaKey=${content.mediaKey ?? '(none)'} mimetype=${content.mimeType ?? '(none)'}`,
+      );
+    }
 
     const saved = await this.messagingService.upsertInboundMessage({
       companyId: config.companyId,
@@ -546,6 +551,18 @@ export class WhatsappWebhookService {
       },
     );
 
+    if (inboundMessage.messageType === 'audio' && !(inboundMessage.mediaUrl?.trim())) {
+      this.logger.error(
+        `[AI AUTO REPLY] AUDIO WITHOUT MEDIA URL - INVALID FLOW companyId=${config.companyId} chatId=${chat.id} whatsappMessageId=${whatsappMessageId}`,
+      );
+      await this.sendAudioTechnicalFailureResponse(
+        config.companyId,
+        conversation.id,
+        remoteJid || chat.remoteJid || contactPhone,
+      );
+      return;
+    }
+
     await this.messageProcessingQueue.add(
       'process-inbound-message',
       {
@@ -566,6 +583,37 @@ export class WhatsappWebhookService {
     this.logger.log(
       `[AI AUTO REPLY] queued companyId=${config.companyId} chatId=${chat.id} appConversationId=${conversation.id} appMessageId=${createdMessage.id}`,
     );
+  }
+
+  private async sendAudioTechnicalFailureResponse(
+    companyId: string,
+    conversationId: string,
+    remoteJid: string,
+  ): Promise<void> {
+    const content =
+      'Recib\u00ed tu audio, pero hubo un problema t\u00e9cnico proces\u00e1ndolo.';
+    const botMessage = await this.appMessagesService.create(companyId, conversationId, {
+      sender: 'bot',
+      content,
+      type: 'text',
+      metadata: {
+        source: 'audio-processing-failure',
+      },
+    });
+
+    try {
+      await this.messagingService.sendText(companyId, {
+        remoteJid,
+        text: content,
+      });
+      this.logger.warn(
+        `[AI AUTO REPLY] audio technical fallback sent conversationId=${conversationId} appMessageId=${botMessage.id} target=${remoteJid}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `[AI AUTO REPLY] audio technical fallback failed conversationId=${conversationId} appMessageId=${botMessage.id} target=${remoteJid} error=${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
   }
 
   private resolveConversationContactPhone(
@@ -613,6 +661,7 @@ export class WhatsappWebhookService {
     caption: string | null;
     mimeType: string | null;
     mediaUrl: string | null;
+    mediaKey: string | null;
     mediaOriginalName: string | null;
     thumbnailUrl: string | null;
     durationSeconds: number | null;
@@ -624,6 +673,7 @@ export class WhatsappWebhookService {
         caption: null,
         mimeType: null,
         mediaUrl: null,
+        mediaKey: null,
         mediaOriginalName: null,
         thumbnailUrl: null,
         durationSeconds: null,
@@ -644,6 +694,7 @@ export class WhatsappWebhookService {
       caption: this.readString(media['caption']) || null,
       mimeType: this.readString(media['mimetype']) || null,
       mediaUrl: this.readString(media['url']) || null,
+      mediaKey: this.readString(media['mediaKey']) || null,
       mediaOriginalName: this.readString(media['fileName']) || null,
       thumbnailUrl: this.readString(media['jpegThumbnail']) || null,
       durationSeconds: this.readOptionalNumber(media['seconds']),

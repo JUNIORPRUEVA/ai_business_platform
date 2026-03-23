@@ -129,6 +129,19 @@ export class AiBrainService {
       this.logger.log(
         `[AI BRAIN] bot resolved botId=${bot.id} channelId=${channel.id} model=${bot.model}`,
       );
+      if (this.hasFailedAudioTranscription(resolvedInboundMessage)) {
+        await this.sendAudioTechnicalFailureResponse({
+          companyId: params.companyId,
+          conversationId: params.conversationId,
+          messageId: params.messageId,
+          contactId: contact.id,
+          channelId: channel.id,
+          botId: bot.id,
+          botModel: bot.model,
+          remoteJid: outboundRemoteJid || contactPhone,
+        });
+        return { ok: true };
+      }
 
       detectedIntent = this.detectIntent(userMessage);
       const respondability = this.shouldRespondToInbound({
@@ -1000,6 +1013,74 @@ export class AiBrainService {
     return typeof value === 'object' && value !== null
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private hasFailedAudioTranscription(message: MessageEntity): boolean {
+    if (message.type !== 'audio') {
+      return false;
+    }
+
+    const transcription = this.readRecord(message.metadata?.['audioTranscription']);
+    return this.readString(transcription['status']) === 'failed';
+  }
+
+  private async sendAudioTechnicalFailureResponse(params: {
+    companyId: string;
+    conversationId: string;
+    messageId: string;
+    contactId: string;
+    channelId: string;
+    botId: string;
+    botModel: string;
+    remoteJid: string;
+  }): Promise<void> {
+    const content =
+      'Recib\u00ed tu audio, pero hubo un problema t\u00e9cnico proces\u00e1ndolo.';
+    const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
+      sender: 'bot',
+      content,
+      type: 'text',
+      metadata: {
+        source: 'audio-processing-failure',
+      },
+    });
+
+    let outboundTransportMessageId: string | null = null;
+    if (params.remoteJid.trim()) {
+      const outboundDispatch = await this.whatsappMessagingService.sendText(params.companyId, {
+        remoteJid: params.remoteJid,
+        text: content,
+      });
+      const outboundMessageView = this.readRecord(outboundDispatch['message']);
+      outboundTransportMessageId = this.readString(outboundMessageView['id']) || null;
+    } else {
+      this.logger.warn(
+        `[AI BRAIN] audio technical fallback send skipped conversationId=${params.conversationId} reason=missing_response_target`,
+      );
+    }
+
+    this.logger.warn(
+      `[AI BRAIN] audio technical fallback sent conversationId=${params.conversationId} inboundMessageId=${params.messageId} outboundMessageId=${botMessage.id} transportMessageId=${outboundTransportMessageId ?? 'n/a'}`,
+    );
+
+    await this.persistAiBrainLog({
+      companyId: params.companyId,
+      conversationId: params.conversationId,
+      contactId: params.contactId,
+      botId: params.botId,
+      channelId: params.channelId,
+      status: 'processed',
+      detectedIntent: 'audio_processing_failure',
+      provider: null,
+      model: params.botModel,
+      latencyMs: 0,
+      metadata: {
+        messageId: params.messageId,
+        outboundMessageId: botMessage.id,
+        outboundTransportMessageId,
+        path: 'audio_processing_failure',
+      },
+    });
   }
 
   private isLegacyAudioPlaceholder(content: string): boolean {

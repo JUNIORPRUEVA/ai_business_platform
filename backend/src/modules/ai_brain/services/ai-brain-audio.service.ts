@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
@@ -10,11 +11,14 @@ import { MessageEntity } from '../../messages/entities/message.entity';
 import { OpenAiService } from '../../openai/services/openai.service';
 import { StorageService } from '../../storage/storage.service';
 import { WhatsappMessageEntity } from '../../whatsapp-channel/entities/whatsapp-message.entity';
+import { EvolutionApiClientService } from '../../whatsapp-channel/services/evolution-api-client.service';
 import { FfmpegRuntimeService } from '../../whatsapp-channel/services/ffmpeg-runtime.service';
+import { WhatsappChannelConfigService } from '../../whatsapp-channel/services/whatsapp-channel-config.service';
 
 @Injectable()
 export class AiBrainAudioService {
-  private static readonly transcriptionFallback = 'El usuario envió un audio sin transcripción clara';
+  private static readonly transcriptionFallback =
+    'Recib\u00ed tu audio, pero hubo un problema t\u00e9cnico proces\u00e1ndolo.';
   private readonly logger = new Logger(AiBrainAudioService.name);
 
   constructor(
@@ -23,6 +27,8 @@ export class AiBrainAudioService {
     private readonly storageService: StorageService,
     private readonly openAiService: OpenAiService,
     private readonly ffmpegRuntimeService: FfmpegRuntimeService,
+    private readonly whatsappChannelConfigService: WhatsappChannelConfigService,
+    private readonly evolutionApiClient: EvolutionApiClientService,
   ) {}
 
   async resolveInboundAudioText(params: {
@@ -34,17 +40,25 @@ export class AiBrainAudioService {
   }> {
     try {
       this.logger.log(
-        `[AI AUDIO] audio received companyId=${params.companyId} messageId=${params.message.id}`,
+        `[AI AUDIO] AUDIO RECEIVED companyId=${params.companyId} messageId=${params.message.id}`,
       );
       const source = await this.resolveAudioSource(params.companyId, params.message);
       if (!source) {
         throw new Error('audio_source_not_found');
       }
 
-      const converted = await this.convertAudioToWav(source);
       this.logger.log(
-        `[AI AUDIO] audio converted companyId=${params.companyId} messageId=${params.message.id} file=${converted.filename} bytes=${converted.buffer.length}`,
+        `[AI AUDIO] AUDIO DOWNLOADED companyId=${params.companyId} messageId=${params.message.id} file=${source.filename} bytes=${source.buffer.length} contentType=${source.contentType ?? '(none)'}`,
       );
+
+      const converted = await this.convertAudioToWav(source, params.companyId, params.message.id);
+      this.logger.log(
+        `[AI AUDIO] AUDIO CONVERTED companyId=${params.companyId} messageId=${params.message.id} file=${converted.filename} bytes=${converted.buffer.length}`,
+      );
+      this.logger.log(
+        `[AI AUDIO] TRANSCRIPTION START companyId=${params.companyId} messageId=${params.message.id} file=${converted.filename}`,
+      );
+
       const transcript = await this.openAiService.transcribeAudio({
         companyId: params.companyId,
         buffer: converted.buffer,
@@ -57,7 +71,7 @@ export class AiBrainAudioService {
         throw new Error('empty_transcript');
       }
       this.logger.log(
-        `[AI AUDIO] transcription success companyId=${params.companyId} messageId=${params.message.id} text="${text.slice(0, 160)}"`,
+        `[AI AUDIO] TRANSCRIPTION RESULT: ${text.slice(0, 160)}`,
       );
 
       return {
@@ -92,12 +106,19 @@ export class AiBrainAudioService {
     companyId: string,
     message: MessageEntity,
   ): Promise<{ buffer: Buffer; filename: string; contentType: string | null } | null> {
-    if (message.mediaUrl?.trim()) {
-      return this.resolveStoredAsset(
-        companyId,
-        message.mediaUrl,
-        message.fileName ?? `${message.id}${this.extensionFromMimeType(message.mimeType)}`,
+    const directMediaUrl = message.mediaUrl?.trim() ?? '';
+    if (!directMediaUrl) {
+      this.logger.error(
+        `[AI AUDIO] AUDIO WITHOUT MEDIA URL - INVALID FLOW companyId=${companyId} messageId=${message.id}`,
       );
+    }
+
+    if (directMediaUrl) {
+      return this.resolveStoredAsset({
+        companyId,
+        candidate: directMediaUrl,
+        filename: message.fileName ?? `${message.id}${this.extensionFromMimeType(message.mimeType)}`,
+      });
     }
 
     const whatsappChannelMessageId =
@@ -115,42 +136,62 @@ export class AiBrainAudioService {
       return null;
     }
 
-    const filename =
-      whatsappMessage.mediaOriginalName?.trim() ||
-      `${whatsappMessage.id}${this.extensionFromMimeType(whatsappMessage.mimeType)}`;
-    const stored = await this.resolveStoredAsset(
-      companyId,
-      whatsappMessage.mediaStoragePath ?? whatsappMessage.mediaUrl,
-      filename,
-    );
-    if (!stored) {
+    const candidate = whatsappMessage.mediaStoragePath ?? whatsappMessage.mediaUrl;
+    if (!candidate?.trim()) {
+      this.logger.error(
+        `[AI AUDIO] AUDIO WITHOUT MEDIA URL - INVALID FLOW companyId=${companyId} messageId=${message.id} whatsappMessageId=${whatsappMessage.id}`,
+      );
       return null;
     }
 
-    return {
-      buffer: stored.buffer,
+    const filename =
+      whatsappMessage.mediaOriginalName?.trim() ||
+      `${whatsappMessage.id}${this.extensionFromMimeType(whatsappMessage.mimeType)}`;
+
+    return this.resolveStoredAsset({
+      companyId,
+      candidate,
       filename,
-      contentType: stored.contentType ?? whatsappMessage.mimeType ?? null,
-    };
+      channelConfigId: whatsappMessage.channelConfigId,
+    });
   }
 
-  private async resolveStoredAsset(
-    companyId: string,
-    candidate: string | null,
-    filename: string,
-  ): Promise<{ buffer: Buffer; filename: string; contentType: string | null } | null> {
-    const trimmed = candidate?.trim() ?? '';
+  private async resolveStoredAsset(params: {
+    companyId: string;
+    candidate: string | null;
+    filename: string;
+    channelConfigId?: string | null;
+  }): Promise<{ buffer: Buffer; filename: string; contentType: string | null } | null> {
+    const trimmed = params.candidate?.trim() ?? '';
     if (!trimmed) {
       return null;
     }
 
-    if (trimmed.startsWith(`${companyId}/`)) {
-      const stored = await this.storageService.getObjectBuffer({ companyId, key: trimmed });
+    if (trimmed.startsWith(`${params.companyId}/`)) {
+      const stored = await this.storageService.getObjectBuffer({
+        companyId: params.companyId,
+        key: trimmed,
+      });
       return {
         buffer: stored.buffer,
-        filename,
+        filename: params.filename,
         contentType: stored.contentType,
       };
+    }
+
+    if (params.channelConfigId) {
+      const config = await this.whatsappChannelConfigService.getEntityById(
+        params.companyId,
+        params.channelConfigId,
+      );
+      const downloaded = await this.evolutionApiClient.downloadMediaUrl(config, trimmed);
+      if (downloaded?.buffer.length) {
+        return {
+          buffer: downloaded.buffer,
+          filename: params.filename,
+          contentType: downloaded.contentType,
+        };
+      }
     }
 
     const response = await fetch(trimmed);
@@ -160,16 +201,20 @@ export class AiBrainAudioService {
 
     return {
       buffer: Buffer.from(await response.arrayBuffer()),
-      filename,
+      filename: params.filename,
       contentType: response.headers.get('content-type'),
     };
   }
 
-  private async convertAudioToWav(source: {
-    buffer: Buffer;
-    filename: string;
-    contentType: string | null;
-  }): Promise<{ buffer: Buffer; filename: string }> {
+  private async convertAudioToWav(
+    source: {
+      buffer: Buffer;
+      filename: string;
+      contentType: string | null;
+    },
+    companyId: string,
+    messageId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
     const executable = await this.ffmpegRuntimeService.getExecutableOrThrow();
     const tempDir = await mkdtemp(join(tmpdir(), 'botposvendedor-audio-transcribe-'));
     const inputPath = join(
@@ -180,6 +225,12 @@ export class AiBrainAudioService {
 
     try {
       await writeFile(inputPath, source.buffer);
+      this.logger.log(
+        `[AI AUDIO] AUDIO FILE PATH: ${inputPath} companyId=${companyId} messageId=${messageId}`,
+      );
+      if (!existsSync(inputPath)) {
+        throw new Error('AUDIO FILE NOT FOUND - DOWNLOAD FAILED');
+      }
 
       await new Promise<void>((resolve, reject) => {
         let stderr = '';
@@ -214,6 +265,10 @@ export class AiBrainAudioService {
           reject(new Error(`ffmpeg_conversion_failed_${code ?? 'unknown'}:${stderr}`));
         });
       });
+
+      if (!existsSync(outputPath)) {
+        throw new Error('AUDIO FILE NOT FOUND - DOWNLOAD FAILED');
+      }
 
       return {
         buffer: await readFile(outputPath),
