@@ -400,6 +400,48 @@ test('WhatsappAttachmentService usa el endpoint de Evolution cuando la URL trae 
   assert.deepEqual(resolved?.buffer, mp4Header);
 });
 
+test('WhatsappAttachmentService usa el endpoint de Evolution cuando la URL trae un documento octet-stream no legible', async () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const pdfHeader = Buffer.from('%PDF-1.7\n1 0 obj\n', 'utf8');
+  Object.assign(service as object, {
+    logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+    evolutionApiClient: {
+      downloadMediaUrl: async () => ({
+        buffer: Buffer.alloc(4096, 0xab),
+        contentType: 'application/octet-stream',
+      }),
+      downloadMediaMessage: async () => ({
+        buffer: pdfHeader,
+        contentType: 'application/pdf',
+      }),
+    },
+  });
+
+  const resolveInboundDownload = (
+    service as unknown as {
+      resolveInboundDownload: (params: {
+        config: Record<string, unknown>;
+        fileType: string;
+        mimeType?: string | null;
+        sourceUrl?: string | null;
+        messagePayload: Record<string, unknown>;
+      }) => Promise<{ buffer: Buffer; contentType: string | null } | null>;
+    }
+  ).resolveInboundDownload.bind(service);
+
+  const resolved = await resolveInboundDownload({
+    config: {},
+    fileType: 'document',
+    mimeType: 'application/pdf',
+    sourceUrl: 'https://mmg.whatsapp.net/fake-document.enc',
+    messagePayload: { documentMessage: { mimetype: 'application/pdf' } },
+  });
+
+  assert.ok(resolved);
+  assert.equal(resolved?.contentType, 'application/pdf');
+  assert.deepEqual(resolved?.buffer, pdfHeader);
+});
+
 test('WhatsappAttachmentService decodifica payload base64 antes de persistir media', async () => {
   const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
   const prepareUploadPayload = (

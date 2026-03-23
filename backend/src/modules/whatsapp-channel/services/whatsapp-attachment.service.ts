@@ -506,7 +506,83 @@ export class WhatsappAttachmentService {
       return this.looksLikePlayableAudio(value.buffer, resolvedMimeType);
     }
 
+    if (fileType === 'document') {
+      return this.looksLikeReadableDocument(value.buffer, resolvedMimeType, declaredMimeType);
+    }
+
     return true;
+  }
+
+  private looksLikeReadableDocument(
+    buffer: Buffer,
+    mimeType: string | null,
+    declaredMimeType: string | null,
+  ): boolean {
+    if (!buffer.length) {
+      return false;
+    }
+
+    const normalizedMimeType = this.normalizeMimeType(mimeType);
+    const normalizedDeclaredMimeType = this.normalizeMimeType(declaredMimeType);
+    const effectiveMimeType = normalizedMimeType ?? normalizedDeclaredMimeType;
+
+    const detectedMimeType = this.detectMimeTypeFromBuffer(buffer, 'document');
+    if (detectedMimeType === 'application/pdf') {
+      return true;
+    }
+
+    if (
+      detectedMimeType ===
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ) {
+      return true;
+    }
+
+    if (this.looksLikeStructuredTextDocument(buffer, effectiveMimeType)) {
+      return true;
+    }
+
+    if (!effectiveMimeType || effectiveMimeType === 'application/octet-stream') {
+      return false;
+    }
+
+    if (effectiveMimeType === 'application/pdf') {
+      return buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+    }
+
+    if (
+      effectiveMimeType ===
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ) {
+      return this.looksLikeZipContainer(buffer);
+    }
+
+    return effectiveMimeType.startsWith('text/');
+  }
+
+  private looksLikeStructuredTextDocument(buffer: Buffer, mimeType: string | null): boolean {
+    const normalizedMimeType = this.normalizeMimeType(mimeType);
+    if (
+      normalizedMimeType === 'text/plain' ||
+      normalizedMimeType === 'text/csv' ||
+      normalizedMimeType === 'application/json' ||
+      normalizedMimeType === 'application/xml' ||
+      normalizedMimeType === 'text/xml'
+    ) {
+      return true;
+    }
+
+    return this.looksLikeStructuredTextPayload(buffer, mimeType);
+  }
+
+  private looksLikeZipContainer(buffer: Buffer): boolean {
+    return (
+      buffer.length >= 4 &&
+      buffer[0] === 0x50 &&
+      buffer[1] === 0x4b &&
+      (buffer[2] === 0x03 || buffer[2] === 0x05 || buffer[2] === 0x07) &&
+      (buffer[3] === 0x04 || buffer[3] === 0x06 || buffer[3] === 0x08)
+    );
   }
 
   private looksLikeSupportedImage(buffer: Buffer, mimeType: string | null): boolean {
@@ -1243,6 +1319,16 @@ export class WhatsappAttachmentService {
   }
 
   private detectMimeTypeFromBuffer(buffer: Buffer, fileType: string): string | null {
+    if (buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-') {
+      return 'application/pdf';
+    }
+
+    if (this.looksLikeZipContainer(buffer)) {
+      return fileType === 'document'
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : null;
+    }
+
     if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
       return 'image/jpeg';
     }
