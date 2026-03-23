@@ -80,6 +80,90 @@ export class OpenAiService {
     }
   }
 
+  async describeImage(params: {
+    companyId: string;
+    buffer: Buffer;
+    filename: string;
+    contentType?: string | null;
+    model?: string;
+    timeoutMs?: number;
+  }): Promise<{ text: string; provider: 'openai' | 'mock'; model: string }> {
+    const model = params.model ?? 'gpt-4o-mini';
+    const runtime = await this.botConfigurationService.getResolvedOpenAiRuntimeSettings(
+      params.companyId,
+      { model },
+    );
+
+    if (!this.hasUsableCredentials(runtime.apiKey) || !runtime.runtimeEnabled) {
+      return { text: '', provider: 'mock', model };
+    }
+
+    const timeoutMs = params.timeoutMs ?? 45000;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const mimeType = params.contentType?.trim() || 'image/jpeg';
+      const dataUrl = `data:${mimeType};base64,${params.buffer.toString('base64')}`;
+      const response = await fetch(runtime.apiUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_completion_tokens: 900,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Analiza imágenes de clientes para WhatsApp. Responde en español con una descripción clara y útil. Extrae texto visible tal como aparece, identifica productos, marcas, colores, cantidades, precios, pantallas, documentos, personas, lugares y cualquier detalle comercial relevante. Si algo no es completamente seguro, indícalo como probable en vez de inventarlo.',
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    'Describe completamente esta imagen para que un asistente comercial entienda qué envió el cliente y pueda responder con contexto. Incluye OCR y detalles visuales importantes.',
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: dataUrl,
+                    detail: 'high',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(
+          `OpenAI image analysis failed status=${response.status} detail=${detail.slice(0, 300)}`,
+        );
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+
+      return {
+        text: data.choices?.[0]?.message?.content?.trim() ?? '',
+        provider: 'openai',
+        model,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   async draftResponse(
     request: OpenAiDraftRequest,
   ): Promise<OpenAiDraftResponse> {

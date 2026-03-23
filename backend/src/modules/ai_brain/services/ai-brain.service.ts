@@ -27,6 +27,7 @@ import { AiBrainAudioService } from './ai-brain-audio.service';
 import { AiBrainCacheService } from './ai-brain-cache.service';
 import { AiBrainContextBuilderService } from './ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './ai-brain-document.service';
+import { AiBrainImageService } from './ai-brain-image.service';
 import { AiBrainToolRouterService } from './ai-brain-tool-router.service';
 
 @Injectable()
@@ -35,7 +36,7 @@ export class AiBrainService {
   private static readonly responsePresencePenalty = 0.6;
   private static readonly responseFrequencyPenalty = 0.4;
   private static readonly aiResourceCacheTtlSeconds = 30;
-  private static readonly audioResolutionCacheTtlSeconds = 21_600;
+  private static readonly mediaResolutionCacheTtlSeconds = 21_600;
   private readonly logger = new Logger(AiBrainService.name);
 
   constructor(
@@ -58,6 +59,8 @@ export class AiBrainService {
     private readonly aiBrainLogsRepository: Repository<AiBrainLogEntity>,
     @Optional()
     private readonly aiBrainAudioService?: AiBrainAudioService,
+    @Optional()
+    private readonly aiBrainImageService?: AiBrainImageService,
     @Optional()
     private readonly aiBrainCacheService?: AiBrainCacheService,
   ) {}
@@ -1125,7 +1128,43 @@ export class AiBrainService {
     return null;
   }
 
-  private async persistResolvedInboundAudioMessage(
+  private readResolvedImageText(
+    message: MessageEntity,
+  ): { content: string; metadataPatch: Record<string, unknown> } | null {
+    const analysis = this.readRecord(message.metadata?.['imageAnalysis']);
+    const status = this.readString(analysis['status']);
+    if (status === 'completed') {
+      const content = this.readString(analysis['content']) || this.readString(analysis['text']);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        content,
+        metadataPatch: {
+          imageAnalysis: analysis,
+        },
+      };
+    }
+
+    if (status === 'failed') {
+      const content = this.readString(analysis['content']) || this.readString(analysis['fallback']);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        content,
+        metadataPatch: {
+          imageAnalysis: analysis,
+        },
+      };
+    }
+
+    return null;
+  }
+
+  private async persistResolvedInboundMediaMessage(
     companyId: string,
     conversationId: string,
     message: MessageEntity,
@@ -1243,6 +1282,54 @@ export class AiBrainService {
     conversationId: string,
     message: MessageEntity,
   ): Promise<MessageEntity> {
+    if (message.type === 'image') {
+      if (!this.aiBrainImageService) {
+        return message;
+      }
+
+      const existingImageResolution = this.readResolvedImageText(message);
+      if (existingImageResolution) {
+        return this.persistResolvedInboundMediaMessage(
+          companyId,
+          conversationId,
+          message,
+          existingImageResolution,
+        );
+      }
+
+      const imageCacheKey = this.buildAiCacheKey('image-resolution', companyId, message.id);
+      const cachedImageResolution =
+        await this.aiBrainCacheService?.getJson<{
+          content: string;
+          metadataPatch: Record<string, unknown>;
+        }>(imageCacheKey);
+      if (cachedImageResolution?.content?.trim()) {
+        return this.persistResolvedInboundMediaMessage(
+          companyId,
+          conversationId,
+          message,
+          cachedImageResolution,
+        );
+      }
+
+      const imageResolution = await this.aiBrainImageService.resolveInboundImageText({
+        companyId,
+        message,
+      });
+      await this.aiBrainCacheService?.setJson(
+        imageCacheKey,
+        imageResolution,
+        AiBrainService.mediaResolutionCacheTtlSeconds,
+      );
+
+      return this.persistResolvedInboundMediaMessage(
+        companyId,
+        conversationId,
+        message,
+        imageResolution,
+      );
+    }
+
     if (message.type !== 'audio') {
       return message;
     }
@@ -1253,7 +1340,7 @@ export class AiBrainService {
 
     const existingResolution = this.readResolvedAudioText(message);
     if (existingResolution) {
-      return this.persistResolvedInboundAudioMessage(
+      return this.persistResolvedInboundMediaMessage(
         companyId,
         conversationId,
         message,
@@ -1268,7 +1355,7 @@ export class AiBrainService {
         metadataPatch: Record<string, unknown>;
       }>(cacheKey);
     if (cachedResolution?.content?.trim()) {
-      return this.persistResolvedInboundAudioMessage(
+      return this.persistResolvedInboundMediaMessage(
         companyId,
         conversationId,
         message,
@@ -1284,10 +1371,10 @@ export class AiBrainService {
     await this.aiBrainCacheService?.setJson(
       cacheKey,
       resolution,
-      AiBrainService.audioResolutionCacheTtlSeconds,
+      AiBrainService.mediaResolutionCacheTtlSeconds,
     );
 
-    return this.persistResolvedInboundAudioMessage(
+    return this.persistResolvedInboundMediaMessage(
       companyId,
       conversationId,
       message,

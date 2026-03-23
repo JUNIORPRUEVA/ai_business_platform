@@ -393,6 +393,85 @@ test('ai brain reutiliza la transcripcion ya guardada del audio sin reprocesarlo
   assert.equal(updateMessageContentCalls, 0);
 });
 
+test('ai brain reutiliza el analisis ya guardado de la imagen sin reprocesarla', async () => {
+  let imageResolutionCalls = 0;
+  let updateMessageContentCalls = 0;
+
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      updateMessageContent: async () => {
+        updateMessageContentCalls += 1;
+        throw new Error('updateMessageContent should not be called');
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { save: async () => undefined } as never,
+    {} as never,
+    {
+      resolveInboundImageText: async () => {
+        imageResolutionCalls += 1;
+        return {
+          content: 'El cliente envió una imagen. Análisis visual: una caja de producto color azul.',
+          metadataPatch: {
+            imageAnalysis: {
+              status: 'completed',
+              text: 'una caja de producto color azul',
+              content: 'El cliente envió una imagen. Análisis visual: una caja de producto color azul.',
+            },
+          },
+        };
+      },
+    } as never,
+    {
+      getJson: async () => null,
+      setJson: async () => undefined,
+    } as never,
+  );
+
+  const resolved = await (
+    service as unknown as {
+      resolveInboundMessageContent: (
+        companyId: string,
+        conversationId: string,
+        message: {
+          id: string;
+          type: string;
+          content: string;
+          metadata: Record<string, unknown>;
+        },
+      ) => Promise<{ content: string; metadata: Record<string, unknown> }>;
+    }
+  ).resolveInboundMessageContent('company-1', 'conversation-1', {
+    id: 'message-image-1',
+    type: 'image',
+    content: 'El cliente envió una imagen. Análisis visual: una caja de producto color azul.',
+    metadata: {
+      imageAnalysis: {
+        status: 'completed',
+        text: 'una caja de producto color azul',
+        content: 'El cliente envió una imagen. Análisis visual: una caja de producto color azul.',
+      },
+    },
+  });
+
+  assert.match(resolved.content, /caja de producto color azul/i);
+  assert.equal(imageResolutionCalls, 0);
+  assert.equal(updateMessageContentCalls, 0);
+});
+
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
   const service = new AiBrainService(
     {} as never,

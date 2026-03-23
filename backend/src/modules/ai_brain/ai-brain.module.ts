@@ -27,6 +27,7 @@ import { AiBrainAudioService } from './services/ai-brain-audio.service';
 import { AiBrainCacheService } from './services/ai-brain-cache.service';
 import { AiBrainContextBuilderService } from './services/ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './services/ai-brain-document.service';
+import { AiBrainImageService } from './services/ai-brain-image.service';
 import { AiBrainMemoryService } from './services/ai-brain-memory.service';
 import { AiBrainService } from './services/ai-brain.service';
 import { AiBrainToolRouterService } from './services/ai-brain-tool-router.service';
@@ -62,6 +63,7 @@ import { AiBrainToolRouterService } from './services/ai-brain-tool-router.servic
     AiBrainAudioService,
     AiBrainCacheService,
     AiBrainDocumentService,
+    AiBrainImageService,
     AiBrainMemoryService,
     AiBrainContextBuilderService,
     AiBrainToolRouterService,
