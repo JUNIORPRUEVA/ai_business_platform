@@ -802,6 +802,94 @@ test('WhatsappWebhookService procesa messages.upsert con data.messages[] y guard
   assert.equal(logs[0]['eventName'], 'MESSAGES_UPSERT');
 });
 
+test('WhatsappWebhookService procesa documentMessage anidado y lo persiste como documento', async () => {
+  const config = {
+    id: 'config-1',
+    companyId: 'company-1',
+    provider: 'evolution',
+    instanceName: 'demo-instance',
+    instanceStatus: 'connected',
+    lastSyncAt: null,
+  };
+  const configsRepository = new InMemoryRepository([config]);
+  const savedMessages: Array<Record<string, unknown>> = [];
+  const attachmentDownloads: Array<Record<string, unknown>> = [];
+
+  const service = createWhatsappWebhookService({
+    configsRepository,
+    configService: { getEntity: async () => config },
+    logsService: { create: async () => ({}) },
+    messagingService: {
+      upsertInboundMessage: async (params: Record<string, unknown>) => {
+        savedMessages.push(params);
+        return {
+          id: 'message-document-1',
+          chatId: 'chat-document-1',
+          remoteJid: params['remoteJid'],
+          messageType: params['messageType'],
+          fromMe: params['fromMe'],
+        };
+      },
+      updateStoredMedia: async () => ({
+        id: 'message-document-1',
+        chatId: 'chat-document-1',
+        remoteJid: '5511999999999@s.whatsapp.net',
+        messageType: 'document',
+        fromMe: false,
+      }),
+    },
+    attachmentsService: {
+      downloadRemoteToStorage: async (params: Record<string, unknown>) => {
+        attachmentDownloads.push(params);
+        return {
+          id: 'attachment-document-1',
+          storagePath: 'company-1/chat/chat-document-1/message-document-1.pdf',
+          sizeBytes: '1024',
+          mimeType: 'application/pdf',
+          metadataJson: {},
+        };
+      },
+    },
+  });
+
+  await service.processNow('company-1', {
+    event: 'messages.upsert',
+    instance: 'demo-instance',
+    data: {
+      key: {
+        remoteJid: '5511999999999@s.whatsapp.net',
+        id: 'wamid-document-1',
+        fromMe: false,
+      },
+      pushName: 'Marina',
+      message: {
+        messageContextInfo: {
+          deviceListMetadataVersion: 2,
+        },
+        documentWithCaptionMessage: {
+          message: {
+            documentMessage: {
+              fileName: 'catalogo.pdf',
+              mimetype: 'application/pdf',
+              caption: 'Catalogo de productos',
+              url: 'https://media.example.com/catalogo.pdf',
+            },
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(savedMessages.length, 1);
+  assert.equal(savedMessages[0]['messageType'], 'document');
+  assert.equal(savedMessages[0]['textBody'], 'Catalogo de productos');
+  assert.equal(savedMessages[0]['mimeType'], 'application/pdf');
+  assert.equal(savedMessages[0]['mediaOriginalName'], 'catalogo.pdf');
+  assert.equal(attachmentDownloads.length, 1);
+  assert.equal(attachmentDownloads[0]['fileType'], 'document');
+  assert.equal(attachmentDownloads[0]['originalName'], 'catalogo.pdf');
+});
+
 test('WhatsappWebhookService separa dos usuarios por remoteJid, persiste mensajes correctos y registra logs REMOTE/USED iguales', async () => {
   const config = {
     id: 'config-1',

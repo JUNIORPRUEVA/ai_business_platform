@@ -704,43 +704,63 @@ export class WhatsappWebhookService {
   }
 
   private unwrapMessageContent(message: Record<string, unknown>): Record<string, unknown> {
-    let current = message;
+    const resolved = this.findStructuredMessageContent(message, 0);
+    return this.hasStructuredMessageContent(resolved) ? resolved : message;
+  }
 
-    for (let depth = 0; depth < 6; depth += 1) {
-      const nestedCandidates = [
-        this.readMap(current['ephemeralMessage']),
-        this.readMap(current['viewOnceMessage']),
-        this.readMap(current['viewOnceMessageV2']),
-        this.readMap(current['viewOnceMessageV2Extension']),
-        this.readMap(current['documentWithCaptionMessage']),
-      ];
+  private findStructuredMessageContent(
+    message: Record<string, unknown>,
+    depth: number,
+  ): Record<string, unknown> {
+    if (this.hasStructuredMessageContent(message) || depth >= 6) {
+      return message;
+    }
 
-      let advanced = false;
-      for (const candidate of nestedCandidates) {
-        if (Object.keys(candidate).length === 0) {
-          continue;
-        }
+    const preferredCandidates = [
+      this.readMap(message['message']),
+      this.readMap(message['ephemeralMessage']),
+      this.readMap(message['viewOnceMessage']),
+      this.readMap(message['viewOnceMessageV2']),
+      this.readMap(message['viewOnceMessageV2Extension']),
+      this.readMap(message['documentWithCaptionMessage']),
+    ];
 
-        const nestedMessage = this.readMap(candidate['message']);
-        if (Object.keys(nestedMessage).length > 0) {
-          current = nestedMessage;
-          advanced = true;
-          break;
-        }
-
-        if (candidate['documentMessage'] != null) {
-          current = candidate;
-          advanced = true;
-          break;
-        }
+    for (const candidate of preferredCandidates) {
+      if (Object.keys(candidate).length === 0) {
+        continue;
       }
 
-      if (!advanced) {
-        return current;
+      const resolved = this.findStructuredMessageContent(candidate, depth + 1);
+      if (this.hasStructuredMessageContent(resolved)) {
+        return resolved;
       }
     }
 
-    return current;
+    for (const value of Object.values(message)) {
+      const candidate = this.readMap(value);
+      if (Object.keys(candidate).length === 0) {
+        continue;
+      }
+
+      const resolved = this.findStructuredMessageContent(candidate, depth + 1);
+      if (this.hasStructuredMessageContent(resolved)) {
+        return resolved;
+      }
+    }
+
+    return message;
+  }
+
+  private hasStructuredMessageContent(message: Record<string, unknown>): boolean {
+    return (
+      message['conversation'] != null ||
+      message['extendedTextMessage'] != null ||
+      message['imageMessage'] != null ||
+      message['videoMessage'] != null ||
+      message['audioMessage'] != null ||
+      message['pttMessage'] != null ||
+      message['documentMessage'] != null
+    );
   }
 
   private normalizeEventName(value: unknown): string {
