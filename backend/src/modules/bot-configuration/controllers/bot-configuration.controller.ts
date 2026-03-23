@@ -34,20 +34,20 @@ export class BotConfigurationController {
 
   @Roles('admin', 'operator', 'viewer')
   @Get()
-  getConfiguration(): BotConfigurationBundle {
-    return this.botConfigurationService.getConfiguration();
+  getConfiguration(@CurrentUser() user: AuthUser): Promise<BotConfigurationBundle> {
+    return this.botConfigurationService.getConfiguration(user.companyId);
   }
 
   @Roles('admin', 'operator')
   @Put('general')
-  updateGeneral(@Body() payload: UpdateGeneralSettingsDto) {
-    return this.botConfigurationService.updateGeneralSettings(payload);
+  updateGeneral(@CurrentUser() user: AuthUser, @Body() payload: UpdateGeneralSettingsDto) {
+    return this.botConfigurationService.updateGeneralSettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Put('evolution')
-  updateEvolution(@Body() payload: UpdateEvolutionSettingsDto) {
-    return this.botConfigurationService.updateEvolutionSettings(payload);
+  updateEvolution(@CurrentUser() user: AuthUser, @Body() payload: UpdateEvolutionSettingsDto) {
+    return this.botConfigurationService.updateEvolutionSettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator', 'viewer')
@@ -64,32 +64,32 @@ export class BotConfigurationController {
 
   @Roles('admin', 'operator')
   @Put('openai')
-  updateOpenAi(@Body() payload: UpdateOpenAiSettingsDto) {
-    return this.botConfigurationService.updateOpenAiSettings(payload);
+  updateOpenAi(@CurrentUser() user: AuthUser, @Body() payload: UpdateOpenAiSettingsDto) {
+    return this.botConfigurationService.updateOpenAiSettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Post('openai/test')
-  testOpenAiConnection(@Body() payload: TestOpenAiConnectionDto) {
-    return this.botConfigurationService.testOpenAiConnection(payload);
+  testOpenAiConnection(@CurrentUser() user: AuthUser, @Body() payload: TestOpenAiConnectionDto) {
+    return this.botConfigurationService.testOpenAiConnection(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Put('integrations')
-  updateIntegrations(@Body() payload: UpdateIntegrationsSettingsDto) {
-    return this.botConfigurationService.updateIntegrationsSettings(payload);
+  updateIntegrations(@CurrentUser() user: AuthUser, @Body() payload: UpdateIntegrationsSettingsDto) {
+    return this.botConfigurationService.updateIntegrationsSettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Put('whatsapp')
-  updateWhatsapp(@Body() payload: UpdateWhatsappSettingsDto) {
-    return this.botConfigurationService.updateWhatsappSettings(payload);
+  updateWhatsapp(@CurrentUser() user: AuthUser, @Body() payload: UpdateWhatsappSettingsDto) {
+    return this.botConfigurationService.updateWhatsappSettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Put('memory')
-  updateMemory(@Body() payload: UpdateMemorySettingsDto) {
-    return this.botConfigurationService.updateMemorySettings(payload);
+  updateMemory(@CurrentUser() user: AuthUser, @Body() payload: UpdateMemorySettingsDto) {
+    return this.botConfigurationService.updateMemorySettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator', 'viewer')
@@ -102,64 +102,65 @@ export class BotConfigurationController {
 
   @Roles('admin', 'operator')
   @Put('orchestrator')
-  updateOrchestrator(@Body() payload: UpdateOrchestratorSettingsDto) {
-    return this.botConfigurationService.updateOrchestratorSettings(payload);
+  updateOrchestrator(@CurrentUser() user: AuthUser, @Body() payload: UpdateOrchestratorSettingsDto) {
+    return this.botConfigurationService.updateOrchestratorSettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Put('security')
-  updateSecurity(@Body() payload: UpdateSecuritySettingsDto) {
-    return this.botConfigurationService.updateSecuritySettings(payload);
+  updateSecurity(@CurrentUser() user: AuthUser, @Body() payload: UpdateSecuritySettingsDto) {
+    return this.botConfigurationService.updateSecuritySettings(user.companyId, payload);
   }
 
   @Roles('admin', 'operator', 'viewer')
   @Get('prompts')
-  listPrompts(): PromptTemplate[] {
-    return this.botConfigurationService.listPrompts();
+  listPrompts(@CurrentUser() user: AuthUser): Promise<PromptTemplate[]> {
+    return this.botConfigurationService.listPrompts(user.companyId);
   }
 
   @Roles('admin', 'operator')
   @Post('prompts')
-  createPrompt(@Body() payload: CreatePromptTemplateDto) {
-    return this.botConfigurationService.createPrompt(payload);
+  createPrompt(@CurrentUser() user: AuthUser, @Body() payload: CreatePromptTemplateDto) {
+    return this.botConfigurationService.createPrompt(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Put('prompts/:id')
   updatePrompt(
+    @CurrentUser() user: AuthUser,
     @Param('id') promptId: string,
     @Body() payload: UpdatePromptTemplateDto,
   ) {
-    return this.botConfigurationService.updatePrompt(promptId, payload);
+    return this.botConfigurationService.updatePrompt(user.companyId, promptId, payload);
   }
 
   @Roles('admin', 'operator')
   @Delete('prompts/:id')
-  deletePrompt(@Param('id') promptId: string) {
-    return this.botConfigurationService.deletePrompt(promptId);
+  deletePrompt(@CurrentUser() user: AuthUser, @Param('id') promptId: string) {
+    return this.botConfigurationService.deletePrompt(user.companyId, promptId);
   }
 
   @Roles('admin', 'operator', 'viewer')
   @Get('tools')
-  listTools(): InternalToolSettings[] {
-    return this.botConfigurationService.listTools();
+  listTools(@CurrentUser() user: AuthUser): Promise<InternalToolSettings[]> {
+    return this.botConfigurationService.listTools(user.companyId);
   }
 
   @Roles('admin', 'operator')
   @Post('tools')
-  createTool(@Body() payload: CreateToolDto) {
-    return this.botConfigurationService.createTool(payload);
+  createTool(@CurrentUser() user: AuthUser, @Body() payload: CreateToolDto) {
+    return this.botConfigurationService.createTool(user.companyId, payload);
   }
 
   @Roles('admin', 'operator')
   @Put('tools/:id')
-  updateTool(@Param('id') toolId: string, @Body() payload: UpdateToolDto) {
-    return this.botConfigurationService.updateTool(toolId, payload);
+  updateTool(@CurrentUser() user: AuthUser, @Param('id') toolId: string, @Body() payload: UpdateToolDto) {
+    return this.botConfigurationService.updateTool(user.companyId, toolId, payload);
   }
 
   @Roles('admin', 'operator')
   @Delete('tools/:id')
-  deleteTool(@Param('id') toolId: string) {
-    return this.botConfigurationService.deleteTool(toolId);
+  deleteTool(@CurrentUser() user: AuthUser, @Param('id') toolId: string) {
+    return this.botConfigurationService.deleteTool(user.companyId, toolId);
   }
 }

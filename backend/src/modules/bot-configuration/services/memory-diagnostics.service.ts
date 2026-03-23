@@ -37,7 +37,7 @@ export class MemoryDiagnosticsService {
   ) {}
 
   async getDiagnostics(companyId: string): Promise<MemoryDiagnosticsResponse> {
-    const configuration = this.botConfigurationService.getConfiguration().memory;
+    const configuration = (await this.botConfigurationService.getConfiguration(companyId)).memory;
     const databaseHealth = this.databaseService.getHealth();
     const redisHealth = await this.memoryCacheService.getHealthReport();
 

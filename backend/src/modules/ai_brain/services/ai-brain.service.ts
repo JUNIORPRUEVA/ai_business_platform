@@ -62,7 +62,9 @@ export class AiBrainService {
     messageId: string;
   }): Promise<{ ok: true }> {
     const startedAt = Date.now();
-    const configuration = this.botConfigurationService.getConfiguration();
+    const configuration = await this.botConfigurationService.getConfiguration(
+      params.companyId,
+    );
     const memoryWindowSize = Math.min(
       Math.max(configuration.memory.recentMessageWindowSize, 1),
       50,
@@ -314,6 +316,7 @@ export class AiBrainService {
       console.log('[AI DEBUG] finalPrompt:', openAiMessages);
       this.logger.log(`[AI BRAIN] openai request started model=${bot.model}`);
       firstDraft = await this.openAiService.draftResponse({
+        companyId: params.companyId,
         senderName: contact.name || undefined,
         detectedIntent,
         messages: openAiMessages,
@@ -382,6 +385,7 @@ export class AiBrainService {
         }
 
         const followUp = await this.openAiService.draftResponse({
+          companyId: params.companyId,
           senderName: contact.name || undefined,
           detectedIntent,
           model: bot.model,

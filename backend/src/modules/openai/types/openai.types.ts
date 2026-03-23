@@ -4,6 +4,7 @@ export interface OpenAiChatMessage {
 }
 
 export interface OpenAiDraftRequest {
+  companyId?: string;
   senderName?: string;
   message?: string;
   detectedIntent: string;

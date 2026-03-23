@@ -1,13 +1,21 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 
 import { JsonFileStoreService } from '../../../common/persistence/json-file-store.service';
 import { ChannelsService } from '../../channels/channels.service';
 import { CreatePromptTemplateDto } from '../dto/create-prompt-template.dto';
 import { CreateToolDto } from '../dto/create-tool.dto';
+import { TestOpenAiConnectionDto } from '../dto/test-openai-connection.dto';
 import { UpdateEvolutionSettingsDto } from '../dto/update-evolution-settings.dto';
 import { UpdateGeneralSettingsDto } from '../dto/update-general-settings.dto';
 import { UpdateIntegrationsSettingsDto } from '../dto/update-integrations-settings.dto';
@@ -16,7 +24,6 @@ import { UpdateOpenAiSettingsDto } from '../dto/update-openai-settings.dto';
 import { UpdateOrchestratorSettingsDto } from '../dto/update-orchestrator-settings.dto';
 import { UpdatePromptTemplateDto } from '../dto/update-prompt-template.dto';
 import { UpdateSecuritySettingsDto } from '../dto/update-security-settings.dto';
-import { TestOpenAiConnectionDto } from '../dto/test-openai-connection.dto';
 import { UpdateToolDto } from '../dto/update-tool.dto';
 import { UpdateWhatsappSettingsDto } from '../dto/update-whatsapp-settings.dto';
 import { BotConfigurationEntity } from '../entities/bot-configuration.entity';
@@ -24,18 +31,22 @@ import {
   BotConfigurationBundle,
   createDefaultBotConfiguration,
   EvolutionSettings,
-  PromptTemplate,
   InternalToolSettings,
   normalizeBotConfiguration,
+  PromptTemplate,
 } from '../types/bot-configuration.types';
 
 @Injectable()
 export class BotConfigurationService implements OnModuleInit {
-  private static constScope = 'default';
-  private static readonly defaultOpenAiModel = process.env.OPENAI_MODEL ?? 'gpt-5.4-mini';
+  private static readonly constScope = 'default';
+  private static readonly defaultOpenAiModel =
+    process.env.OPENAI_MODEL ?? 'gpt-5.4-mini';
+
   private readonly logger = new Logger(BotConfigurationService.name);
-  private state!: BotConfigurationBundle;
-  private snapshotId: string | null = null;
+  private readonly stateByCompany = new Map<string, BotConfigurationBundle>();
+  private readonly snapshotIdByCompany = new Map<string, string>();
+  private defaultState!: BotConfigurationBundle;
+  private defaultSnapshotId: string | null = null;
 
   constructor(
     private readonly fileStore: JsonFileStoreService,
@@ -46,39 +57,53 @@ export class BotConfigurationService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const fileSnapshot = normalizeBotConfiguration(await this.fileStore.readOrCreate(
-      'bot-configuration.json',
-      createDefaultBotConfiguration,
-    ));
+    const fileSnapshot = normalizeBotConfiguration(
+      await this.fileStore.readOrCreate(
+        'bot-configuration.json',
+        createDefaultBotConfiguration,
+      ),
+    );
 
     const persistedSnapshot = await this.configurationRepository.findOne({
-      where: { scope: BotConfigurationService.constScope },
+      where: {
+        scope: BotConfigurationService.constScope,
+        companyId: IsNull(),
+      },
     });
 
     if (persistedSnapshot) {
-      this.snapshotId = persistedSnapshot.id;
-      this.state = normalizeBotConfiguration(structuredClone(persistedSnapshot.payload));
-      await this.fileStore.write('bot-configuration.json', this.state);
+      this.defaultSnapshotId = persistedSnapshot.id;
+      this.defaultState = normalizeBotConfiguration(
+        structuredClone(persistedSnapshot.payload),
+      );
+      await this.fileStore.write('bot-configuration.json', this.defaultState);
       return;
     }
 
     const createdSnapshot = await this.configurationRepository.save(
       this.configurationRepository.create({
+        companyId: null,
         scope: BotConfigurationService.constScope,
         payload: fileSnapshot,
       }),
     );
 
-    this.snapshotId = createdSnapshot.id;
-    this.state = structuredClone(createdSnapshot.payload);
+    this.defaultSnapshotId = createdSnapshot.id;
+    this.defaultState = structuredClone(createdSnapshot.payload);
   }
 
-  getConfiguration(): BotConfigurationBundle {
-    return structuredClone(this.state);
+  async getConfiguration(companyId: string): Promise<BotConfigurationBundle> {
+    const state = await this.ensureCompanyState(companyId);
+    return structuredClone(state);
   }
 
-  getPromptById(promptId: string): PromptTemplate {
-    const prompt = this.state.prompts.find((item) => item.id === promptId);
+  getDefaultConfiguration(): BotConfigurationBundle {
+    return structuredClone(this.defaultState);
+  }
+
+  async getPromptById(companyId: string, promptId: string): Promise<PromptTemplate> {
+    const state = await this.ensureCompanyState(companyId);
+    const prompt = state.prompts.find((item) => item.id === promptId);
 
     if (!prompt) {
       throw new NotFoundException(`Prompt ${promptId} was not found.`);
@@ -87,38 +112,45 @@ export class BotConfigurationService implements OnModuleInit {
     return structuredClone(prompt);
   }
 
-  getActivePrompt(): PromptTemplate {
-    return structuredClone(this.state.prompts[0]);
+  async getActivePrompt(companyId: string): Promise<PromptTemplate> {
+    const state = await this.ensureCompanyState(companyId);
+    return structuredClone(state.prompts[0]);
   }
 
-  listPrompts(): PromptTemplate[] {
-    return structuredClone(this.state.prompts);
+  async listPrompts(companyId: string): Promise<PromptTemplate[]> {
+    const state = await this.ensureCompanyState(companyId);
+    return structuredClone(state.prompts);
   }
 
-  listTools(): InternalToolSettings[] {
-    return structuredClone(this.state.tools);
+  async listTools(companyId: string): Promise<InternalToolSettings[]> {
+    const state = await this.ensureCompanyState(companyId);
+    return structuredClone(state.tools);
   }
 
   async updateGeneralSettings(
+    companyId: string,
     payload: UpdateGeneralSettingsDto,
   ): Promise<BotConfigurationBundle['general']> {
-    this.state.general = {
-      ...this.state.general,
+    const state = await this.ensureCompanyState(companyId);
+    state.general = {
+      ...state.general,
       ...payload,
     };
-    await this.persist();
-    return structuredClone(this.state.general);
+    await this.persist(companyId, state);
+    return structuredClone(state.general);
   }
 
   async updateEvolutionSettings(
+    companyId: string,
     payload: UpdateEvolutionSettingsDto,
   ): Promise<BotConfigurationBundle['evolution']> {
-    this.state.evolution = {
-      ...this.state.evolution,
+    const state = await this.ensureCompanyState(companyId);
+    state.evolution = {
+      ...state.evolution,
       ...payload,
     };
-    await this.persist();
-    return structuredClone(this.state.evolution);
+    await this.persist(companyId, state);
+    return structuredClone(state.evolution);
   }
 
   async getEvolutionConnection(companyId: string): Promise<{
@@ -129,7 +161,8 @@ export class BotConfigurationService implements OnModuleInit {
     provisioningError: string | null;
     qrCode: unknown;
   }> {
-    const evolution = this.state.evolution;
+    const state = await this.ensureCompanyState(companyId);
+    const evolution = state.evolution;
     if (!evolution.channelId) {
       return {
         channelId: null,
@@ -147,8 +180,9 @@ export class BotConfigurationService implements OnModuleInit {
         fallbackInstanceName: channel.instanceName ?? evolution.instanceName,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Canal no disponible.';
-      await this.updateEvolutionRuntimeState({
+      const message =
+        error instanceof Error ? error.message : 'Canal no disponible.';
+      await this.updateEvolutionRuntimeState(companyId, {
         channelId: null,
         connectionStatus: 'disconnected',
         provisioningStatus: 'failed',
@@ -174,7 +208,8 @@ export class BotConfigurationService implements OnModuleInit {
     provisioningError: string | null;
     qrCode: unknown;
   }> {
-    const evolution = this.state.evolution;
+    const state = await this.ensureCompanyState(companyId);
+    const evolution = state.evolution;
 
     if (evolution.channelId) {
       try {
@@ -183,13 +218,13 @@ export class BotConfigurationService implements OnModuleInit {
           fallbackInstanceName: evolution.instanceName,
         });
       } catch (_) {
-        await this.updateEvolutionRuntimeState({ channelId: null });
+        await this.updateEvolutionRuntimeState(companyId, { channelId: null });
       }
     }
 
     const createdChannel = await this.channelsService.create(companyId, {
       type: 'whatsapp',
-      name: this.buildEvolutionChannelName(),
+      name: this.buildEvolutionChannelName(state),
       config: {
         instanceName: evolution.instanceName,
         connectedNumber: evolution.connectedNumber,
@@ -203,58 +238,71 @@ export class BotConfigurationService implements OnModuleInit {
   }
 
   async updateOpenAiSettings(
+    companyId: string,
     payload: UpdateOpenAiSettingsDto,
   ): Promise<BotConfigurationBundle['openai']> {
-    this.state.openai = {
-      ...this.state.openai,
+    const state = await this.ensureCompanyState(companyId);
+    state.openai = {
+      ...state.openai,
       ...payload,
     };
-    await this.persist();
-    return structuredClone(this.state.openai);
+    await this.persist(companyId, state);
+    return structuredClone(state.openai);
   }
 
-  getResolvedOpenAiRuntimeSettings(overrides?: {
-    apiKey?: string | null;
-    model?: string | null;
-  }): {
+  async getResolvedOpenAiRuntimeSettings(
+    companyId?: string | null,
+    overrides?: {
+      apiKey?: string | null;
+      model?: string | null;
+    },
+  ): Promise<{
     apiKey: string;
     model: string;
     apiUrl: string;
     source: 'request_override' | 'configuration' | 'environment';
     runtimeEnabled: boolean;
-  } {
+  }> {
+    const configuration = companyId
+      ? await this.ensureCompanyState(companyId)
+      : this.defaultState;
     const overrideApiKey = overrides?.apiKey?.trim() || '';
-    const configurationApiKey = this.state.openai.apiKey?.trim() || '';
-    const environmentApiKey = this.configService.get<string>('OPENAI_API_KEY')?.trim() || '';
-    const source: 'request_override' | 'configuration' | 'environment' = overrideApiKey
-      ? 'request_override'
-      : configurationApiKey
-        ? 'configuration'
-        : 'environment';
+    const configurationApiKey = configuration.openai.apiKey?.trim() || '';
+    const environmentApiKey =
+      this.configService.get<string>('OPENAI_API_KEY')?.trim() || '';
+    const source: 'request_override' | 'configuration' | 'environment' =
+      overrideApiKey
+        ? 'request_override'
+        : configurationApiKey
+          ? 'configuration'
+          : 'environment';
     const apiKey = overrideApiKey || configurationApiKey || environmentApiKey;
 
     return {
       apiKey,
       model:
         overrides?.model?.trim() ||
-        this.state.openai.model.trim() ||
+        configuration.openai.model.trim() ||
         BotConfigurationService.defaultOpenAiModel,
       apiUrl:
         this.configService.get<string>('OPENAI_API_URL')?.trim() ||
         'https://api.openai.com/v1/chat/completions',
       source,
-      runtimeEnabled: this.state.openai.isEnabled,
+      runtimeEnabled: configuration.openai.isEnabled,
     };
   }
 
-  async testOpenAiConnection(payload: TestOpenAiConnectionDto): Promise<{
+  async testOpenAiConnection(
+    companyId: string,
+    payload: TestOpenAiConnectionDto,
+  ): Promise<{
     ok: true;
     provider: 'openai';
     model: string;
     source: 'request_override' | 'configuration' | 'environment';
     runtimeEnabled: boolean;
   }> {
-    const runtime = this.getResolvedOpenAiRuntimeSettings({
+    const runtime = await this.getResolvedOpenAiRuntimeSettings(companyId, {
       apiKey: payload.apiKey,
       model: payload.model,
     });
@@ -297,7 +345,7 @@ export class BotConfigurationService implements OnModuleInit {
       }
 
       this.logger.log(
-        `[OPENAI TEST] success model=${runtime.model} source=${runtime.source} runtimeEnabled=${runtime.runtimeEnabled}`,
+        `[OPENAI TEST] success model=${runtime.model} source=${runtime.source} runtimeEnabled=${runtime.runtimeEnabled} companyId=${companyId}`,
       );
 
       return {
@@ -308,12 +356,17 @@ export class BotConfigurationService implements OnModuleInit {
         runtimeEnabled: runtime.runtimeEnabled,
       };
     } catch (error) {
-      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ServiceUnavailableException
+      ) {
         throw error;
       }
 
       throw new ServiceUnavailableException(
-        `No se pudo conectar con OpenAI para validar la API key. ${error instanceof Error ? error.message : 'Error desconocido.'}`,
+        `No se pudo conectar con OpenAI para validar la API key. ${
+          error instanceof Error ? error.message : 'Error desconocido.'
+        }`,
       );
     } finally {
       clearTimeout(timeoutHandle);
@@ -321,14 +374,224 @@ export class BotConfigurationService implements OnModuleInit {
   }
 
   async updateIntegrationsSettings(
+    companyId: string,
     payload: UpdateIntegrationsSettingsDto,
   ): Promise<BotConfigurationBundle['integrations']> {
-    this.state.integrations = {
-      ...this.state.integrations,
+    const state = await this.ensureCompanyState(companyId);
+    state.integrations = {
+      ...state.integrations,
       ...payload,
     };
-    await this.persist();
-    return structuredClone(this.state.integrations);
+    await this.persist(companyId, state);
+    return structuredClone(state.integrations);
+  }
+
+  async updateWhatsappSettings(
+    companyId: string,
+    payload: UpdateWhatsappSettingsDto,
+  ): Promise<BotConfigurationBundle['whatsapp']> {
+    const state = await this.ensureCompanyState(companyId);
+    state.whatsapp = {
+      ...state.whatsapp,
+      ...payload,
+    };
+    await this.persist(companyId, state);
+    return structuredClone(state.whatsapp);
+  }
+
+  async updateMemorySettings(
+    companyId: string,
+    payload: UpdateMemorySettingsDto,
+  ): Promise<BotConfigurationBundle['memory']> {
+    const state = await this.ensureCompanyState(companyId);
+    state.memory = {
+      ...state.memory,
+      ...payload,
+    };
+    await this.persist(companyId, state);
+    return structuredClone(state.memory);
+  }
+
+  async updateOrchestratorSettings(
+    companyId: string,
+    payload: UpdateOrchestratorSettingsDto,
+  ): Promise<BotConfigurationBundle['orchestrator']> {
+    const state = await this.ensureCompanyState(companyId);
+    state.orchestrator = {
+      ...state.orchestrator,
+      ...payload,
+    };
+    await this.persist(companyId, state);
+    return structuredClone(state.orchestrator);
+  }
+
+  async updateSecuritySettings(
+    companyId: string,
+    payload: UpdateSecuritySettingsDto,
+  ): Promise<BotConfigurationBundle['security']> {
+    const state = await this.ensureCompanyState(companyId);
+    state.security = {
+      ...state.security,
+      ...payload,
+    };
+    await this.persist(companyId, state);
+    return structuredClone(state.security);
+  }
+
+  async createPrompt(
+    companyId: string,
+    payload: CreatePromptTemplateDto,
+  ): Promise<PromptTemplate> {
+    const state = await this.ensureCompanyState(companyId);
+    const created: PromptTemplate = {
+      id: randomUUID(),
+      title: payload.title,
+      description: payload.description,
+      content: payload.content,
+      updatedAt: new Date().toISOString(),
+    };
+    state.prompts.push(created);
+    await this.persist(companyId, state);
+    return structuredClone(created);
+  }
+
+  async updatePrompt(
+    companyId: string,
+    promptId: string,
+    payload: UpdatePromptTemplateDto,
+  ): Promise<PromptTemplate> {
+    const state = await this.ensureCompanyState(companyId);
+    const index = state.prompts.findIndex((item) => item.id === promptId);
+
+    if (index === -1) {
+      throw new NotFoundException(`Prompt ${promptId} was not found.`);
+    }
+
+    state.prompts[index] = {
+      ...state.prompts[index],
+      ...payload,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.persist(companyId, state);
+    return structuredClone(state.prompts[index]);
+  }
+
+  async deletePrompt(companyId: string, promptId: string): Promise<void> {
+    const state = await this.ensureCompanyState(companyId);
+    const nextPrompts = state.prompts.filter((item) => item.id !== promptId);
+
+    if (nextPrompts.length === state.prompts.length) {
+      throw new NotFoundException(`Prompt ${promptId} was not found.`);
+    }
+
+    state.prompts = nextPrompts;
+    await this.persist(companyId, state);
+  }
+
+  async createTool(
+    companyId: string,
+    payload: CreateToolDto,
+  ): Promise<InternalToolSettings> {
+    const state = await this.ensureCompanyState(companyId);
+    const created: InternalToolSettings = {
+      id: randomUUID(),
+      name: payload.name,
+      description: payload.description,
+      category: payload.category,
+      isEnabled: payload.isEnabled,
+      intents: payload.intents,
+      requiresConfirmation: payload.requiresConfirmation,
+    };
+    state.tools.push(created);
+    await this.persist(companyId, state);
+    return structuredClone(created);
+  }
+
+  async updateTool(
+    companyId: string,
+    toolId: string,
+    payload: UpdateToolDto,
+  ): Promise<InternalToolSettings> {
+    const state = await this.ensureCompanyState(companyId);
+    const index = state.tools.findIndex((item) => item.id === toolId);
+
+    if (index === -1) {
+      throw new NotFoundException(`Tool ${toolId} was not found.`);
+    }
+
+    state.tools[index] = {
+      ...state.tools[index],
+      ...payload,
+    };
+    await this.persist(companyId, state);
+    return structuredClone(state.tools[index]);
+  }
+
+  async deleteTool(companyId: string, toolId: string): Promise<void> {
+    const state = await this.ensureCompanyState(companyId);
+    const nextTools = state.tools.filter((item) => item.id !== toolId);
+
+    if (nextTools.length === state.tools.length) {
+      throw new NotFoundException(`Tool ${toolId} was not found.`);
+    }
+
+    state.tools = nextTools;
+    await this.persist(companyId, state);
+  }
+
+  private async ensureCompanyState(companyId: string): Promise<BotConfigurationBundle> {
+    const cached = this.stateByCompany.get(companyId);
+    if (cached) {
+      return cached;
+    }
+
+    const snapshot = await this.configurationRepository.findOne({
+      where: {
+        companyId,
+        scope: BotConfigurationService.constScope,
+      },
+    });
+
+    if (snapshot) {
+      const state = normalizeBotConfiguration(structuredClone(snapshot.payload));
+      this.snapshotIdByCompany.set(companyId, snapshot.id);
+      this.stateByCompany.set(companyId, state);
+      await this.fileStore.write(this.buildCompanyStoragePath(companyId), state);
+      return state;
+    }
+
+    const initialState = normalizeBotConfiguration(
+      structuredClone(this.defaultState),
+    );
+    const createdSnapshot = await this.configurationRepository.save(
+      this.configurationRepository.create({
+        companyId,
+        scope: BotConfigurationService.constScope,
+        payload: initialState,
+      }),
+    );
+
+    this.snapshotIdByCompany.set(companyId, createdSnapshot.id);
+    this.stateByCompany.set(companyId, initialState);
+    await this.fileStore.write(this.buildCompanyStoragePath(companyId), initialState);
+    return initialState;
+  }
+
+  private async persist(
+    companyId: string,
+    state: BotConfigurationBundle,
+  ): Promise<void> {
+    const snapshot = this.configurationRepository.create({
+      id: this.snapshotIdByCompany.get(companyId) ?? undefined,
+      companyId,
+      scope: BotConfigurationService.constScope,
+      payload: state,
+    });
+
+    const savedSnapshot = await this.configurationRepository.save(snapshot);
+    this.snapshotIdByCompany.set(companyId, savedSnapshot.id);
+    this.stateByCompany.set(companyId, state);
+    await this.fileStore.write(this.buildCompanyStoragePath(companyId), state);
   }
 
   private hasUsableOpenAiCredentials(apiKey: string): boolean {
@@ -357,149 +620,6 @@ export class BotConfigurationService implements OnModuleInit {
     return text.length > 280 ? `${text.slice(0, 277)}...` : text;
   }
 
-  async updateWhatsappSettings(
-    payload: UpdateWhatsappSettingsDto,
-  ): Promise<BotConfigurationBundle['whatsapp']> {
-    this.state.whatsapp = {
-      ...this.state.whatsapp,
-      ...payload,
-    };
-    await this.persist();
-    return structuredClone(this.state.whatsapp);
-  }
-
-  async updateMemorySettings(
-    payload: UpdateMemorySettingsDto,
-  ): Promise<BotConfigurationBundle['memory']> {
-    this.state.memory = {
-      ...this.state.memory,
-      ...payload,
-    };
-    await this.persist();
-    return structuredClone(this.state.memory);
-  }
-
-  async updateOrchestratorSettings(
-    payload: UpdateOrchestratorSettingsDto,
-  ): Promise<BotConfigurationBundle['orchestrator']> {
-    this.state.orchestrator = {
-      ...this.state.orchestrator,
-      ...payload,
-    };
-    await this.persist();
-    return structuredClone(this.state.orchestrator);
-  }
-
-  async updateSecuritySettings(
-    payload: UpdateSecuritySettingsDto,
-  ): Promise<BotConfigurationBundle['security']> {
-    this.state.security = {
-      ...this.state.security,
-      ...payload,
-    };
-    await this.persist();
-    return structuredClone(this.state.security);
-  }
-
-  async createPrompt(payload: CreatePromptTemplateDto): Promise<PromptTemplate> {
-    const created: PromptTemplate = {
-      id: randomUUID(),
-      title: payload.title,
-      description: payload.description,
-      content: payload.content,
-      updatedAt: new Date().toISOString(),
-    };
-    this.state.prompts.push(created);
-    await this.persist();
-    return structuredClone(created);
-  }
-
-  async updatePrompt(
-    promptId: string,
-    payload: UpdatePromptTemplateDto,
-  ): Promise<PromptTemplate> {
-    const index = this.state.prompts.findIndex((item) => item.id === promptId);
-
-    if (index === -1) {
-      throw new NotFoundException(`Prompt ${promptId} was not found.`);
-    }
-
-    this.state.prompts[index] = {
-      ...this.state.prompts[index],
-      ...payload,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.persist();
-    return structuredClone(this.state.prompts[index]);
-  }
-
-  async deletePrompt(promptId: string): Promise<void> {
-    const nextPrompts = this.state.prompts.filter((item) => item.id !== promptId);
-
-    if (nextPrompts.length === this.state.prompts.length) {
-      throw new NotFoundException(`Prompt ${promptId} was not found.`);
-    }
-
-    this.state.prompts = nextPrompts;
-    await this.persist();
-  }
-
-  async createTool(payload: CreateToolDto): Promise<InternalToolSettings> {
-    const created: InternalToolSettings = {
-      id: randomUUID(),
-      name: payload.name,
-      description: payload.description,
-      category: payload.category,
-      isEnabled: payload.isEnabled,
-      intents: payload.intents,
-      requiresConfirmation: payload.requiresConfirmation,
-    };
-    this.state.tools.push(created);
-    await this.persist();
-    return structuredClone(created);
-  }
-
-  async updateTool(
-    toolId: string,
-    payload: UpdateToolDto,
-  ): Promise<InternalToolSettings> {
-    const index = this.state.tools.findIndex((item) => item.id === toolId);
-
-    if (index === -1) {
-      throw new NotFoundException(`Tool ${toolId} was not found.`);
-    }
-
-    this.state.tools[index] = {
-      ...this.state.tools[index],
-      ...payload,
-    };
-    await this.persist();
-    return structuredClone(this.state.tools[index]);
-  }
-
-  async deleteTool(toolId: string): Promise<void> {
-    const nextTools = this.state.tools.filter((item) => item.id !== toolId);
-
-    if (nextTools.length === this.state.tools.length) {
-      throw new NotFoundException(`Tool ${toolId} was not found.`);
-    }
-
-    this.state.tools = nextTools;
-    await this.persist();
-  }
-
-  private async persist(): Promise<void> {
-    const snapshot = this.configurationRepository.create({
-      id: this.snapshotId ?? undefined,
-      scope: BotConfigurationService.constScope,
-      payload: this.state,
-    });
-
-    const savedSnapshot = await this.configurationRepository.save(snapshot);
-    this.snapshotId = savedSnapshot.id;
-    await this.fileStore.write('bot-configuration.json', this.state);
-  }
-
   private async captureEvolutionChannelState(
     companyId: string,
     channelId: string,
@@ -512,19 +632,26 @@ export class BotConfigurationService implements OnModuleInit {
     provisioningError: string | null;
     qrCode: unknown;
   }> {
-    let connectionStatus = this.state.evolution.connectionStatus ?? 'connecting';
+    const state = await this.ensureCompanyState(companyId);
+    let connectionStatus = state.evolution.connectionStatus ?? 'connecting';
     let provisioningStatus = 'ready';
     let provisioningError: string | null = null;
     let qrCode: unknown = null;
     let instanceName = options.fallbackInstanceName;
 
     try {
-      const status = await this.channelsService.refreshConnectionStatus(companyId, channelId);
+      const status = await this.channelsService.refreshConnectionStatus(
+        companyId,
+        channelId,
+      );
       connectionStatus = status.status;
     } catch (error) {
       connectionStatus = 'disconnected';
       provisioningStatus = 'failed';
-      provisioningError = error instanceof Error ? error.message : 'No se pudo consultar el estado.';
+      provisioningError =
+        error instanceof Error
+          ? error.message
+          : 'No se pudo consultar el estado.';
     }
 
     try {
@@ -535,7 +662,7 @@ export class BotConfigurationService implements OnModuleInit {
       qrCode = null;
     }
 
-    await this.updateEvolutionRuntimeState({
+    await this.updateEvolutionRuntimeState(companyId, {
       channelId,
       instanceName,
       connectionStatus,
@@ -554,19 +681,25 @@ export class BotConfigurationService implements OnModuleInit {
   }
 
   private async updateEvolutionRuntimeState(
+    companyId: string,
     payload: Partial<EvolutionSettings>,
   ): Promise<void> {
-    this.state.evolution = {
-      ...this.state.evolution,
+    const state = await this.ensureCompanyState(companyId);
+    state.evolution = {
+      ...state.evolution,
       ...payload,
     };
-    await this.persist();
+    await this.persist(companyId, state);
   }
 
-  private buildEvolutionChannelName(): string {
-    const botName = this.state.general.botName.trim();
+  private buildEvolutionChannelName(state: BotConfigurationBundle): string {
+    const botName = state.general.botName.trim();
     return botName.length > 0
-        ? `${botName} WhatsApp`
-        : 'Canal WhatsApp principal';
+      ? `${botName} WhatsApp`
+      : 'Canal WhatsApp principal';
+  }
+
+  private buildCompanyStoragePath(companyId: string): string {
+    return `bot-configurations/${companyId}.json`;
   }
 }

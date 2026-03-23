@@ -36,7 +36,10 @@ export class BotOrchestratorService {
 
     this.appendLog(logs, 'ingress', 'Incoming message accepted.', `${payload.channel}:${senderLabel}`);
 
-    const configurationBundle = this.botConfigurationService.getConfiguration();
+    const configurationCompanyId = this.readCompanyIdFromMetadata(payload.metadata);
+    const configurationBundle = configurationCompanyId
+      ? await this.botConfigurationService.getConfiguration(configurationCompanyId)
+      : this.botConfigurationService.getDefaultConfiguration();
     const configuration = this.mapRuntimeConfiguration(configurationBundle, payload.channel);
     this.appendLog(
       logs,
@@ -97,6 +100,7 @@ export class BotOrchestratorService {
 
     const responseDraft = await this.buildResponseDraft({
       payload,
+      companyId: configurationCompanyId ?? undefined,
       configuration,
       configurationBundle,
       memoryContext: memory,
@@ -154,6 +158,7 @@ export class BotOrchestratorService {
 
   private async buildResponseDraft(params: {
     payload: ProcessIncomingMessageDto;
+    companyId?: string;
     configuration: BotRuntimeConfiguration;
     configurationBundle: BotConfigurationBundle;
     memoryContext: LoadedMemoryBundle;
@@ -172,6 +177,7 @@ export class BotOrchestratorService {
         return `Prepare ${params.selectedTool} with sender=${params.payload.senderId}, intent=${params.detectedIntent}, then generate a grounded reply for ${senderName} using the returned business data.`;
       case 'use_ai': {
         const draft = await this.openAiService.draftResponse({
+          companyId: params.companyId,
           senderName,
           message: params.payload.message,
           detectedIntent: params.detectedIntent,
@@ -204,5 +210,10 @@ export class BotOrchestratorService {
       summary,
       details,
     });
+  }
+
+  private readCompanyIdFromMetadata(metadata?: Record<string, unknown>): string | null {
+    const value = metadata?.['companyId'];
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
   }
 }

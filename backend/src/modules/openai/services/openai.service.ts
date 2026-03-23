@@ -23,10 +23,15 @@ export class OpenAiService {
   async draftResponse(
     request: OpenAiDraftRequest,
   ): Promise<OpenAiDraftResponse> {
-    const configuration = this.botConfigurationService.getConfiguration();
-    const runtime = this.botConfigurationService.getResolvedOpenAiRuntimeSettings({
+    const configuration = request.companyId
+      ? await this.botConfigurationService.getConfiguration(request.companyId)
+      : this.botConfigurationService.getDefaultConfiguration();
+    const runtime = await this.botConfigurationService.getResolvedOpenAiRuntimeSettings(
+      request.companyId,
+      {
       model: request.model,
-    });
+      },
+    );
     const model = runtime.model;
     const temperature = request.temperature ?? configuration.openai.temperature ?? OpenAiService.defaultTemperature;
     const presencePenalty = request.presencePenalty ?? OpenAiService.defaultPresencePenalty;

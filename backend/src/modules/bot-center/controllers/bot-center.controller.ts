@@ -215,13 +215,16 @@ export class BotCenterController {
   }
 
   @Get('prompt')
-  getPrompt(): BotPromptConfigResponse {
-    return this.botCenterService.getPromptConfig();
+  getPrompt(@CurrentUser() user: AuthUser): Promise<BotPromptConfigResponse> {
+    return this.botCenterService.getPromptConfig(user.companyId);
   }
 
   @Put('prompt')
-  async updatePrompt(@Body() payload: UpdatePromptDto): Promise<BotPromptConfigResponse> {
-    return this.botCenterService.updatePromptConfig(payload);
+  async updatePrompt(
+    @CurrentUser() user: AuthUser,
+    @Body() payload: UpdatePromptDto,
+  ): Promise<BotPromptConfigResponse> {
+    return this.botCenterService.updatePromptConfig(user.companyId, payload);
   }
 
   @Post('test-message')

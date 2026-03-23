@@ -61,6 +61,9 @@ test('openai mock fallback responds naturally for greetings', async () => {
   const service = new OpenAiService(
     { get: () => undefined } as never,
     {
+      getDefaultConfiguration: () => ({
+        openai: { temperature: 0.7, maxTokens: 1400 },
+      }),
       getConfiguration: () => ({
         openai: { temperature: 0.7, maxTokens: 1400 },
       }),

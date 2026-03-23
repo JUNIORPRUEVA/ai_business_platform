@@ -115,7 +115,7 @@ export class BotCenterService {
       tools: this.listTools(),
       logs: await this.listLogs(companyId),
       status: await this.getStatus(companyId),
-      prompt: this.getPromptConfig(),
+      prompt: await this.getPromptConfig(companyId),
       selectedConversation,
     };
   }
@@ -416,7 +416,7 @@ export class BotCenterService {
   }
 
   async getStatus(companyId: string): Promise<BotStatusResponse> {
-    const configuration = this.botConfigurationService.getConfiguration();
+    const configuration = await this.botConfigurationService.getConfiguration(companyId);
     const databaseHealth = this.databaseService.getHealth();
     const openAiConfigured =
       Boolean(configuration.openai.apiKey) && !configuration.openai.apiKey.includes('*');
@@ -478,8 +478,8 @@ export class BotCenterService {
     };
   }
 
-  getPromptConfig(): BotPromptConfigResponse {
-    const prompt = this.botConfigurationService.getActivePrompt();
+  async getPromptConfig(companyId: string): Promise<BotPromptConfigResponse> {
+    const prompt = await this.botConfigurationService.getActivePrompt(companyId);
     return {
       id: prompt.id,
       title: prompt.title,
@@ -489,15 +489,18 @@ export class BotCenterService {
     };
   }
 
-  async updatePromptConfig(payload: UpdatePromptDto): Promise<BotPromptConfigResponse> {
-    const currentPrompt = this.botConfigurationService.getActivePrompt();
-    const updated = await this.botConfigurationService.updatePrompt(currentPrompt.id, {
+  async updatePromptConfig(
+    companyId: string,
+    payload: UpdatePromptDto,
+  ): Promise<BotPromptConfigResponse> {
+    const currentPrompt = await this.botConfigurationService.getActivePrompt(companyId);
+    const updated = await this.botConfigurationService.updatePrompt(companyId, currentPrompt.id, {
       title: payload.title,
       description: payload.description,
       content: payload.content,
     });
 
-    this.prependLog('global', {
+    this.prependLog(companyId, {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       eventType: 'Prompt updated',
