@@ -958,20 +958,14 @@ export class BotCenterService {
   }
 
   private resolveConversationContactPhone(chat: WhatsappChatEntity): string {
-    const remoteJid = chat.remoteJid?.trim() ?? '';
-    const remoteDigits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
-    if (remoteDigits) {
-      return remoteDigits;
+    const canonicalNumber = chat.canonicalNumber?.trim();
+    if (canonicalNumber) {
+      return canonicalNumber;
     }
 
     const sendTarget = chat.sendTarget?.trim();
     if (sendTarget) {
       return sendTarget;
-    }
-
-    const canonicalNumber = chat.canonicalNumber?.trim();
-    if (canonicalNumber) {
-      return canonicalNumber;
     }
 
     const canonicalRemoteJid = chat.canonicalRemoteJid?.trim();
@@ -981,6 +975,13 @@ export class BotCenterService {
         return digits;
       }
     }
+
+    const remoteJid = chat.remoteJid?.trim() ?? '';
+    const remoteDigits = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+    if (remoteDigits) {
+      return remoteDigits;
+    }
+
     return remoteJid;
   }
 

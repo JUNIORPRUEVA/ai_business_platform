@@ -50,6 +50,7 @@ export class AiBrainInboundDocumentService {
         source.filename,
         compactText,
       );
+      const businessSummary = this.extractBusinessSummary(compactText);
 
       this.logger.log(
         `[AI DOCUMENT] DOCUMENT EXTRACTED companyId=${params.companyId} messageId=${params.message.id} file=${source.filename} contentType=${source.contentType ?? '(none)'} chars=${compactText.length}`,
@@ -64,6 +65,7 @@ export class AiBrainInboundDocumentService {
             content,
             contentType: source.contentType,
             fileName: source.filename,
+            businessSummary,
           },
         },
       };
@@ -260,5 +262,56 @@ export class AiBrainInboundDocumentService {
       default:
         return '.bin';
     }
+  }
+
+  private extractBusinessSummary(text: string): Record<string, unknown> {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    const quoteNumber =
+      this.capture(normalized, /\b(?:cot(?:izaci[oó]n)?|quote|invoice|factura)\s*(?:n[roúumero#.: -]*)?\s*([A-Z]{2,5}-\d{3,}|\d{4,})\b/i) ??
+      this.capture(normalized, /\b([A-Z]{2,5}-\d{3,})\b/);
+
+    const customerName =
+      this.capture(normalized, /(?:cliente|señor(?:a)?|sr\.?|sra\.?|a nombre de)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s]{3,80})/i) ??
+      this.capture(normalized, /(?:raz[oó]n social|empresa)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ\s.,&-]{3,80})/i);
+
+    const totalAmount = this.capture(
+      normalized,
+      /(?:total|monto total|importe total|valor total)\s*[:\-]?\s*(US\$|\$|RD\$|DOP)?\s*([\d.,]+)/i,
+      (match) => `${(match[1] ?? '').trim()} ${match[2]}`.trim(),
+    );
+
+    const validUntil = this.capture(
+      normalized,
+      /(?:v[aá]lida hasta|v[aá]lido hasta|vence|fecha de vencimiento)\s*[:\-]?\s*([0-3]?\d[\/-][01]?\d[\/-]\d{2,4})/i,
+    );
+
+    const summaryParts = [
+      quoteNumber ? `cotización ${quoteNumber}` : null,
+      customerName ? `a nombre de ${customerName}` : null,
+      totalAmount ? `por ${totalAmount}` : null,
+      validUntil ? `vigente hasta ${validUntil}` : null,
+    ].filter((value): value is string => Boolean(value));
+
+    return {
+      quoteNumber: quoteNumber ?? null,
+      customerName: customerName ?? null,
+      totalAmount: totalAmount ?? null,
+      validUntil: validUntil ?? null,
+      summary: summaryParts.length > 0 ? summaryParts.join(', ') : null,
+    };
+  }
+
+  private capture(
+    text: string,
+    pattern: RegExp,
+    map?: (match: RegExpExecArray) => string,
+  ): string | null {
+    const matched = pattern.exec(text);
+    if (!matched) {
+      return null;
+    }
+
+    const value = (map ? map(matched) : matched[1] ?? '').replace(/\s+/g, ' ').trim();
+    return value || null;
   }
 }

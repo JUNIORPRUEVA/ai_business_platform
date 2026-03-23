@@ -2440,7 +2440,7 @@ test('WhatsappWebhookService encola auto reply al numero del inbound actual aunq
   await service.processNow('company-1', payload as never);
 
   assert.equal(queuedJobs.length, 1);
-  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['contactPhone'], '234840490270800');
+  assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['contactPhone'], '18295344286');
   assert.equal((queuedJobs[0]['data'] as Record<string, unknown>)['remoteJid'], '234840490270800@lid');
 });
 
@@ -2803,7 +2803,7 @@ test('BotCenterService prioriza numeros limpios sobre JIDs al resolver contacts.
     sendTarget: null,
   });
 
-  assert.equal(fromSendTarget, '234840490270800');
+  assert.equal(fromSendTarget, '18295344286');
   assert.equal(fromCanonicalJid, '18295344286');
 });
 

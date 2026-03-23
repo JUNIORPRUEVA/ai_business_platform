@@ -888,6 +888,72 @@ test('ai brain reutiliza el texto ya extraido de un documento sin reprocesarlo',
   assert.equal(updateMessageContentCalls, 0);
 });
 
+test('ai brain responde preguntas de cotizacion usando campos estructurados del documento', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const reply = (service as unknown as {
+    normalizeAssistantReply: (params: {
+      draft: string;
+      userMessage: string;
+      recentMessages: Array<{
+        sender: string;
+        type: string;
+        content: string;
+        createdAt: Date;
+        metadata?: Record<string, unknown>;
+      }>;
+      senderName: string | null;
+      detectedIntent: string;
+    }) => string;
+  }).normalizeAssistantReply({
+    draft: 'No logro verlo con claridad.',
+    userMessage: 'A nombre de quien esta la cotizacion que te envie',
+    recentMessages: [
+      {
+        sender: 'client',
+        type: 'document',
+        content: 'Documento recibido',
+        createdAt: new Date('2026-03-23T20:39:05.000Z'),
+        metadata: {
+          documentAnalysis: {
+            status: 'completed',
+            text: 'COT-00047 Cliente FULLTECH SRL total RD$ 25,000',
+            content: 'El cliente envió un documento (COT-00047.pdf). Texto extraído: COT-00047 Cliente FULLTECH SRL total RD$ 25,000',
+            businessSummary: {
+              quoteNumber: 'COT-00047',
+              customerName: 'FULLTECH SRL',
+              totalAmount: 'RD$ 25,000',
+              validUntil: null,
+              summary: 'cotización COT-00047, a nombre de FULLTECH SRL, por RD$ 25,000',
+            },
+          },
+        },
+      },
+    ],
+    senderName: 'Junior',
+    detectedIntent: 'general',
+  });
+
+  assert.equal(reply, 'La cotización está a nombre de FULLTECH SRL.');
+});
+
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
   const service = new AiBrainService(
     {} as never,

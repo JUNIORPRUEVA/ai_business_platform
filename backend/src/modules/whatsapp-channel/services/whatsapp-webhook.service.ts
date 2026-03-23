@@ -622,12 +622,12 @@ export class WhatsappWebhookService {
     canonicalRemoteJid?: string | null,
   ): string {
     const candidates = [
-      remoteJid,
-      chat.remoteJid,
-      chat.sendTarget,
       canonicalRemoteJid,
       chat.canonicalRemoteJid,
       chat.canonicalNumber,
+      chat.sendTarget,
+      remoteJid,
+      chat.remoteJid,
     ];
 
     for (const raw of candidates) {

@@ -923,7 +923,12 @@ export class AiBrainService {
       params.recentMessages,
       trimmedUserMessage,
     );
+    const recentDocumentContext = this.extractRecentDocumentContext(
+      params.recentMessages,
+      trimmedUserMessage,
+    );
     const userAskedAboutVideo = this.isVideoQuestion(trimmedUserMessage);
+    const userAskedAboutDocument = this.isDocumentQuestion(trimmedUserMessage);
     if (!trimmedDraft) {
       return this.buildHumanSalesReply({
         userMessage: trimmedUserMessage,
@@ -978,6 +983,10 @@ export class AiBrainService {
       return this.buildVideoAwareReply(trimmedUserMessage, recentVideoContext);
     }
 
+    if (userAskedAboutDocument && recentDocumentContext != null) {
+      return this.buildDocumentAwareReply(trimmedUserMessage, recentDocumentContext);
+    }
+
     if (!looksLikeGenericShortMessageReply && !soundsRobotic && !repeatsLastAssistant && !isTooLong) {
       return conversationalDraft;
     }
@@ -1002,6 +1011,10 @@ export class AiBrainService {
       params.recentMessages,
       params.userMessage,
     );
+    const recentDocumentContext = this.extractRecentDocumentContext(
+      params.recentMessages,
+      params.userMessage,
+    );
     const trimmedSenderName = params.senderName?.trim() ?? '';
     const namePrefix = trimmedSenderName.length > 0 ? `${trimmedSenderName}, ` : '';
     const previousClientTopic = [...params.recentMessages]
@@ -1021,6 +1034,10 @@ export class AiBrainService {
 
     if (this.isVideoQuestion(normalized) && recentVideoContext != null) {
       return this.buildVideoAwareReply(normalized, recentVideoContext);
+    }
+
+    if (this.isDocumentQuestion(normalized) && recentDocumentContext != null) {
+      return this.buildDocumentAwareReply(normalized, recentDocumentContext);
     }
 
     if (/^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b/.test(normalized)) {
@@ -1081,6 +1098,15 @@ export class AiBrainService {
       /(que dice|qué dice|que muestra|qué muestra|de que trata|de qué trata|que sale|qué sale|explica|cuentame|cuéntame|resume|resumen)/.test(normalized);
   }
 
+  private isDocumentQuestion(message: string): boolean {
+    const normalized = message.toLowerCase().trim();
+    if (!/(pdf|documento|archivo|cotiz|factura|comprobante)/.test(normalized)) {
+      return false;
+    }
+
+    return /(que dice|qu[eé] dice|a nombre de|nombre|cliente|empresa|monto|total|importe|precio|valor|n[uú]mero|folio|resumen|qu[eé] tiene|qu[eé] aparece|de qu[eé] trata)/.test(normalized);
+  }
+
   private extractRecentVideoContext(
     recentMessages: MessageEntity[],
     currentUserMessage?: string,
@@ -1105,6 +1131,45 @@ export class AiBrainService {
 
     for (let index = chronologicalMessages.length - 1; index >= 0; index -= 1) {
       const context = this.readVideoContextFromMessage(chronologicalMessages[index]);
+      if (context != null) {
+        return context;
+      }
+    }
+
+    return null;
+  }
+
+  private extractRecentDocumentContext(
+    recentMessages: MessageEntity[],
+    currentUserMessage?: string,
+  ): {
+    summary: string;
+    quoteNumber: string | null;
+    customerName: string | null;
+    totalAmount: string | null;
+    validUntil: string | null;
+    text: string | null;
+  } | null {
+    const chronologicalMessages = [...recentMessages].sort(
+      (left, right) => left.createdAt.getTime() - right.createdAt.getTime(),
+    );
+    const normalizedCurrentUserMessage = currentUserMessage?.trim() ?? '';
+    const lastClientMessageIndex = this.findLastClientMessageIndex(
+      chronologicalMessages,
+      normalizedCurrentUserMessage,
+    );
+
+    if (lastClientMessageIndex >= 0) {
+      for (let index = lastClientMessageIndex - 1; index >= 0; index -= 1) {
+        const context = this.readDocumentContextFromMessage(chronologicalMessages[index]);
+        if (context != null) {
+          return context;
+        }
+      }
+    }
+
+    for (let index = chronologicalMessages.length - 1; index >= 0; index -= 1) {
+      const context = this.readDocumentContextFromMessage(chronologicalMessages[index]);
       if (context != null) {
         return context;
       }
@@ -1163,6 +1228,45 @@ export class AiBrainService {
     return {
       summary: this.compactVideoSummary(summary),
       transcript: transcript ? this.compactTranscriptSummary(transcript) : null,
+    };
+  }
+
+  private readDocumentContextFromMessage(
+    message: MessageEntity,
+  ): {
+    summary: string;
+    quoteNumber: string | null;
+    customerName: string | null;
+    totalAmount: string | null;
+    validUntil: string | null;
+    text: string | null;
+  } | null {
+    if (message.sender !== 'client' || message.type !== 'document') {
+      return null;
+    }
+
+    const analysis = this.readRecord(message.metadata?.['documentAnalysis']);
+    if (this.readString(analysis['status']) !== 'completed') {
+      return null;
+    }
+
+    const businessSummary = this.readRecord(analysis['businessSummary']);
+    const summary =
+      this.readString(businessSummary['summary']) ||
+      this.readString(analysis['content']) ||
+      this.readString(analysis['text']) ||
+      message.content.trim();
+    if (!summary) {
+      return null;
+    }
+
+    return {
+      summary: summary.replace(/\s+/g, ' ').trim(),
+      quoteNumber: this.readString(businessSummary['quoteNumber']) || null,
+      customerName: this.readString(businessSummary['customerName']) || null,
+      totalAmount: this.readString(businessSummary['totalAmount']) || null,
+      validUntil: this.readString(businessSummary['validUntil']) || null,
+      text: this.readString(analysis['text']) || null,
     };
   }
 
@@ -1225,6 +1329,38 @@ export class AiBrainService {
     }
 
     return `${prefix} ${loweredContent}.`;
+  }
+
+  private buildDocumentAwareReply(
+    userMessage: string,
+    documentContext: {
+      summary: string;
+      quoteNumber: string | null;
+      customerName: string | null;
+      totalAmount: string | null;
+      validUntil: string | null;
+      text: string | null;
+    },
+  ): string {
+    const normalized = userMessage.toLowerCase();
+
+    if (/(a nombre de|nombre|cliente|empresa|raz[oó]n social)/.test(normalized) && documentContext.customerName) {
+      return `La cotización está a nombre de ${documentContext.customerName}.`;
+    }
+
+    if (/(n[uú]mero|folio|cotiz|c[oó]digo)/.test(normalized) && documentContext.quoteNumber) {
+      return `El número de la cotización es ${documentContext.quoteNumber}.`;
+    }
+
+    if (/(monto|total|importe|precio|valor)/.test(normalized) && documentContext.totalAmount) {
+      return `El total que aparece en el documento es ${documentContext.totalAmount}.`;
+    }
+
+    if (/(vence|v[aá]lida|vigencia|hasta cuando)/.test(normalized) && documentContext.validUntil) {
+      return `La vigencia que aparece en el documento es hasta ${documentContext.validUntil}.`;
+    }
+
+    return `En el documento aparece ${documentContext.summary}.`;
   }
 
   private enforceConversationalStyle(draft: string): string {
