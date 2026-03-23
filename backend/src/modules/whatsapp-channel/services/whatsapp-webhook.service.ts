@@ -351,7 +351,7 @@ export class WhatsappWebhookService {
         originalName: content.mediaOriginalName ?? `${type}-${saved.id}`,
         sourceUrl: content.mediaUrl,
         thumbnailSource: content.thumbnailUrl,
-        messagePayload: message,
+        messagePayload: payload,
         metadataJson: { thumbnailUrl: content.thumbnailUrl },
       });
 

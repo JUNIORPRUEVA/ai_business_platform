@@ -368,6 +368,41 @@ test('EvolutionApiClientService decodifica texto base64 plano en descargas media
   assert.deepEqual(resolved?.buffer, pngHeader);
 });
 
+test('EvolutionApiClientService prioriza data.key + data.message al construir payloads para getBase64FromMediaMessage', () => {
+  const service = Object.create(EvolutionApiClientService.prototype) as EvolutionApiClientService;
+  const buildDownloadMediaMessageCandidates = (
+    service as unknown as {
+      buildDownloadMediaMessageCandidates: (payload: Record<string, unknown>) => Array<Record<string, unknown>>;
+    }
+  ).buildDownloadMediaMessageCandidates.bind(service);
+
+  const payload = {
+    event: 'messages.upsert',
+    data: {
+      key: {
+        remoteJid: '123@s.whatsapp.net',
+        id: 'wamid-1',
+        fromMe: false,
+      },
+      message: {
+        audioMessage: {
+          mimetype: 'audio/ogg; codecs=opus',
+        },
+      },
+      messageType: 'audioMessage',
+    },
+  };
+
+  const candidates = buildDownloadMediaMessageCandidates(payload);
+  assert.ok(candidates.length >= 3);
+  assert.deepEqual(candidates[0], payload);
+  assert.deepEqual(candidates[1], payload.data);
+  assert.deepEqual(candidates[2], {
+    key: payload.data.key,
+    message: payload.data.message,
+  });
+});
+
 test('EvolutionService usa el payload exacto de Evolution al configurar webhooks', async () => {
   const service = Object.create(EvolutionService.prototype) as EvolutionService;
   const captured: {

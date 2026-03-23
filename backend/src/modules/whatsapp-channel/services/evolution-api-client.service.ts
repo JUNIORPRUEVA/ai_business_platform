@@ -221,7 +221,7 @@ export class EvolutionApiClientService {
     config: WhatsappChannelConfigEntity,
     messagePayload: JsonRecord,
   ): Promise<{ buffer: Buffer; contentType: string | null } | null> {
-    const payloadCandidates: JsonRecord[] = [{ message: messagePayload }, messagePayload];
+    const payloadCandidates = this.buildDownloadMediaMessageCandidates(messagePayload);
 
     for (const body of payloadCandidates) {
       try {
@@ -254,6 +254,60 @@ export class EvolutionApiClientService {
     }
 
     return null;
+  }
+
+  private buildDownloadMediaMessageCandidates(messagePayload: JsonRecord): JsonRecord[] {
+    const candidates: JsonRecord[] = [];
+    const seen = new Set<string>();
+
+    const push = (value: unknown): void => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return;
+      }
+
+      const candidate = value as JsonRecord;
+      const serialized = JSON.stringify(candidate);
+      if (seen.has(serialized)) {
+        return;
+      }
+
+      seen.add(serialized);
+      candidates.push(candidate);
+    };
+
+    const data = this.readMap(messagePayload['data']);
+    const message = this.readMap(messagePayload['message']);
+    const key = this.readMap(messagePayload['key']);
+    const dataMessage = this.readMap(data['message']);
+    const dataKey = this.readMap(data['key']);
+
+    push(messagePayload);
+    push(data);
+
+    if (Object.keys(dataKey).length > 0 || Object.keys(dataMessage).length > 0) {
+      push({
+        ...data,
+        ...(Object.keys(dataKey).length > 0 ? { key: dataKey } : {}),
+        ...(Object.keys(dataMessage).length > 0 ? { message: dataMessage } : {}),
+      });
+      push({
+        ...(Object.keys(dataKey).length > 0 ? { key: dataKey } : {}),
+        ...(Object.keys(dataMessage).length > 0 ? { message: dataMessage } : {}),
+      });
+      push({ message: dataMessage });
+      push(dataMessage);
+    }
+
+    if (Object.keys(key).length > 0 || Object.keys(message).length > 0) {
+      push({
+        ...(Object.keys(key).length > 0 ? { key: key } : {}),
+        ...(Object.keys(message).length > 0 ? { message: message } : {}),
+      });
+      push({ message: message });
+      push(message);
+    }
+
+    return candidates;
   }
 
   private assertValidSendTarget(body: JsonRecord, action: string): void {
@@ -644,6 +698,12 @@ export class EvolutionApiClientService {
     }
 
     return '';
+  }
+
+  private readMap(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as JsonRecord)
+      : {};
   }
 
   private requiresWebhookWrapper(error: unknown): boolean {
