@@ -916,7 +916,10 @@ export class AiBrainService {
   }): string {
     const trimmedDraft = params.draft.trim();
     const trimmedUserMessage = params.userMessage.trim();
-    const recentVideoContext = this.extractRecentVideoContext(params.recentMessages);
+    const recentVideoContext = this.extractRecentVideoContext(
+      params.recentMessages,
+      trimmedUserMessage,
+    );
     const userAskedAboutVideo = this.isVideoQuestion(trimmedUserMessage);
     if (!trimmedDraft) {
       return this.buildHumanSalesReply({
@@ -992,7 +995,10 @@ export class AiBrainService {
     detectedIntent: string;
   }): string {
     const normalized = params.userMessage.toLowerCase().trim();
-    const recentVideoContext = this.extractRecentVideoContext(params.recentMessages);
+    const recentVideoContext = this.extractRecentVideoContext(
+      params.recentMessages,
+      params.userMessage,
+    );
     const trimmedSenderName = params.senderName?.trim() ?? '';
     const namePrefix = trimmedSenderName.length > 0 ? `${trimmedSenderName}, ` : '';
     const previousClientTopic = [...params.recentMessages]
@@ -1074,38 +1080,114 @@ export class AiBrainService {
 
   private extractRecentVideoContext(
     recentMessages: MessageEntity[],
+    currentUserMessage?: string,
   ): { summary: string; transcript: string | null } | null {
-    for (const message of [...recentMessages].reverse()) {
-      const analysis = this.readRecord(message.metadata?.['videoAnalysis']);
-      const status = this.readString(analysis['status']);
-      if (status !== 'completed') {
-        continue;
-      }
+    const chronologicalMessages = [...recentMessages].sort(
+      (left, right) => left.createdAt.getTime() - right.createdAt.getTime(),
+    );
+    const normalizedCurrentUserMessage = currentUserMessage?.trim() ?? '';
+    const lastClientMessageIndex = this.findLastClientMessageIndex(
+      chronologicalMessages,
+      normalizedCurrentUserMessage,
+    );
 
-      const summary =
-        this.readString(analysis['text']) ||
-        this.readString(analysis['content']) ||
-        message.content.trim();
-      if (!summary) {
-        continue;
+    if (lastClientMessageIndex >= 0) {
+      for (let index = lastClientMessageIndex - 1; index >= 0; index -= 1) {
+        const context = this.readVideoContextFromMessage(chronologicalMessages[index]);
+        if (context != null) {
+          return context;
+        }
       }
+    }
 
-      const transcript = this.readString(analysis['transcript']) || null;
-      return {
-        summary: this.compactVideoSummary(summary),
-        transcript: transcript ? this.compactVideoSummary(transcript) : null,
-      };
+    for (let index = chronologicalMessages.length - 1; index >= 0; index -= 1) {
+      const context = this.readVideoContextFromMessage(chronologicalMessages[index]);
+      if (context != null) {
+        return context;
+      }
     }
 
     return null;
   }
 
+  private findLastClientMessageIndex(
+    recentMessages: MessageEntity[],
+    currentUserMessage: string,
+  ): number {
+    for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
+      const message = recentMessages[index];
+      if (message.sender !== 'client') {
+        continue;
+      }
+
+      const content = message.content.trim();
+      if (currentUserMessage.length === 0 || content === currentUserMessage) {
+        return index;
+      }
+    }
+
+    for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
+      if (recentMessages[index].sender === 'client') {
+        return index;
+      }
+    }
+
+    return -1;
+  }
+
+  private readVideoContextFromMessage(
+    message: MessageEntity,
+  ): { summary: string; transcript: string | null } | null {
+    if (message.sender !== 'client' || message.type !== 'video') {
+      return null;
+    }
+
+    const analysis = this.readRecord(message.metadata?.['videoAnalysis']);
+    const status = this.readString(analysis['status']);
+    if (status !== 'completed') {
+      return null;
+    }
+
+    const summary =
+      this.readString(analysis['text']) ||
+      this.readString(analysis['content']) ||
+      message.content.trim();
+    if (!summary) {
+      return null;
+    }
+
+    const transcript = this.readString(analysis['transcript']) || null;
+    return {
+      summary: this.compactVideoSummary(summary),
+      transcript: transcript ? this.compactTranscriptSummary(transcript) : null,
+    };
+  }
+
   private compactVideoSummary(summary: string): string {
-    return summary
+    const cleaned = summary
       .replace(/contexto del cliente:\s*/gi, '')
       .replace(/resumen del video:\s*/gi, '')
-      .replace(/análisis del video:\s*/gi, '')
-      .replace(/analisis del video:\s*/gi, '')
+      .replace(/transcripci(?:o|ó)n detectada en el video:\s*/gi, '')
+      .replace(/an(?:a|á)lisis del video:?\s*/gi, '')
+      .replace(/inicio del video:?\s*/gi, '')
+      .replace(/fotograma\s*\d+\s*:?/gi, '')
+      .replace(/descripci(?:o|ó)n\s*:?/gi, '')
+      .replace(/introducci(?:o|ó)n\s*:?/gi, '')
+      .replace(/\b\d+\.\s*/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return cleaned
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0)
+      .slice(0, 2)
+      .join(' ');
+  }
+
+  private compactTranscriptSummary(summary: string): string {
+    return summary
+      .replace(/transcripci(?:o|ó)n detectada en el video:\s*/gi, '')
       .replace(/\s+/g, ' ')
       .trim()
       .split(/(?<=[.!?])\s+/)
@@ -1120,11 +1202,26 @@ export class AiBrainService {
     videoContext: { summary: string; transcript: string | null },
   ): string {
     const normalized = userMessage.toLowerCase();
-    if (/(que dice|qué dice|audio|voz|hablan|dicen)/.test(normalized) && videoContext.transcript) {
-      return `En el video se escucha esto, en resumen: ${videoContext.transcript}`;
+    if (/(que dice|qu(?:e|é) dice|audio|voz|hablan|dicen)/.test(normalized) && videoContext.transcript) {
+      return this.buildVideoAnswerReply('En el audio del video se entiende', videoContext.transcript);
     }
 
-    return `En resumen, el video muestra esto: ${videoContext.summary}`;
+    return this.buildVideoAnswerReply('En ese video se ve', videoContext.summary);
+  }
+
+  private buildVideoAnswerReply(prefix: string, content: string): string {
+    const trimmedContent = content.trim().replace(/[.\s]+$/g, '');
+    if (!trimmedContent) {
+      return `${prefix}.`;
+    }
+
+    const loweredContent = trimmedContent.charAt(0).toLowerCase() + trimmedContent.slice(1);
+    if (/^(se ve|se escucha|aparece|muestra|sale|hablan de|dicen|est(?:a|á))\b/i.test(trimmedContent)) {
+      const normalizedPrefix = prefix.replace(/\s+se ve$/i, '');
+      return `${normalizedPrefix} ${loweredContent}.`;
+    }
+
+    return `${prefix} ${loweredContent}.`;
   }
 
   private enforceConversationalStyle(draft: string): string {

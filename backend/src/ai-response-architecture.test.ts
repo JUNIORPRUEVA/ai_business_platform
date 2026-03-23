@@ -202,7 +202,7 @@ test('ai brain answers video questions using the stored video analysis context',
   });
 
   assert.doesNotMatch(normalized, /no puedo transcribir/i);
-  assert.match(normalized, /en el video se escucha esto|en resumen, el video muestra esto/i);
+  assert.match(normalized, /en el audio del video se entiende|en ese video se ve/i);
   assert.match(normalized, /audifonos|correas|accesorios/i);
 });
 
@@ -246,8 +246,134 @@ test('ai brain falls back to the visual summary when asking about a video withou
     detectedIntent: 'general',
   });
 
-  assert.match(normalized, /en resumen, el video muestra esto/i);
+  assert.match(normalized, /en ese video se ve/i);
   assert.match(normalized, /molinillo|especias/i);
+});
+
+test('ai brain uses the nearest previous analyzed video when multiple videos exist in the conversation', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const normalized = (service as any).normalizeAssistantReply({
+    draft: 'En resumen, el video muestra esto: Análisis del Video Fotograma 1: una mujer con audifonos y correas.',
+    userMessage: 'Que dice el video?',
+    recentMessages: [
+      {
+        id: 'video-1',
+        sender: 'client',
+        type: 'video',
+        content: 'Contexto del cliente: envio un video. Resumen del video: una mujer muestra audifonos P9 Ultra 2 y correas de reloj.',
+        createdAt: new Date('2026-03-23T18:20:00.000Z'),
+        metadata: {
+          videoAnalysis: {
+            status: 'completed',
+            text: 'una mujer muestra audifonos P9 Ultra 2 y correas de reloj.',
+            transcript: 'presenta audifonos y accesorios',
+          },
+        },
+      },
+      {
+        id: 'bot-1',
+        sender: 'bot',
+        type: 'text',
+        content: 'Perfecto.',
+        createdAt: new Date('2026-03-23T18:21:00.000Z'),
+      },
+      {
+        id: 'video-2',
+        sender: 'client',
+        type: 'video',
+        content: 'Contexto del cliente: envio un video. Resumen del video: inicia con el logo de FULLTECH y luego muestra informacion de la marca.',
+        createdAt: new Date('2026-03-23T18:46:55.000Z'),
+        metadata: {
+          videoAnalysis: {
+            status: 'completed',
+            text: 'Análisis del Video 1. Introducción: el video inicia con el logo de FULLTECH en fondo negro. Luego muestra informacion breve de la marca.',
+            transcript: 'fulltech soluciones para tu negocio',
+          },
+        },
+      },
+      {
+        id: 'question-1',
+        sender: 'client',
+        type: 'text',
+        content: 'Que dice el video?',
+        createdAt: new Date('2026-03-23T18:47:08.000Z'),
+      },
+    ],
+    senderName: 'Ana',
+    detectedIntent: 'general',
+  });
+
+  assert.match(normalized, /fulltech|negocio/i);
+  assert.doesNotMatch(normalized, /audifonos|correas/i);
+});
+
+test('ai brain cleans technical video summaries before replying', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const normalized = (service as any).normalizeAssistantReply({
+    draft: 'En resumen, el video muestra esto: Análisis del Video Fotograma 1: Descripción: una mujer muestra productos.',
+    userMessage: 'Que muestra el video?',
+    recentMessages: [
+      {
+        sender: 'client',
+        type: 'video',
+        content: 'Contexto del cliente: envio un video. Resumen del video: una mujer muestra un reloj y accesorios.',
+        createdAt: new Date('2026-03-23T18:20:00.000Z'),
+        metadata: {
+          videoAnalysis: {
+            status: 'completed',
+            text: 'Análisis del Video Fotograma 1: Descripción: una mujer muestra un reloj y accesorios sobre la mesa.',
+          },
+        },
+      },
+      {
+        sender: 'client',
+        type: 'text',
+        content: 'Que muestra el video?',
+        createdAt: new Date('2026-03-23T18:21:00.000Z'),
+      },
+    ],
+    senderName: 'Ana',
+    detectedIntent: 'general',
+  });
+
+  assert.doesNotMatch(normalized, /an[aá]lisis del video|fotograma|descripci[oó]n/i);
+  assert.match(normalized, /reloj|accesorios/i);
 });
 
 test('ai brain transcript builder keeps chronological order and ignores operator messages', () => {
