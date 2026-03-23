@@ -123,4 +123,34 @@ export class MessagesService {
       .orderBy('message.created_at', 'DESC')
       .getOne();
   }
+
+  async updateMessageContent(
+    companyId: string,
+    conversationId: string,
+    messageId: string,
+    params: {
+      content: string;
+      type?: MessageType;
+      mediaUrl?: string | null;
+      mimeType?: string | null;
+      fileName?: string | null;
+      duration?: number | null;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<MessageEntity> {
+    const existing = await this.getById(companyId, conversationId, messageId);
+    if (!existing) {
+      throw new NotFoundException('Message not found.');
+    }
+
+    existing.content = params.content;
+    if (params.type !== undefined) existing.type = params.type;
+    if (params.mediaUrl !== undefined) existing.mediaUrl = params.mediaUrl;
+    if (params.mimeType !== undefined) existing.mimeType = params.mimeType;
+    if (params.fileName !== undefined) existing.fileName = params.fileName;
+    if (params.duration !== undefined) existing.duration = params.duration;
+    if (params.metadata !== undefined) existing.metadata = params.metadata;
+
+    return this.messagesRepository.save(existing);
+  }
 }

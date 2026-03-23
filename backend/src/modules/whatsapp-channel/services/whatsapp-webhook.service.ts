@@ -369,7 +369,14 @@ export class WhatsappWebhookService {
       config,
       messageForRealtime.chatId,
       messageForRealtime.id,
-      content.textBody,
+      {
+        messageType: messageForRealtime.messageType,
+        textBody: messageForRealtime.textBody,
+        mediaUrl: messageForRealtime.mediaStoragePath ?? messageForRealtime.mediaUrl,
+        mimeType: messageForRealtime.mimeType,
+        mediaOriginalName: messageForRealtime.mediaOriginalName,
+        durationSeconds: messageForRealtime.durationSeconds,
+      },
       chatIdentityJid,
       canonicalRemoteJid,
     );
@@ -439,7 +446,14 @@ export class WhatsappWebhookService {
     config: WhatsappChannelConfigEntity,
     chatId: string,
     whatsappMessageId: string,
-    textBody: string | null,
+    inboundMessage: {
+      messageType: WhatsappMessageType;
+      textBody: string | null;
+      mediaUrl: string | null;
+      mimeType: string | null;
+      mediaOriginalName: string | null;
+      durationSeconds: number | null;
+    },
     remoteJid: string,
     canonicalRemoteJid?: string | null,
   ): Promise<void> {
@@ -509,10 +523,20 @@ export class WhatsappWebhookService {
       {
         sender: 'client',
         content: (() => {
-          const normalizedText = textBody?.trim() ?? '';
+          const normalizedText = inboundMessage.textBody?.trim() ?? '';
           return normalizedText.length > 0 ? normalizedText : 'Mensaje recibido por WhatsApp.';
         })(),
-        type: 'text',
+        type:
+          inboundMessage.messageType === 'audio' ||
+          inboundMessage.messageType === 'image' ||
+          inboundMessage.messageType === 'video' ||
+          inboundMessage.messageType === 'document'
+            ? inboundMessage.messageType
+            : 'text',
+        mediaUrl: inboundMessage.mediaUrl,
+        mimeType: inboundMessage.mimeType,
+        fileName: inboundMessage.mediaOriginalName,
+        duration: inboundMessage.durationSeconds,
         metadata: {
           source: 'whatsapp-channel-auto-reply',
           botCenterConversationId: chat.id,

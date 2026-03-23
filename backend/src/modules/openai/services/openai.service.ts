@@ -20,6 +20,66 @@ export class OpenAiService {
     private readonly botConfigurationService: BotConfigurationService,
   ) {}
 
+  async transcribeAudio(params: {
+    companyId: string;
+    buffer: Buffer;
+    filename: string;
+    contentType?: string | null;
+    model?: string;
+    timeoutMs?: number;
+  }): Promise<{ text: string; provider: 'openai' | 'mock'; model: string }> {
+    const model = params.model ?? 'gpt-4o-mini-transcribe';
+    const runtime = await this.botConfigurationService.getResolvedOpenAiRuntimeSettings(
+      params.companyId,
+      { model },
+    );
+
+    if (!this.hasUsableCredentials(runtime.apiKey) || !runtime.runtimeEnabled) {
+      return { text: '', provider: 'mock', model };
+    }
+
+    const timeoutMs = params.timeoutMs ?? 60000;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const form = new FormData();
+      form.append(
+        'file',
+        new Blob([Uint8Array.from(params.buffer)], {
+          type: params.contentType?.trim() || 'audio/wav',
+        }),
+        params.filename,
+      );
+      form.append('model', model);
+
+      const response = await fetch(this.resolveAudioTranscriptionUrl(runtime.apiUrl), {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: form,
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(
+          `OpenAI transcription failed status=${response.status} detail=${detail.slice(0, 300)}`,
+        );
+      }
+
+      const data = (await response.json()) as { text?: string };
+      return {
+        text: data.text?.trim() ?? '',
+        provider: 'openai',
+        model,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   async draftResponse(
     request: OpenAiDraftRequest,
   ): Promise<OpenAiDraftResponse> {
@@ -113,6 +173,23 @@ export class OpenAiService {
 
   private hasUsableCredentials(apiKey: string): boolean {
     return Boolean(apiKey && !apiKey.includes('*') && apiKey.startsWith('sk-'));
+  }
+
+  private resolveAudioTranscriptionUrl(chatApiUrl: string): string {
+    const trimmed = chatApiUrl.trim();
+    if (!trimmed) {
+      return 'https://api.openai.com/v1/audio/transcriptions';
+    }
+
+    if (trimmed.endsWith('/chat/completions')) {
+      return `${trimmed.slice(0, -'/chat/completions'.length)}/audio/transcriptions`;
+    }
+
+    if (trimmed.endsWith('/v1')) {
+      return `${trimmed}/audio/transcriptions`;
+    }
+
+    return 'https://api.openai.com/v1/audio/transcriptions';
   }
 
   private buildMockDraft(

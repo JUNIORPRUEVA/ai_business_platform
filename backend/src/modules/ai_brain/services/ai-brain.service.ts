@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -22,6 +22,7 @@ import { ToolEntity } from '../../tools/entities/tool.entity';
 import { ToolsService } from '../../tools/tools.service';
 import { WhatsappMessagingService } from '../../whatsapp-channel/services/whatsapp-messaging.service';
 import { AiBrainLogEntity } from '../entities/ai-brain-log.entity';
+import { AiBrainAudioService } from './ai-brain-audio.service';
 import { AiBrainContextBuilderService } from './ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './ai-brain-document.service';
 import { AiBrainToolRouterService } from './ai-brain-tool-router.service';
@@ -51,6 +52,8 @@ export class AiBrainService {
     private readonly whatsappMessagingService: WhatsappMessagingService,
     @InjectRepository(AiBrainLogEntity)
     private readonly aiBrainLogsRepository: Repository<AiBrainLogEntity>,
+    @Optional()
+    private readonly aiBrainAudioService?: AiBrainAudioService,
   ) {}
 
   async processInboundMessage(params: {
@@ -109,12 +112,17 @@ export class AiBrainService {
         );
       }
 
+      const resolvedInboundMessage = await this.resolveInboundMessageContent(
+        params.companyId,
+        params.conversationId,
+        currentInboundMessage,
+      );
       const recentMessages = await this.messagesService.listRecent(
         params.companyId,
         params.conversationId,
         Math.max(memoryWindowSize, 20),
       );
-      const userMessage = currentInboundMessage?.content?.trim() || '';
+      const userMessage = resolvedInboundMessage.content.trim();
       const contactPhone = (params.contactPhone || contact.phone || '').trim();
       const outboundRemoteJid = (params.remoteJid || '').trim();
 
@@ -956,5 +964,37 @@ export class AiBrainService {
     return typeof value === 'object' && value !== null
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private async resolveInboundMessageContent(
+    companyId: string,
+    conversationId: string,
+    message: MessageEntity,
+  ): Promise<MessageEntity> {
+    if (message.type !== 'audio') {
+      return message;
+    }
+
+    if (!this.aiBrainAudioService) {
+      return message;
+    }
+
+    const resolution = await this.aiBrainAudioService.resolveInboundAudioText({
+      companyId,
+      message,
+    });
+
+    return this.messagesService.updateMessageContent(
+      companyId,
+      conversationId,
+      message.id,
+      {
+        content: resolution.content,
+        metadata: {
+          ...(message.metadata ?? {}),
+          ...resolution.metadataPatch,
+        },
+      },
+    );
   }
 }

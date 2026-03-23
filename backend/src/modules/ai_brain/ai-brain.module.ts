@@ -17,11 +17,13 @@ import { PromptsModule } from '../prompts/prompts.module';
 import { StorageModule } from '../storage/storage.module';
 import { ToolEntity } from '../tools/entities/tool.entity';
 import { ToolsModule } from '../tools/tools.module';
+import { WhatsappMessageEntity } from '../whatsapp-channel/entities/whatsapp-message.entity';
 import { WhatsappChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { AiBrainController } from './controllers/ai-brain.controller';
 import { AiBrainLogEntity } from './entities/ai-brain-log.entity';
 import { ClientMemoryEntity } from './entities/client-memory.entity';
 import { KnowledgeDocumentEntity } from './entities/knowledge-document.entity';
+import { AiBrainAudioService } from './services/ai-brain-audio.service';
 import { AiBrainCacheService } from './services/ai-brain-cache.service';
 import { AiBrainContextBuilderService } from './services/ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './services/ai-brain-document.service';
@@ -37,6 +39,7 @@ import { AiBrainToolRouterService } from './services/ai-brain-tool-router.servic
       AiBrainLogEntity,
       ContactEntity,
       ToolEntity,
+      WhatsappMessageEntity,
     ]),
     BillingModule,
     AiEngineModule,
@@ -56,6 +59,7 @@ import { AiBrainToolRouterService } from './services/ai-brain-tool-router.servic
   ],
   controllers: [AiBrainController],
   providers: [
+    AiBrainAudioService,
     AiBrainCacheService,
     AiBrainDocumentService,
     AiBrainMemoryService,
