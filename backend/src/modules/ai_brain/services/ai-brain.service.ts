@@ -106,12 +106,6 @@ export class AiBrainService {
           `[AI BRAIN] inbound message not found conversationId=${params.conversationId} messageId=${params.messageId}`,
         );
       }
-      if (currentInboundMessage.sender !== 'client') {
-        throw new Error(
-          `[AI BRAIN] latest message must be from user conversationId=${params.conversationId} messageId=${params.messageId} sender=${currentInboundMessage.sender}`,
-        );
-      }
-
       const resolvedInboundMessage = await this.resolveInboundMessageContent(
         params.companyId,
         params.conversationId,
@@ -136,6 +130,7 @@ export class AiBrainService {
         configuration,
         bot,
         channel,
+        sender: resolvedInboundMessage.sender,
         userMessage,
       });
       if (!respondability.ok) {
@@ -632,6 +627,7 @@ export class AiBrainService {
     configuration: BotConfigurationBundle;
     bot: BotEntity;
     channel: ChannelEntity;
+    sender: MessageSender;
     userMessage: string;
   }): { ok: boolean; reason: string } {
     if (!params.configuration.general.isEnabled) {
@@ -646,8 +642,14 @@ export class AiBrainService {
     if (params.channel.status !== 'active') {
       return { ok: false, reason: 'channel_inactive' };
     }
+    if (params.sender === 'bot') {
+      return { ok: false, reason: 'bot_message_ignored' };
+    }
     if (!params.userMessage.trim()) {
       return { ok: false, reason: 'empty_inbound_message' };
+    }
+    if (this.isAudioFallbackPlaceholder(params.userMessage)) {
+      return { ok: false, reason: 'audio_placeholder_ignored' };
     }
     return { ok: true, reason: 'ready' };
   }
@@ -696,7 +698,22 @@ export class AiBrainService {
       .filter((prompt) => prompt.type === 'behavior' || promptTypes.includes(prompt.type))
       .map((prompt) => prompt.content.trim())
       .filter((value) => value.length > 0);
-    const businessRules = [...new Set([...configuredBusinessRules, ...dynamicBusinessRules])];
+    const behaviorGuardrails = [
+      'Siempre responde primero la pregunta real del usuario antes de intentar vender o guiar la conversación.',
+      'Después de responder, guía la conversación de forma natural hacia el siguiente paso comercial.',
+      'Nunca saltes directamente al registro o captura de datos si el usuario no lo pidió explícitamente.',
+      'Nunca repitas en bloque "nombre, teléfono, email" ni solicites esos datos sin contexto.',
+      'Si el usuario pregunta qué venden, explica productos o servicios primero.',
+      'Si el usuario pregunta dónde están, responde con ubicación primero.',
+      'Si el usuario pregunta por precio o costos, responde con precio, rango o forma de cotizar primero.',
+    ];
+    const businessRules = [
+      ...new Set([
+        ...behaviorGuardrails,
+        ...configuredBusinessRules,
+        ...dynamicBusinessRules,
+      ]),
+    ];
 
     return {
       systemInstructions,
@@ -823,7 +840,9 @@ export class AiBrainService {
       normalizedDraft.includes('recibimos tu') ||
       normalizedDraft.includes('la estamos procesando') ||
       normalizedDraft.includes('un asesor puede continuar') ||
-      normalizedDraft.includes('respuesta inmediata con datos exactos');
+      normalizedDraft.includes('respuesta inmediata con datos exactos') ||
+      normalizedDraft.includes('nombre, teléfono, email') ||
+      normalizedDraft.includes('nombre, telefono, email');
 
     const lastAssistantMessage = [...params.recentMessages]
       .reverse()
@@ -885,6 +904,18 @@ export class AiBrainService {
       return shortPreviousTopic != null
         ? `Perfecto 👍 Sobre ${shortPreviousTopic}, ¿prefieres que te muestre precios o las opciones disponibles primero?`
         : 'Perfecto 👍 ¿Quieres que te muestre precios o prefieres ver opciones primero?';
+    }
+
+    if (/(que venden|qué venden|que ofrecen|qué ofrecen|productos|servicios)/.test(normalized)) {
+      return 'Ofrecemos productos y servicios según lo que necesites. Si me dices qué buscas, te explico primero las opciones más relevantes y luego te recomiendo la mejor.';
+    }
+
+    if (/(donde estan|dónde están|ubicacion|ubicación|direccion|dirección)/.test(normalized)) {
+      return 'Te comparto nuestra ubicación con gusto. Si quieres, te doy primero la dirección o la zona y después te indico cómo llegar o qué opción te conviene.';
+    }
+
+    if (/(precio|precios|cu[aá]nto cuesta|cu[aá]nto vale|costo|costos|cotiz)/.test(normalized)) {
+      return 'Claro, te ayudo con precios. Dime qué producto o servicio te interesa y te respondo primero con el precio o el rango correspondiente.';
     }
 
     if (normalized.length <= 12) {
@@ -964,6 +995,13 @@ export class AiBrainService {
     return typeof value === 'object' && value !== null
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private isAudioFallbackPlaceholder(content: string): boolean {
+    const normalized = content.trim().toLowerCase();
+    return normalized.includes('recibí tu audio') ||
+      normalized.includes('recibi tu audio') ||
+      normalized.includes('audio recibido');
   }
 
   private async resolveInboundMessageContent(
