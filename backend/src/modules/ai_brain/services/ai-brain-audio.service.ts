@@ -106,36 +106,48 @@ export class AiBrainAudioService {
     companyId: string,
     message: MessageEntity,
   ): Promise<{ buffer: Buffer; filename: string; contentType: string | null } | null> {
+    const whatsappChannelMessageId =
+      typeof message.metadata?.['whatsappChannelMessageId'] === 'string'
+        ? String(message.metadata['whatsappChannelMessageId']).trim()
+        : '';
+    if (whatsappChannelMessageId) {
+      const whatsappMessage = await this.whatsappMessagesRepository.findOne({
+        where: { id: whatsappChannelMessageId, companyId },
+      });
+      if (whatsappMessage) {
+        const resolvedWhatsappMessageAudio = await this.resolveWhatsappMessageAudioSource(
+          companyId,
+          message,
+          whatsappMessage,
+        );
+        if (resolvedWhatsappMessageAudio) {
+          return resolvedWhatsappMessageAudio;
+        }
+      }
+    }
+
     const directMediaUrl = message.mediaUrl?.trim() ?? '';
     if (!directMediaUrl) {
       this.logger.error(
         `[AI AUDIO] AUDIO WITHOUT MEDIA URL - INVALID FLOW companyId=${companyId} messageId=${message.id}`,
       );
-    }
-
-    if (directMediaUrl) {
-      return this.resolveStoredAsset({
-        companyId,
-        candidate: directMediaUrl,
-        filename: message.fileName ?? `${message.id}${this.extensionFromMimeType(message.mimeType)}`,
-      });
-    }
-
-    const whatsappChannelMessageId =
-      typeof message.metadata?.['whatsappChannelMessageId'] === 'string'
-        ? String(message.metadata['whatsappChannelMessageId']).trim()
-        : '';
-    if (!whatsappChannelMessageId) {
       return null;
     }
 
-    const whatsappMessage = await this.whatsappMessagesRepository.findOne({
-      where: { id: whatsappChannelMessageId, companyId },
+    return this.resolveStoredAsset({
+      companyId,
+      candidate: directMediaUrl,
+      filename: message.fileName ?? `${message.id}${this.extensionFromMimeType(message.mimeType)}`,
+      mimeType: message.mimeType,
+      sourceLabel: 'message_media_url',
     });
-    if (!whatsappMessage) {
-      return null;
-    }
+  }
 
+  private async resolveWhatsappMessageAudioSource(
+    companyId: string,
+    message: MessageEntity,
+    whatsappMessage: WhatsappMessageEntity,
+  ): Promise<{ buffer: Buffer; filename: string; contentType: string | null } | null> {
     const candidate = whatsappMessage.mediaStoragePath ?? whatsappMessage.mediaUrl;
     if (!candidate?.trim()) {
       this.logger.error(
@@ -153,6 +165,9 @@ export class AiBrainAudioService {
       candidate,
       filename,
       channelConfigId: whatsappMessage.channelConfigId,
+      mimeType: whatsappMessage.mimeType,
+      messagePayload: this.extractMessagePayload(whatsappMessage.rawPayloadJson),
+      sourceLabel: 'whatsapp_message',
     });
   }
 
@@ -161,6 +176,9 @@ export class AiBrainAudioService {
     candidate: string | null;
     filename: string;
     channelConfigId?: string | null;
+    mimeType?: string | null;
+    messagePayload?: Record<string, unknown> | null;
+    sourceLabel: string;
   }): Promise<{ buffer: Buffer; filename: string; contentType: string | null } | null> {
     const trimmed = params.candidate?.trim() ?? '';
     if (!trimmed) {
@@ -172,11 +190,17 @@ export class AiBrainAudioService {
         companyId: params.companyId,
         key: trimmed,
       });
-      return {
-        buffer: stored.buffer,
-        filename: params.filename,
-        contentType: stored.contentType,
-      };
+      if (this.looksLikePlayableAudio(stored.buffer, stored.contentType ?? params.mimeType ?? null)) {
+        return {
+          buffer: stored.buffer,
+          filename: params.filename,
+          contentType: stored.contentType,
+        };
+      }
+
+      this.logger.warn(
+        `[AI AUDIO] invalid audio payload source=${params.sourceLabel} mode=storage key=${trimmed} contentType=${stored.contentType ?? params.mimeType ?? '(none)'} bytes=${stored.buffer.length}`,
+      );
     }
 
     if (params.channelConfigId) {
@@ -185,12 +209,50 @@ export class AiBrainAudioService {
         params.channelConfigId,
       );
       const downloaded = await this.evolutionApiClient.downloadMediaUrl(config, trimmed);
-      if (downloaded?.buffer.length) {
+      if (
+        downloaded?.buffer.length &&
+        this.looksLikePlayableAudio(downloaded.buffer, downloaded.contentType ?? params.mimeType ?? null)
+      ) {
         return {
           buffer: downloaded.buffer,
           filename: params.filename,
           contentType: downloaded.contentType,
         };
+      }
+
+      if (downloaded?.buffer.length) {
+        this.logger.warn(
+          `[AI AUDIO] invalid audio payload source=${params.sourceLabel} mode=media-url url=${trimmed} contentType=${downloaded.contentType ?? params.mimeType ?? '(none)'} bytes=${downloaded.buffer.length}`,
+        );
+      }
+
+      if (params.messagePayload && Object.keys(params.messagePayload).length > 0) {
+        const fallbackDownload = await this.evolutionApiClient.downloadMediaMessage(
+          config,
+          params.messagePayload,
+        );
+        if (
+          fallbackDownload?.buffer.length &&
+          this.looksLikePlayableAudio(
+            fallbackDownload.buffer,
+            fallbackDownload.contentType ?? params.mimeType ?? null,
+          )
+        ) {
+          this.logger.log(
+            `[AI AUDIO] resolved audio via message payload source=${params.sourceLabel} contentType=${fallbackDownload.contentType ?? params.mimeType ?? '(none)'} bytes=${fallbackDownload.buffer.length}`,
+          );
+          return {
+            buffer: fallbackDownload.buffer,
+            filename: params.filename,
+            contentType: fallbackDownload.contentType,
+          };
+        }
+
+        if (fallbackDownload?.buffer.length) {
+          this.logger.warn(
+            `[AI AUDIO] invalid audio payload source=${params.sourceLabel} mode=message-payload contentType=${fallbackDownload.contentType ?? params.mimeType ?? '(none)'} bytes=${fallbackDownload.buffer.length}`,
+          );
+        }
       }
     }
 
@@ -199,10 +261,18 @@ export class AiBrainAudioService {
       throw new Error(`audio_download_failed_${response.status}`);
     }
 
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get('content-type');
+    if (!this.looksLikePlayableAudio(buffer, contentType ?? params.mimeType ?? null)) {
+      throw new Error(
+        `audio_download_invalid_payload_${contentType ?? params.mimeType ?? 'unknown'}`,
+      );
+    }
+
     return {
-      buffer: Buffer.from(await response.arrayBuffer()),
+      buffer,
       filename: params.filename,
-      contentType: response.headers.get('content-type'),
+      contentType,
     };
   }
 
@@ -316,5 +386,95 @@ export class AiBrainAudioService {
       default:
         return '.ogg';
     }
+  }
+
+  private extractMessagePayload(rawPayload: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+    const directMessage = this.readMap(rawPayload?.['message']);
+    if (Object.keys(directMessage).length > 0) {
+      return directMessage;
+    }
+
+    const data = this.readMap(rawPayload?.['data']);
+    const dataMessage = this.readMap(data['message']);
+    if (Object.keys(dataMessage).length > 0) {
+      return dataMessage;
+    }
+
+    const messages = Array.isArray(data['messages']) ? data['messages'] : [];
+    for (const entry of messages) {
+      const resolvedMessage = this.readMap(this.readMap(entry)['message']);
+      if (Object.keys(resolvedMessage).length > 0) {
+        return resolvedMessage;
+      }
+    }
+
+    return null;
+  }
+
+  private looksLikePlayableAudio(buffer: Buffer, mimeType: string | null): boolean {
+    if (!buffer.length) {
+      return false;
+    }
+
+    const normalizedMimeType = mimeType?.toLowerCase() ?? '';
+    if (
+      normalizedMimeType.startsWith('audio/') &&
+      normalizedMimeType !== 'application/octet-stream' &&
+      !this.looksLikeStructuredTextPayload(buffer, mimeType)
+    ) {
+      return true;
+    }
+
+    const header = buffer.subarray(0, 16).toString('ascii');
+    if (header.startsWith('OggS')) {
+      return true;
+    }
+    if (header.startsWith('RIFF') && buffer.subarray(8, 12).toString('ascii') === 'WAVE') {
+      return true;
+    }
+    if (header.startsWith('ID3')) {
+      return true;
+    }
+    if (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) {
+      return true;
+    }
+    if (header.includes('ftyp')) {
+      return true;
+    }
+    if (header.startsWith('fLaC')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private looksLikeStructuredTextPayload(buffer: Buffer, mimeType: string | null): boolean {
+    const normalizedMimeType = mimeType?.toLowerCase() ?? '';
+    if (normalizedMimeType.includes('json') || normalizedMimeType.startsWith('text/')) {
+      return true;
+    }
+
+    const preview = buffer
+      .subarray(0, Math.min(buffer.length, 120))
+      .toString('utf8')
+      .trim();
+
+    if (!preview) {
+      return false;
+    }
+
+    return (
+      preview.startsWith('{') ||
+      preview.startsWith('[') ||
+      preview.startsWith('<?xml') ||
+      preview.startsWith('<html') ||
+      preview.startsWith('data:')
+    );
+  }
+
+  private readMap(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   }
 }

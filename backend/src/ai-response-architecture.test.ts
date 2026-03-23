@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { AiBrainAudioService } from './modules/ai_brain/services/ai-brain-audio.service';
 import { AiBrainContextBuilderService } from './modules/ai_brain/services/ai-brain-context-builder.service';
 import { AiBrainService } from './modules/ai_brain/services/ai-brain.service';
 import { OpenAiService } from './modules/openai/services/openai.service';
@@ -237,6 +238,82 @@ test('ai brain prioriza el prompt configurado en bot-configuration sobre otras f
       /responde primero la pregunta real del usuario/i.test(rule),
     ),
   );
+});
+
+test('ai brain audio recupera audio real desde rawPayloadJson cuando el storage guardado no es reproducible', async () => {
+  const service = Object.create(AiBrainAudioService.prototype) as AiBrainAudioService;
+  Object.assign(service as object, {
+    logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+    whatsappMessagesRepository: {
+      findOne: async () => ({
+        id: 'wa-message-1',
+        companyId: 'company-1',
+        channelConfigId: 'config-1',
+        mediaStoragePath: 'company-1/media/audio-invalid.ogg',
+        mediaUrl: 'https://mmg.whatsapp.net/fake.enc',
+        mediaOriginalName: 'voice-note.ogg',
+        mimeType: 'audio/ogg; codecs=opus',
+        rawPayloadJson: {
+          data: {
+            message: {
+              audioMessage: {
+                mimetype: 'audio/ogg; codecs=opus',
+              },
+            },
+          },
+        },
+      }),
+    },
+    storageService: {
+      getObjectBuffer: async () => ({
+        buffer: Buffer.alloc(4096, 0xab),
+        contentType: 'application/octet-stream',
+      }),
+    },
+    whatsappChannelConfigService: {
+      getEntityById: async () => ({ id: 'config-1' }),
+    },
+    evolutionApiClient: {
+      downloadMediaUrl: async () => ({
+        buffer: Buffer.alloc(4096, 0xab),
+        contentType: 'application/octet-stream',
+      }),
+      downloadMediaMessage: async () => ({
+        buffer: Buffer.from([0x4f, 0x67, 0x67, 0x53, 0x00, 0x02, 0x00, 0x00]),
+        contentType: 'audio/ogg',
+      }),
+    },
+  });
+
+  const resolveAudioSource = (
+    service as unknown as {
+      resolveAudioSource: (
+        companyId: string,
+        message: {
+          id: string;
+          mediaUrl: string | null;
+          fileName: string | null;
+          mimeType: string | null;
+          metadata: Record<string, unknown>;
+        },
+      ) => Promise<{ buffer: Buffer; filename: string; contentType: string | null } | null>;
+    }
+  ).resolveAudioSource.bind(service);
+
+  const resolved = await resolveAudioSource('company-1', {
+    id: 'app-message-1',
+    mediaUrl: 'company-1/media/audio-invalid.ogg',
+    fileName: 'voice-note.ogg',
+    mimeType: 'audio/ogg; codecs=opus',
+    metadata: {
+      whatsappChannelMessageId: 'wa-message-1',
+    },
+  });
+
+  assert.ok(resolved);
+  assert.equal(resolved?.filename, 'voice-note.ogg');
+  assert.equal(resolved?.contentType, 'audio/ogg');
+  assert.equal(resolved?.buffer.subarray(0, 4).toString('ascii'), 'OggS');
 });
 
 test('ai brain rejects openai payloads when the last message is not the latest user input', () => {
