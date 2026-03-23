@@ -494,11 +494,36 @@ export class WhatsappAttachmentService {
       return false;
     }
 
+    if (fileType === 'image') {
+      return this.looksLikeSupportedImage(value.buffer, resolvedMimeType);
+    }
+
     if (fileType !== 'audio') {
       return true;
     }
 
     return this.looksLikePlayableAudio(value.buffer, resolvedMimeType);
+  }
+
+  private looksLikeSupportedImage(buffer: Buffer, mimeType: string | null): boolean {
+    if (!buffer.length) {
+      return false;
+    }
+
+    const normalizedMimeType = mimeType?.toLowerCase() ?? '';
+    const detectedMimeType = this.detectMimeTypeFromBuffer(buffer, 'image');
+    if (
+      detectedMimeType &&
+      ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(detectedMimeType)
+    ) {
+      return true;
+    }
+
+    if (normalizedMimeType.startsWith('image/') && normalizedMimeType !== 'application/octet-stream') {
+      return Boolean(detectedMimeType);
+    }
+
+    return false;
   }
 
   private looksLikePlayableAudio(buffer: Buffer, mimeType: string | null): boolean {

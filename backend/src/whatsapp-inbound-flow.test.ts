@@ -313,6 +313,48 @@ test('WhatsappAttachmentService usa el endpoint de Evolution cuando la URL trae 
   assert.equal(resolved?.buffer.subarray(0, 4).toString('ascii'), 'OggS');
 });
 
+test('WhatsappAttachmentService usa el endpoint de Evolution cuando la URL trae una imagen octet-stream no reconocible', async () => {
+  const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
+  const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  Object.assign(service as object, {
+    logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
+    evolutionApiClient: {
+      downloadMediaUrl: async () => ({
+        buffer: Buffer.alloc(4096, 0xab),
+        contentType: 'application/octet-stream',
+      }),
+      downloadMediaMessage: async () => ({
+        buffer: pngHeader,
+        contentType: 'image/png',
+      }),
+    },
+  });
+
+  const resolveInboundDownload = (
+    service as unknown as {
+      resolveInboundDownload: (params: {
+        config: Record<string, unknown>;
+        fileType: string;
+        mimeType?: string | null;
+        sourceUrl?: string | null;
+        messagePayload: Record<string, unknown>;
+      }) => Promise<{ buffer: Buffer; contentType: string | null } | null>;
+    }
+  ).resolveInboundDownload.bind(service);
+
+  const resolved = await resolveInboundDownload({
+    config: {},
+    fileType: 'image',
+    mimeType: 'image/jpeg',
+    sourceUrl: 'https://mmg.whatsapp.net/fake-image.enc',
+    messagePayload: { imageMessage: { mimetype: 'image/jpeg' } },
+  });
+
+  assert.ok(resolved);
+  assert.equal(resolved?.contentType, 'image/png');
+  assert.deepEqual(resolved?.buffer, pngHeader);
+});
+
 test('WhatsappAttachmentService decodifica payload base64 antes de persistir media', async () => {
   const service = Object.create(WhatsappAttachmentService.prototype) as WhatsappAttachmentService;
   const prepareUploadPayload = (
