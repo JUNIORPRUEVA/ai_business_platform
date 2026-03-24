@@ -854,8 +854,11 @@ export class AiBrainService {
     );
     const previewSystemPrompt = configuration.openai.systemPromptPreview.trim();
 
-    const systemInstructions = activeSystemPrompt || previewSystemPrompt;
-    const systemSource = activeSystemPrompt
+    const systemInstructions =
+      configuredPrimaryPrompt || activeSystemPrompt || previewSystemPrompt;
+    const systemSource = configuredPrimaryPrompt
+      ? 'bot_configuration.prompts[0]'
+      : activeSystemPrompt
         ? 'prompts.system.active'
         : 'openai.systemPromptPreview';
 
@@ -874,10 +877,16 @@ export class AiBrainService {
       .slice(1)
       .map((prompt) => this.sanitizeConfiguredPrompt(prompt.content))
       .filter((value) => value.length > 0);
-    const dynamicBusinessRules = activePrompts
-      .filter((prompt) => prompt.type === 'behavior' || promptTypes.includes(prompt.type))
-      .map((prompt) => this.sanitizeConfiguredPrompt(prompt.content))
-      .filter((value) => value.length > 0);
+    // Avoid mixing legacy DB prompts with the current bot-configuration prompt pack.
+    // The prompt module can keep a system fallback, but behavior prompts from there
+    // tend to re-introduce robotic phrasing and conflicting guidance.
+    const dynamicBusinessRules =
+      configuredPrimaryPrompt.length > 0
+        ? []
+        : activePrompts
+            .filter((prompt) => prompt.type === 'behavior' || promptTypes.includes(prompt.type))
+            .map((prompt) => this.sanitizeConfiguredPrompt(prompt.content))
+            .filter((value) => value.length > 0);
     const behaviorGuardrails = [
       'Siempre responde primero la pregunta real del usuario antes de intentar vender o guiar la conversación.',
       'Nunca reformules, repitas ni devuelvas la misma pregunta del cliente como si fuera tu respuesta.',
@@ -1047,6 +1056,7 @@ export class AiBrainService {
       normalizedDraft.includes('ademas, si buscas soluciones tecnologicas') ||
       normalizedDraft.includes('estoy aquí para ayudarte') ||
       normalizedDraft.includes('estoy aqui para ayudarte') ||
+      normalizedDraft.includes('continua la conversacion sobre') ||
       normalizedDraft.includes('no puedo transcribir el contenido del video') ||
       normalizedDraft.includes('no puedo analizarlo directamente') ||
       normalizedDraft.includes('si hay algo específico que te gustaría saber') ||
@@ -1054,6 +1064,8 @@ export class AiBrainService {
       normalizedDraft.includes('nombre, teléfono, email') ||
       normalizedDraft.includes('nombre, telefono, email') ||
       normalizedDraft.includes('seguimos con') ||
+      normalizedDraft.includes('te ayudo con eso') ||
+      normalizedDraft.includes('te recomiendo algo') ||
       /^(entiendo|claro|perfecto|ok|vale)\b/.test(normalizedDraft) && normalizedDraft.includes('?');
 
     const echoesUserQuestion = this.isQuestionEcho(conversationalDraft, trimmedUserMessage);
@@ -1168,7 +1180,11 @@ export class AiBrainService {
       return 'Cuéntame qué te está fallando y lo revisamos.';
     }
 
-    return 'Claro. Te ayudo con eso.';
+    if (params.detectedIntent === 'sales') {
+      return 'Perfecto. Cuéntame cuál producto o servicio te interesa y te doy los detalles claros.';
+    }
+
+    return 'Perfecto. Cuéntame un poco más y te respondo directo.';
   }
 
   private sanitizeConfiguredPrompt(content: string): string {
@@ -1176,8 +1192,11 @@ export class AiBrainService {
       .trim()
       .replace(/\s+/g, ' ')
       .replace(/seguimos con/gi, 'continua la conversacion sobre')
+      .replace(/continua la conversacion sobre/gi, '')
       .replace(/¿quieres que te recomiende algo\?/gi, '')
       .replace(/\?quieres que te recomiende algo\?/gi, '')
+      .replace(/quieres que te recomiende algo/gi, '')
+      .replace(/te ayudo con eso/gi, '')
       .replace(/repite la pregunta del cliente/gi, '')
       .replace(/reformular la pregunta del cliente/gi, '')
       .replace(/reformula la pregunta del cliente/gi, '')
