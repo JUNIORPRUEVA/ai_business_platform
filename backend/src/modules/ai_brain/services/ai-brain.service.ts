@@ -851,7 +851,7 @@ export class AiBrainService {
       'Siempre responde primero la pregunta real del usuario antes de intentar vender o guiar la conversación.',
       'Después de responder, guía la conversación de forma natural hacia el siguiente paso comercial.',
       'Responde como una persona real por WhatsApp, no como soporte genérico ni como folleto.',
-      'Usa normalmente 1 o 2 frases cortas; evita párrafos largos.',
+      'Usa normalmente entre 2 y 4 frases cortas cuando haga falta contexto; evita párrafos largos y pesados.',
       'No uses lenguaje técnico, rebuscado o demasiado formal si el cliente no lo pide.',
       'Haz como máximo una pregunta corta para mover la conversación.',
       'Nunca saltes directamente al registro o captura de datos si el usuario no lo pidió explícitamente.',
@@ -859,6 +859,7 @@ export class AiBrainService {
       'Si el usuario pregunta qué venden, explica productos o servicios primero.',
       'Si el usuario pregunta dónde están, responde con ubicación primero.',
       'Si el usuario pregunta por precio o costos, responde con precio, rango o forma de cotizar primero.',
+      'No digas que la informacion viene de un documento, archivo, base de conocimiento o fuente interna, a menos que el usuario lo pida.',
     ];
     const businessRules = [
       ...new Set([
@@ -1405,14 +1406,14 @@ export class AiBrainService {
     }
 
     if (/(monto|total|importe|precio|valor)/.test(normalized) && documentContext.totalAmount) {
-      return `El total que aparece en el documento es ${documentContext.totalAmount}.`;
+      return `El total es ${documentContext.totalAmount}.`;
     }
 
     if (/(vence|v[aá]lida|vigencia|hasta cuando)/.test(normalized) && documentContext.validUntil) {
-      return `La vigencia que aparece en el documento es hasta ${documentContext.validUntil}.`;
+      return `La vigencia es hasta ${documentContext.validUntil}.`;
     }
 
-    return `En el documento aparece ${documentContext.summary}.`;
+    return `${documentContext.summary}.`;
   }
 
   private enforceConversationalStyle(draft: string): string {
@@ -1427,13 +1428,14 @@ export class AiBrainService {
       .map((sentence) => sentence.trim())
       .filter((sentence) => sentence.length > 0);
 
-    const shortened = sentences.length <= 2
+    const shortened = sentences.length <= 4
       ? sentences.join(' ')
-      : sentences.slice(0, 2).join(' ');
+      : sentences.slice(0, 4).join(' ');
 
     return shortened
       .replace(/\s{2,}/g, ' ')
       .replace(/\s+([,.!?])/g, '$1')
+      .slice(0, 520)
       .trim();
   }
 
