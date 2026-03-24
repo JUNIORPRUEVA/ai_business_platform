@@ -75,6 +75,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
   bool _isTesting = false;
   bool _isLoading = false;
   bool _isUploadingDocument = false;
+  bool _isReindexingDocument = false;
   bool _isProvisioningEvolution = false;
   bool _isRefreshingEvolution = false;
   bool _isApplyingBundleToControllers = false;
@@ -105,6 +106,7 @@ class BotConfigurationCenterController extends ChangeNotifier {
   bool get isTesting => _isTesting;
   bool get isLoading => _isLoading;
   bool get isUploadingDocument => _isUploadingDocument;
+  bool get isReindexingDocument => _isReindexingDocument;
   bool get isProvisioningEvolution => _isProvisioningEvolution;
   bool get isRefreshingEvolution => _isRefreshingEvolution;
   BotConfigurationSection? get activeSaveSection => _activeSaveSection;
@@ -491,14 +493,14 @@ class BotConfigurationCenterController extends ChangeNotifier {
           'contentType': contentType,
           'kind': _inferDocumentKind(file.name),
           'size': file.size,
-          'summary':
-              'Documento empresarial cargado desde la consola de configuración.',
+          'summary': '',
         },
         token: token,
       );
 
       await load();
-      _successMessage = 'Documento cargado y registrado correctamente.';
+      _successMessage =
+          'Documento cargado. La indexacion se ejecuta en segundo plano y el estado se actualizara aqui.';
     } on BotConfigurationCenterApiException catch (error) {
       _errorMessage = error.message;
     } catch (error) {
@@ -535,6 +537,31 @@ class BotConfigurationCenterController extends ChangeNotifier {
     } finally {
       _isUploadingDocument = false;
       _scheduleLocalPersist();
+      notifyListeners();
+    }
+  }
+
+  Future<void> reindexDocument(String documentId) async {
+    _clearBanners();
+    _isReindexingDocument = true;
+    notifyListeners();
+
+    try {
+      final token = await _requireToken();
+      await _apiClient.postJson(
+        '/ai-brain/documents/$documentId/reindex',
+        const <String, dynamic>{},
+        token: token,
+      );
+      await load();
+      _successMessage =
+          'Documento enviado a reindexacion. El estado cambiara a medida que se procese.';
+    } on BotConfigurationCenterApiException catch (error) {
+      _errorMessage = error.message;
+    } catch (error) {
+      _errorMessage = error.toString();
+    } finally {
+      _isReindexingDocument = false;
       notifyListeners();
     }
   }
@@ -1361,6 +1388,9 @@ class BotConfigurationCenterController extends ChangeNotifier {
               'kind': document.kind,
               'sizeLabel': document.sizeLabel,
               'isEnabled': document.isEnabled,
+              'chunkCount': document.chunkCount,
+              'indexingError': document.indexingError,
+              'updatedAt': document.updatedAt?.toIso8601String(),
             },
           )
           .toList(growable: false),

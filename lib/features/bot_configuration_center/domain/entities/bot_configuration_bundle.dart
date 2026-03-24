@@ -282,6 +282,9 @@ class KnowledgeDocumentConfig {
     required this.kind,
     required this.sizeLabel,
     required this.isEnabled,
+    required this.chunkCount,
+    required this.indexingError,
+    required this.updatedAt,
   });
 
   final String id;
@@ -291,6 +294,9 @@ class KnowledgeDocumentConfig {
   final String kind;
   final String sizeLabel;
   final bool isEnabled;
+  final int? chunkCount;
+  final String? indexingError;
+  final DateTime? updatedAt;
 
   KnowledgeDocumentConfig copyWith({
     String? id,
@@ -300,6 +306,9 @@ class KnowledgeDocumentConfig {
     String? kind,
     String? sizeLabel,
     bool? isEnabled,
+    int? chunkCount,
+    String? indexingError,
+    DateTime? updatedAt,
   }) {
     return KnowledgeDocumentConfig(
       id: id ?? this.id,
@@ -309,6 +318,9 @@ class KnowledgeDocumentConfig {
       kind: kind ?? this.kind,
       sizeLabel: sizeLabel ?? this.sizeLabel,
       isEnabled: isEnabled ?? this.isEnabled,
+      chunkCount: chunkCount ?? this.chunkCount,
+      indexingError: indexingError ?? this.indexingError,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }

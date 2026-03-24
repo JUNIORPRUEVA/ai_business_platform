@@ -649,8 +649,6 @@ class PromptsSettingsSection extends StatelessWidget {
     final prompts = controller.bundle.prompts;
     final selectedPrompt = controller.selectedPrompt;
     final selectedPromptContent = selectedPrompt.content;
-    final promptLength = selectedPromptContent.trim().length;
-    final isPromptTooLong = promptLength > _recommendedPromptMaxChars;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1003,6 +1001,7 @@ class DocumentsSettingsSection extends StatelessWidget {
                           backgroundColor: const Color(0xFFF8FAFC),
                           foregroundColor: const Color(0xFF334155),
                         ),
+                        _buildDocumentStatusChip(selectedDocument.status),
                         _EditorStatusChip(
                           label: selectedDocument.isEnabled
                               ? 'Disponible para respuestas'
@@ -1041,6 +1040,68 @@ class DocumentsSettingsSection extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 16),
+                    if (selectedDocument.chunkCount != null ||
+                        selectedDocument.updatedAt != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                        ),
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          children: [
+                            if (selectedDocument.chunkCount != null)
+                              Text(
+                                'Chunks indexados: ${selectedDocument.chunkCount}',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            if (selectedDocument.updatedAt != null)
+                              Text(
+                                'Actualizado: ${_formatTimestamp(selectedDocument.updatedAt!)}',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if ((selectedDocument.indexingError ?? '').trim().isNotEmpty) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Ultimo error de indexacion',
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: const Color(0xFF991B1B),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              selectedDocument.indexingError!,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: const Color(0xFF991B1B),
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     Expanded(
                       child: _InnerPanelSurface(
                         title: 'Resumen operativo para el bot',
@@ -1077,6 +1138,19 @@ class DocumentsSettingsSection extends StatelessWidget {
                                   ),
                           icon: const Icon(Icons.delete_outline_rounded),
                           label: const Text('Eliminar'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: controller.isReindexingDocument
+                              ? null
+                              : () => controller.reindexDocument(
+                                    selectedDocument.id,
+                                  ),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text(
+                            controller.isReindexingDocument
+                                ? 'Reindexando...'
+                                : 'Reindexar',
+                          ),
                         ),
                         SectionActionBar(
                           onSave: () => controller
@@ -1144,6 +1218,47 @@ class _EditorStatusChip extends StatelessWidget {
             ),
       ),
     );
+  }
+}
+
+_EditorStatusChip _buildDocumentStatusChip(String status) {
+  switch (status.toLowerCase()) {
+    case 'listo':
+      return const _EditorStatusChip(
+        label: 'Listo',
+        backgroundColor: Color(0xFFDCFCE7),
+        foregroundColor: Color(0xFF166534),
+      );
+    case 'indexando':
+      return const _EditorStatusChip(
+        label: 'Indexando',
+        backgroundColor: Color(0xFFDBEAFE),
+        foregroundColor: Color(0xFF1D4ED8),
+      );
+    case 'pendiente de indexar':
+      return const _EditorStatusChip(
+        label: 'Pendiente de indexar',
+        backgroundColor: Color(0xFFFEF3C7),
+        foregroundColor: Color(0xFF92400E),
+      );
+    case 'fallido':
+      return const _EditorStatusChip(
+        label: 'Fallido',
+        backgroundColor: Color(0xFFFEE2E2),
+        foregroundColor: Color(0xFF991B1B),
+      );
+    case 'deshabilitado':
+      return const _EditorStatusChip(
+        label: 'Deshabilitado',
+        backgroundColor: Color(0xFFE2E8F0),
+        foregroundColor: Color(0xFF475569),
+      );
+    default:
+      return _EditorStatusChip(
+        label: status,
+        backgroundColor: const Color(0xFFF8FAFC),
+        foregroundColor: const Color(0xFF334155),
+      );
   }
 }
 

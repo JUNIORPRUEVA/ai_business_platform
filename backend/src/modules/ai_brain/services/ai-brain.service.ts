@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+﻿import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -27,8 +27,10 @@ import { AiBrainAudioService } from './ai-brain-audio.service';
 import { AiBrainCacheService } from './ai-brain-cache.service';
 import { AiBrainContextBuilderService } from './ai-brain-context-builder.service';
 import { AiBrainDocumentService } from './ai-brain-document.service';
+import { AiBrainEmbeddingService } from './ai-brain-embedding.service';
 import { AiBrainInboundDocumentService } from './ai-brain-inbound-document.service';
 import { AiBrainImageService } from './ai-brain-image.service';
+import { AiBrainKnowledgeChunkService } from './ai-brain-knowledge-chunk.service';
 import { AiBrainToolRouterService } from './ai-brain-tool-router.service';
 import { AiBrainVideoService } from './ai-brain-video.service';
 
@@ -69,6 +71,10 @@ export class AiBrainService {
     private readonly aiBrainVideoService?: AiBrainVideoService,
     @Optional()
     private readonly aiBrainInboundDocumentService?: AiBrainInboundDocumentService,
+    @Optional()
+    private readonly aiBrainEmbeddingService?: AiBrainEmbeddingService,
+    @Optional()
+    private readonly aiBrainKnowledgeChunkService?: AiBrainKnowledgeChunkService,
   ) {}
 
   async processInboundMessage(params: {
@@ -272,6 +278,11 @@ export class AiBrainService {
         this.listAvailableDocumentsCached(params.companyId, bot.id),
         this.memoryService.getContactMemoryMap(params.companyId, contact.id),
       ]);
+      const retrievedKnowledge = await this.retrieveKnowledgeForMessage({
+        companyId: params.companyId,
+        botId: bot.id,
+        incomingMessage: userMessage,
+      });
 
       const memoryFacts = [
         ...assembledMemory.keyFacts.map((item) => ({
@@ -300,6 +311,7 @@ export class AiBrainService {
         `[AI BRAIN] memory loaded summary=${assembledMemory.summary != null} facts=${assembledMemory.keyFacts.length} window=${assembledMemory.recentWindow.length}`,
       );
       this.logger.log(`[AI BRAIN] tools resolved count=${activeTools.length}`);
+      this.logger.log(`[AI BRAIN] retrieved knowledge chunks=${retrievedKnowledge.length}`);
 
       const recentTranscriptMessages = this.buildRecentTranscriptMessages(
         recentMessages,
@@ -311,6 +323,7 @@ export class AiBrainService {
         contact,
         memoryItems: memoryFacts,
         documents,
+        retrievedKnowledge,
         activeTools,
         assembledMemoryContext: assembledMemory.contextText,
         detectedIntent,
@@ -703,6 +716,45 @@ export class AiBrainService {
       AiBrainService.aiResourceCacheTtlSeconds,
     );
     return resolved;
+  }
+
+  private async retrieveKnowledgeForMessage(params: {
+    companyId: string;
+    botId: string;
+    incomingMessage: string;
+  }) {
+    const query = params.incomingMessage.trim();
+    if (!query) {
+      return [];
+    }
+
+    try {
+      if (!this.aiBrainEmbeddingService || !this.aiBrainKnowledgeChunkService) {
+        return [];
+      }
+
+      const embeddingResult = await this.aiBrainEmbeddingService.embedTexts({
+        companyId: params.companyId,
+        texts: [query],
+      });
+      const [embedding] = embeddingResult.vectors;
+      if (!embedding || embedding.length === 0) {
+        return [];
+      }
+
+      return this.aiBrainKnowledgeChunkService.searchRelevantChunks({
+        companyId: params.companyId,
+        botId: params.botId,
+        embedding,
+        limit: 6,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      this.logger.warn(
+        `[AI BRAIN] knowledge retrieval failed companyId=${params.companyId} botId=${params.botId} reason=${message}`,
+      );
+      return [];
+    }
   }
 
   private async resolveActiveBot(companyId: string, channel: ChannelEntity): Promise<BotEntity> {

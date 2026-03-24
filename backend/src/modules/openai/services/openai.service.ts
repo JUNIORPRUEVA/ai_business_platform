@@ -355,6 +355,77 @@ export class OpenAiService {
     return context ? `${prompt}\n\nMemory context:\n${context}` : prompt;
   }
 
+  async createEmbeddings(params: {
+    companyId: string;
+    texts: string[];
+    model?: string;
+    timeoutMs?: number;
+  }): Promise<{ vectors: number[][]; provider: 'openai' | 'mock'; model: string }> {
+    const model = params.model ?? 'text-embedding-3-small';
+    const runtime = await this.botConfigurationService.getResolvedOpenAiRuntimeSettings(
+      params.companyId,
+      { model },
+    );
+
+    if (!this.hasUsableCredentials(runtime.apiKey) || !runtime.runtimeEnabled) {
+      this.logger.warn(
+        `[OPENAI EMBEDDINGS] mock fallback enabled reason=${!runtime.runtimeEnabled ? 'openai_disabled' : 'missing_or_invalid_api_key'} model=${model} source=${runtime.source}`,
+      );
+      return {
+        vectors: params.texts.map((text) => this.buildMockEmbedding(text)),
+        provider: 'mock',
+        model,
+      };
+    }
+
+    const timeoutMs = params.timeoutMs ?? 45000;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(this.resolveEmbeddingsUrl(runtime.apiUrl), {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          input: params.texts,
+        }),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(
+          `OpenAI embeddings failed status=${response.status} detail=${detail.slice(0, 300)}`,
+        );
+      }
+
+      const data = (await response.json()) as {
+        data?: Array<{ embedding?: number[] }>;
+      };
+
+      return {
+        vectors: (data.data ?? []).map((item) => item.embedding ?? []),
+        provider: 'openai',
+        model,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `[OPENAI EMBEDDINGS] request exception model=${model} reason=${error instanceof Error ? error.message : 'unknown_error'}`,
+      );
+      return {
+        vectors: params.texts.map((text) => this.buildMockEmbedding(text)),
+        provider: 'mock',
+        model,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   private hasUsableCredentials(apiKey: string): boolean {
     return Boolean(apiKey && !apiKey.includes('*') && apiKey.startsWith('sk-'));
   }
@@ -374,6 +445,40 @@ export class OpenAiService {
     }
 
     return 'https://api.openai.com/v1/audio/transcriptions';
+  }
+
+  private resolveEmbeddingsUrl(chatApiUrl: string): string {
+    const trimmed = chatApiUrl.trim();
+    if (!trimmed) {
+      return 'https://api.openai.com/v1/embeddings';
+    }
+
+    if (trimmed.endsWith('/chat/completions')) {
+      return `${trimmed.slice(0, -'/chat/completions'.length)}/embeddings`;
+    }
+
+    if (trimmed.endsWith('/v1')) {
+      return `${trimmed}/embeddings`;
+    }
+
+    return 'https://api.openai.com/v1/embeddings';
+  }
+
+  private buildMockEmbedding(text: string): number[] {
+    const size = 1536;
+    const vector = new Array<number>(size).fill(0);
+    let seed = 2166136261;
+
+    for (let index = 0; index < text.length; index += 1) {
+      seed ^= text.charCodeAt(index);
+      seed = Math.imul(seed, 16777619);
+      const slot = Math.abs(seed) % size;
+      vector[slot] += ((seed % 2000) - 1000) / 1000;
+    }
+
+    const magnitude =
+      Math.sqrt(vector.reduce((total, value) => total + (value * value), 0)) || 1;
+    return vector.map((value) => Number((value / magnitude).toFixed(8)));
   }
 
   private buildMockDraft(

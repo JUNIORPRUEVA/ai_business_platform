@@ -82,6 +82,12 @@ export class AiBrainController {
   }
 
   @Roles('admin', 'operator')
+  @Post('documents/:id/reindex')
+  reindexDocument(@CurrentUser() user: AuthUser, @Param() params: IdParam) {
+    return this.aiBrainDocumentService.reindex(user.companyId, params.id);
+  }
+
+  @Roles('admin', 'operator')
   @Delete('documents/:id')
   removeDocument(@CurrentUser() user: AuthUser, @Param() params: IdParam) {
     return this.aiBrainDocumentService.remove(user.companyId, params.id);

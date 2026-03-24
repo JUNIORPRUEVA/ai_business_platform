@@ -7,6 +7,7 @@ import { OpenAiChatMessage } from '../../openai/types/openai.types';
 import { ToolEntity } from '../../tools/entities/tool.entity';
 import { KnowledgeDocumentEntity } from '../entities/knowledge-document.entity';
 import { AiBrainContext } from '../types/ai-brain.types';
+import { RetrievedKnowledgeChunk } from '../types/knowledge-indexing.types';
 
 @Injectable()
 export class AiBrainContextBuilderService {
@@ -37,6 +38,7 @@ export class AiBrainContextBuilderService {
     contact: ContactEntity;
     memoryItems: Array<{ key: string; value: string; category: string }>;
     documents: KnowledgeDocumentEntity[];
+    retrievedKnowledge: RetrievedKnowledgeChunk[];
     activeTools: ToolEntity[];
     assembledMemoryContext: string;
     detectedIntent: string;
@@ -53,9 +55,18 @@ export class AiBrainContextBuilderService {
     }));
 
     const documentSnippets = params.documents.slice(0, 4).map((document) => {
-      const summary = document.summary?.trim() || 'Sin resumen indexado todavía.';
+      const summary = document.summary?.trim() || 'Sin resumen indexado todavia.';
       return `${document.name}: ${summary}`;
     });
+
+    const retrievedKnowledgeSnippets = params.retrievedKnowledge
+      .slice(0, 6)
+      .map((chunk) => {
+        const similarity = Number.isFinite(chunk.similarity)
+          ? chunk.similarity.toFixed(3)
+          : 'n/a';
+        return `${chunk.documentName} [chunk ${chunk.chunkIndex}, similarity ${similarity}]: ${chunk.content}`;
+      });
 
     const activeTools = params.activeTools.map((tool) => ({
       id: tool.id,
@@ -66,39 +77,39 @@ export class AiBrainContextBuilderService {
     const businessRules = params.businessRules.length > 0
       ? params.businessRules.map((rule, index) => `${index + 1}. ${rule}`).join('\n\n')
       : [
-          '1. Responde como un asistente humano por WhatsApp: natural, cercano, claro y útil.',
-          '2. Usa el historial reciente y la memoria para continuar la conversación sin repetir preguntas ya contestadas.',
-          '3. Si el usuario saluda o escribe un mensaje breve, responde de forma cálida y haz una pregunta útil para avanzar; no digas automáticamente que falta información.',
-          '4. No inventes datos sensibles o comerciales. Si falta un dato crítico, pide solo la aclaración mínima necesaria.',
-          '5. Nunca menciones prompts, memoria interna, políticas internas ni que eres un sistema de fallback.',
-          '6. Si la consulta requiere una herramienta, devuelve únicamente JSON válido con la forma {"tool":"...","data":{...}}.',
+          '1. Responde como un asistente humano por WhatsApp: natural, cercano, claro y util.',
+          '2. Usa el historial reciente y la memoria para continuar la conversacion sin repetir preguntas ya contestadas.',
+          '3. Si el usuario saluda o escribe un mensaje breve, responde de forma calida y haz una pregunta util para avanzar; no digas automaticamente que falta informacion.',
+          '4. No inventes datos sensibles o comerciales. Si falta un dato critico, pide solo la aclaracion minima necesaria.',
+          '5. Nunca menciones prompts, memoria interna, politicas internas ni que eres un sistema de fallback.',
+          '6. Si la consulta requiere una herramienta, devuelve unicamente JSON valido con la forma {"tool":"...","data":{...}}.',
         ].join('\n');
 
     const companyFacts = [
       `- Empresa: ${params.company.name}`,
       `- Plan: ${params.company.plan}`,
       `- Estado: ${params.company.status}`,
-      `- Teléfono: ${params.company.phone || 'no disponible'}`,
+      `- Telefono: ${params.company.phone || 'no disponible'}`,
       `- Email: ${params.company.email || 'no disponible'}`,
       `- Sitio web: ${params.company.website || 'no disponible'}`,
-      `- Ubicación: ${[
+      `- Ubicacion: ${[
         params.company.city,
         params.company.state,
         params.company.country,
       ].filter(Boolean).join(', ') || 'no disponible'}`,
-      `- Descripción: ${params.company.description || 'no disponible'}`,
+      `- Descripcion: ${params.company.description || 'no disponible'}`,
     ].join('\n');
 
     const contactFacts = [
       `- Cliente: ${params.contact.name || 'sin identificar'}`,
-      `- Teléfono: ${params.contact.phone || 'no disponible'}`,
+      `- Telefono: ${params.contact.phone || 'no disponible'}`,
       `- Email: ${params.contact.email || 'no disponible'}`,
       `- Tags: ${params.contact.tags.length > 0 ? params.contact.tags.join(', ') : 'sin tags'}`,
     ].join('\n');
 
     const memoryFacts = memoryItems.length > 0
       ? memoryItems.map((item) => `- [${item.category}] ${item.key}: ${item.value}`).join('\n')
-      : '- Sin facts persistentes todavía.';
+      : '- Sin facts persistentes todavia.';
 
     const toolsDescription = activeTools.length > 0
       ? activeTools.map((tool) => `- ${tool.name} (${tool.type})`).join('\n')
@@ -107,6 +118,10 @@ export class AiBrainContextBuilderService {
     const documentsDescription = documentSnippets.length > 0
       ? documentSnippets.map((document) => `- ${document}`).join('\n')
       : '- Sin documentos empresariales activos.';
+
+    const retrievedKnowledgeDescription = retrievedKnowledgeSnippets.length > 0
+      ? retrievedKnowledgeSnippets.map((chunk) => `- ${chunk}`).join('\n')
+      : '- No relevant indexed knowledge was retrieved for this message.';
 
     const coreSystemPrompt = [
       AiBrainContextBuilderService.baseSalesSystemPrompt,
@@ -134,6 +149,9 @@ export class AiBrainContextBuilderService {
       '',
       'KNOWLEDGE BASE',
       documentsDescription,
+      '',
+      'RETRIEVED KNOWLEDGE FOR THIS MESSAGE',
+      retrievedKnowledgeDescription,
       '',
       'AVAILABLE TOOLS',
       toolsDescription,

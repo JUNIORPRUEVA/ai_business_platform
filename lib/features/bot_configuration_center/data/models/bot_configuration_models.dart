@@ -310,6 +310,9 @@ class KnowledgeDocumentConfigModel {
     required this.kind,
     required this.sizeLabel,
     required this.isEnabled,
+    required this.chunkCount,
+    required this.indexingError,
+    required this.updatedAt,
   });
 
   factory KnowledgeDocumentConfigModel.fromJson(Map<String, dynamic> json) {
@@ -321,6 +324,9 @@ class KnowledgeDocumentConfigModel {
       kind: json['kind'] as String? ?? 'Documento',
       sizeLabel: json['sizeLabel'] as String? ?? '-',
       isEnabled: json['isEnabled'] as bool? ?? true,
+      chunkCount: json['chunkCount'] as int?,
+      indexingError: json['indexingError'] as String?,
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
   }
 
@@ -332,15 +338,24 @@ class KnowledgeDocumentConfigModel {
         ? rawSize.toInt()
         : int.tryParse(rawSize?.toString() ?? '');
 
+    final indexing = (json['metadata'] is Map)
+        ? ((json['metadata'] as Map)['indexing'] is Map
+            ? ((json['metadata'] as Map)['indexing'] as Map)
+            : null)
+        : null;
+    final rawStatus = (json['status'] as String? ?? 'ready').toLowerCase();
+
     return KnowledgeDocumentConfigModel(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       summary: json['summary'] as String? ?? '',
-      status: json['status'] as String? ?? 'ready',
-      kind: json['kind'] as String? ?? 'document',
+      status: _formatDocumentStatusLabel(rawStatus),
+      kind: _formatDocumentKindLabel(json['kind'] as String? ?? 'document'),
       sizeLabel: _formatSizeLabel(parsedSize),
-      isEnabled: (json['status'] as String? ?? 'ready').toLowerCase() !=
-          'disabled',
+      isEnabled: rawStatus != 'disabled',
+      chunkCount: _tryParseInt(indexing?['chunkCount']),
+      indexingError: indexing?['error'] as String?,
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
     );
   }
 
@@ -351,6 +366,9 @@ class KnowledgeDocumentConfigModel {
   final String kind;
   final String sizeLabel;
   final bool isEnabled;
+  final int? chunkCount;
+  final String? indexingError;
+  final DateTime? updatedAt;
 
   KnowledgeDocumentConfig toEntity() {
     return KnowledgeDocumentConfig(
@@ -361,6 +379,9 @@ class KnowledgeDocumentConfigModel {
       kind: kind,
       sizeLabel: sizeLabel,
       isEnabled: isEnabled,
+      chunkCount: chunkCount,
+      indexingError: indexingError,
+      updatedAt: updatedAt,
     );
   }
 }
@@ -521,7 +542,7 @@ class BotConfigurationBundleModel {
           isEnabled: false,
         ),
       ],
-      documents: const <KnowledgeDocumentConfigModel>[
+      documents: <KnowledgeDocumentConfigModel>[
         KnowledgeDocumentConfigModel(
           id: 'doc-001',
           name: 'Catalogo principal 2025',
@@ -531,6 +552,9 @@ class BotConfigurationBundleModel {
           kind: 'Catalogo',
           sizeLabel: '2.4 MB',
           isEnabled: true,
+          chunkCount: 42,
+          indexingError: null,
+          updatedAt: DateTime.now().subtract(const Duration(minutes: 12)),
         ),
         KnowledgeDocumentConfigModel(
           id: 'doc-002',
@@ -541,6 +565,9 @@ class BotConfigurationBundleModel {
           kind: 'Politica',
           sizeLabel: '640 KB',
           isEnabled: true,
+          chunkCount: 12,
+          indexingError: null,
+          updatedAt: DateTime.now().subtract(const Duration(hours: 2)),
         ),
       ],
       security: const SecuritySettingsConfigModel(
@@ -655,4 +682,46 @@ String _formatSizeLabel(int? size) {
     return '${(size / 1024).toStringAsFixed(1)} KB';
   }
   return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+}
+
+String _formatDocumentStatusLabel(String status) {
+  switch (status.toLowerCase()) {
+    case 'pending_index':
+      return 'Pendiente de indexar';
+    case 'indexing':
+      return 'Indexando';
+    case 'ready':
+      return 'Listo';
+    case 'failed':
+      return 'Fallido';
+    case 'disabled':
+      return 'Deshabilitado';
+    default:
+      return status;
+  }
+}
+
+String _formatDocumentKindLabel(String kind) {
+  switch (kind.toLowerCase()) {
+    case 'catalog':
+      return 'Catalogo';
+    case 'policy':
+      return 'Politica';
+    case 'faq':
+      return 'FAQ';
+    case 'document':
+      return 'Documento';
+    default:
+      return kind;
+  }
+}
+
+int? _tryParseInt(dynamic value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  return int.tryParse(value?.toString() ?? '');
 }

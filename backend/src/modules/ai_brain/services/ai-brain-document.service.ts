@@ -1,11 +1,14 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 
 import { StorageService } from '../../storage/storage.service';
 import { RegisterKnowledgeDocumentDto } from '../dto/register-knowledge-document.dto';
 import { UpdateKnowledgeDocumentDto } from '../dto/update-knowledge-document.dto';
 import { KnowledgeDocumentEntity } from '../entities/knowledge-document.entity';
+import { KnowledgeIndexingJob } from '../types/knowledge-indexing.types';
 
 @Injectable()
 export class AiBrainDocumentService {
@@ -13,6 +16,8 @@ export class AiBrainDocumentService {
     @InjectRepository(KnowledgeDocumentEntity)
     private readonly documentsRepository: Repository<KnowledgeDocumentEntity>,
     private readonly storageService: StorageService,
+    @InjectQueue('knowledge-indexing')
+    private readonly knowledgeIndexingQueue: Queue<KnowledgeIndexingJob>,
   ) {}
 
   list(companyId: string, botId?: string) {
@@ -46,13 +51,25 @@ export class AiBrainDocumentService {
       contentType: dto.contentType?.trim() || null,
       size: dto.size !== undefined ? String(dto.size) : null,
       summary: dto.summary?.trim() || null,
-      status: 'ready',
+      status: 'pending_index',
       metadata: {
         source: 'manual-upload',
       },
     });
 
-    return this.documentsRepository.save(entity);
+    const saved = await this.documentsRepository.save(entity);
+    await this.knowledgeIndexingQueue.add(
+      'index-document',
+      {
+        companyId,
+        documentId: saved.id,
+      },
+      {
+        removeOnComplete: 50,
+        removeOnFail: 100,
+      },
+    );
+    return saved;
   }
 
   async update(companyId: string, id: string, dto: UpdateKnowledgeDocumentDto) {
@@ -72,12 +89,51 @@ export class AiBrainDocumentService {
     return { deleted: true } as const;
   }
 
+  async reindex(companyId: string, id: string) {
+    const document = await this.get(companyId, id);
+    document.status = 'pending_index';
+    document.metadata = {
+      ...(document.metadata ?? {}),
+      indexing: {
+        ...this.readObject(document.metadata?.['indexing']),
+        reindexRequestedAt: new Date().toISOString(),
+      },
+    };
+    await this.documentsRepository.save(document);
+    await this.knowledgeIndexingQueue.add(
+      'index-document',
+      {
+        companyId,
+        documentId: document.id,
+      },
+      {
+        removeOnComplete: 50,
+        removeOnFail: 100,
+      },
+    );
+
+    return document;
+  }
+
   async get(companyId: string, id: string) {
     const document = await this.documentsRepository.findOne({ where: { id, companyId } });
     if (!document) {
       throw new NotFoundException('Knowledge document not found.');
     }
     return document;
+  }
+
+  async patchMetadata(
+    companyId: string,
+    id: string,
+    patch: Record<string, unknown>,
+  ) {
+    const document = await this.get(companyId, id);
+    document.metadata = {
+      ...(document.metadata ?? {}),
+      ...patch,
+    };
+    return this.documentsRepository.save(document);
   }
 
   async createUploadTarget(params: {
@@ -99,5 +155,11 @@ export class AiBrainDocumentService {
       ...upload,
       folder: 'documents',
     };
+  }
+
+  private readObject(value: unknown): Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : {};
   }
 }
