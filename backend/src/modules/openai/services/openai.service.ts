@@ -164,6 +164,90 @@ export class OpenAiService {
     }
   }
 
+  async extractDocumentTextFromImage(params: {
+    companyId: string;
+    buffer: Buffer;
+    filename: string;
+    contentType?: string | null;
+    model?: string;
+    timeoutMs?: number;
+  }): Promise<{ text: string; provider: 'openai' | 'mock'; model: string }> {
+    const model = params.model ?? 'gpt-4o-mini';
+    const runtime = await this.botConfigurationService.getResolvedOpenAiRuntimeSettings(
+      params.companyId,
+      { model },
+    );
+
+    if (!this.hasUsableCredentials(runtime.apiKey) || !runtime.runtimeEnabled) {
+      return { text: '', provider: 'mock', model };
+    }
+
+    const timeoutMs = params.timeoutMs ?? 60000;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const mimeType = params.contentType?.trim() || 'image/png';
+      const dataUrl = `data:${mimeType};base64,${params.buffer.toString('base64')}`;
+      const response = await fetch(runtime.apiUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${runtime.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_completion_tokens: 1800,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Eres un OCR experto para documentos empresariales. Extrae texto visible de forma fiel. Conserva nombres, fechas, numeros, montos, cedulas, RNC, salarios, cargos, encabezados y clausulas. No resumas, no expliques, no inventes. Devuelve solo el texto detectado en espanol plano.',
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    'Extrae literalmente el texto de esta pagina de documento. Si hay tablas, conviertelas a texto legible. Si algo no se puede leer, omitelo en vez de inventarlo.',
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: dataUrl,
+                    detail: 'high',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(
+          `OpenAI document OCR failed status=${response.status} detail=${detail.slice(0, 300)}`,
+        );
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+
+      return {
+        text: data.choices?.[0]?.message?.content?.trim() ?? '',
+        provider: 'openai',
+        model,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
   async describeVideo(params: {
     companyId: string;
     frames: Array<{

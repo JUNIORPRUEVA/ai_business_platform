@@ -3,6 +3,7 @@ import mammoth from 'mammoth';
 import { PDFParse } from 'pdf-parse';
 import { extname } from 'node:path';
 
+import { OpenAiService } from '../../openai/services/openai.service';
 import { StorageService } from '../../storage/storage.service';
 import { KnowledgeDocumentEntity } from '../entities/knowledge-document.entity';
 import { KnowledgeChunkCandidate, KnowledgeIndexingJob } from '../types/knowledge-indexing.types';
@@ -26,12 +27,15 @@ export class AiBrainKnowledgeIndexingService {
   private static readonly chunkOverlap = 220;
   private static readonly minChunkSize = 280;
   private static readonly maxDocumentChars = 120000;
+  private static readonly minUsefulPdfChars = 400;
+  private static readonly maxOcrPages = 20;
   private readonly logger = new Logger(AiBrainKnowledgeIndexingService.name);
 
   constructor(
     private readonly aiBrainDocumentService: AiBrainDocumentService,
     private readonly aiBrainEmbeddingService: AiBrainEmbeddingService,
     private readonly aiBrainKnowledgeChunkService: AiBrainKnowledgeChunkService,
+    private readonly openAiService: OpenAiService,
     private readonly storageService: StorageService,
   ) {}
 
@@ -48,6 +52,7 @@ export class AiBrainKnowledgeIndexingService {
         key: document.storageKey,
       });
       const extracted = await this.extractTextFromDocument({
+        companyId: job.companyId,
         buffer: source.buffer,
         filename: document.name,
         contentType: document.contentType ?? source.contentType,
@@ -135,6 +140,7 @@ export class AiBrainKnowledgeIndexingService {
   }
 
   private async extractTextFromDocument(params: {
+    companyId: string;
     buffer: Buffer;
     filename: string;
     contentType: string | null;
@@ -146,7 +152,7 @@ export class AiBrainKnowledgeIndexingService {
       const parser = new PDFParse({ data: params.buffer });
       try {
         const parsed = await parser.getText();
-        return {
+        const extracted: ExtractedDocumentContent = {
           text: parsed.text,
           pages: Array.isArray(parsed.pages)
             ? parsed.pages.map((page) => ({
@@ -154,6 +160,58 @@ export class AiBrainKnowledgeIndexingService {
                 text: page.text,
               }))
             : [],
+        };
+
+        if (!this.shouldUsePdfOcrFallback(extracted)) {
+          return extracted;
+        }
+
+        const screenshots = await parser.getScreenshot({
+          desiredWidth: 1600,
+          imageBuffer: true,
+          imageDataUrl: false,
+          first: AiBrainKnowledgeIndexingService.maxOcrPages,
+        });
+
+        if (!screenshots.pages.length) {
+          return extracted;
+        }
+
+        const ocrPages: ExtractedDocumentPage[] = [];
+        for (const page of screenshots.pages) {
+          const ocr = await this.openAiService.extractDocumentTextFromImage({
+            companyId: params.companyId,
+            buffer: Buffer.from(page.data),
+            filename: `${params.filename}-page-${page.pageNumber}.png`,
+            contentType: 'image/png',
+          });
+
+          const normalizedPageText = this.normalizeExtractedText(ocr.text);
+          if (!normalizedPageText) {
+            continue;
+          }
+
+          ocrPages.push({
+            pageNumber: page.pageNumber,
+            text: normalizedPageText,
+          });
+        }
+
+        if (ocrPages.length === 0) {
+          return extracted;
+        }
+
+        const fallbackText = ocrPages
+          .map((page) => `Pagina ${page.pageNumber}\n${page.text}`)
+          .join('\n\n');
+
+        this.logger.log(
+          `[AI KNOWLEDGE] OCR fallback used companyId=${params.companyId} filename=${params.filename} pages=${ocrPages.length}`,
+        );
+
+        return {
+          text: fallbackText,
+          pages: ocrPages,
         };
       } finally {
         await parser.destroy();
@@ -191,6 +249,28 @@ export class AiBrainKnowledgeIndexingService {
     throw new Error(
       `knowledge_unsupported_document_type_${normalizedContentType || normalizedExtension || 'unknown'}`,
     );
+  }
+
+  private shouldUsePdfOcrFallback(extracted: ExtractedDocumentContent): boolean {
+    const normalizedText = this.normalizeExtractedText(extracted.text);
+    const normalizedPages = extracted.pages
+      .map((page) => this.normalizeExtractedText(page.text))
+      .filter((text) => text.length > 0);
+
+    if (normalizedPages.length >= 2) {
+      return false;
+    }
+
+    if (normalizedText.length >= AiBrainKnowledgeIndexingService.minUsefulPdfChars) {
+      return false;
+    }
+
+    const noiseOnly = normalizedText.length > 0
+      && /^((pagina \d+)|(1 of 5)|(\d+\s*(?:of|de|\/)\s*\d+)|[-\s])+$/i.test(
+        normalizedText.replace(/\n+/g, ' ').trim(),
+      );
+
+    return normalizedText.length === 0 || noiseOnly || normalizedPages.length <= 1;
   }
 
   private normalizeExtractedText(text: string): string {
