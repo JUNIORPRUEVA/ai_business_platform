@@ -28,6 +28,8 @@ export interface ProductCatalogSnippet {
   description: string | null;
   benefits: string | null;
   availabilityText: string | null;
+  stockQuantity: number | null;
+  lowStockThreshold: number | null;
   negotiationAllowed: boolean;
   negotiationMarginPercent: string | null;
   imageCount: number;
@@ -95,6 +97,7 @@ export class ProductsService {
   async create(companyId: string, dto: CreateProductDto) {
     const normalizedIdentifier = dto.identifier.trim();
     await this.ensureIdentifierAvailable(companyId, normalizedIdentifier);
+    this.validateCommercialRules(dto);
 
     const entity = this.productsRepository.create({
       companyId,
@@ -111,6 +114,8 @@ export class ProductsService {
       brand: dto.brand?.trim() || null,
       benefits: dto.benefits?.trim() || null,
       availabilityText: dto.availabilityText?.trim() || null,
+      stockQuantity: dto.stockQuantity ?? null,
+      lowStockThreshold: dto.lowStockThreshold ?? null,
       active: dto.active ?? true,
       tags: dto.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? [],
       metadata: {},
@@ -131,6 +136,21 @@ export class ProductsService {
       await this.ensureIdentifierAvailable(companyId, nextIdentifier, id);
       product.identifier = nextIdentifier;
     }
+    this.validateCommercialRules({
+      salesPrice: dto.salesPrice ?? product.salesPrice,
+      offerPrice: dto.offerPrice !== undefined ? dto.offerPrice : product.offerPrice ?? undefined,
+      discountPercent:
+        dto.discountPercent !== undefined ? dto.discountPercent : product.discountPercent ?? undefined,
+      negotiationAllowed:
+        dto.negotiationAllowed !== undefined ? dto.negotiationAllowed : product.negotiationAllowed,
+      negotiationMarginPercent:
+        dto.negotiationMarginPercent !== undefined
+          ? dto.negotiationMarginPercent
+          : product.negotiationMarginPercent ?? undefined,
+      stockQuantity: dto.stockQuantity !== undefined ? dto.stockQuantity : product.stockQuantity ?? undefined,
+      lowStockThreshold:
+        dto.lowStockThreshold !== undefined ? dto.lowStockThreshold : product.lowStockThreshold ?? undefined,
+    });
 
     if (dto.name !== undefined) product.name = dto.name.trim();
     if (dto.description !== undefined) product.description = dto.description?.trim() || null;
@@ -151,6 +171,10 @@ export class ProductsService {
     if (dto.benefits !== undefined) product.benefits = dto.benefits?.trim() || null;
     if (dto.availabilityText !== undefined) {
       product.availabilityText = dto.availabilityText?.trim() || null;
+    }
+    if (dto.stockQuantity !== undefined) product.stockQuantity = dto.stockQuantity;
+    if (dto.lowStockThreshold !== undefined) {
+      product.lowStockThreshold = dto.lowStockThreshold;
     }
     if (dto.active !== undefined) product.active = dto.active;
     if (dto.tags !== undefined) {
@@ -209,6 +233,8 @@ export class ProductsService {
           brand: row.brand,
           benefits: row.benefits,
           availabilityText: row.availabilityText,
+          stockQuantity: row.stockQuantity,
+          lowStockThreshold: row.lowStockThreshold,
         });
         updated += 1;
         importedIds.push(existing.id);
@@ -229,6 +255,8 @@ export class ProductsService {
         brand: row.brand,
         benefits: row.benefits,
         availabilityText: row.availabilityText,
+        stockQuantity: row.stockQuantity,
+        lowStockThreshold: row.lowStockThreshold,
       });
       created += 1;
       importedIds.push(createdProduct.id);
@@ -343,22 +371,16 @@ export class ProductsService {
   }
 
   private parseCsvImport(csvText: string) {
-    const lines = csvText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (lines.length < 2) {
+    const rows = this.parseCsvRows(csvText);
+    if (rows.length < 2) {
       throw new BadRequestException('El CSV debe incluir encabezados y al menos una fila.');
     }
 
-    const delimiter = lines[0].includes(';') ? ';' : ',';
-    const headers = lines[0].split(delimiter).map((header) => header.trim());
-    const rows = lines.slice(1).map((line) => {
-      const values = line.split(delimiter).map((value) => value.trim());
+    const headers = rows[0].map((header) => header.trim());
+    const mappedRows = rows.slice(1).map((values) => {
       const record: Record<string, string> = {};
       headers.forEach((header, index) => {
-        record[header] = values[index] ?? '';
+        record[header] = (values[index] ?? '').trim();
       });
       return {
         identifier: record['identifier'] || record['identificador'] || '',
@@ -382,10 +404,149 @@ export class ProductsService {
         brand: record['brand'] || record['marca'] || '',
         benefits: record['benefits'] || record['beneficios'] || '',
         availabilityText: record['availabilityText'] || record['disponibilidad'] || '',
+        stockQuantity: this.parseOptionalInteger(
+          record['stockQuantity'] || record['existencia'] || record['stock'] || record['cantidad'],
+        ),
+        lowStockThreshold: this.parseOptionalInteger(
+          record['lowStockThreshold'] ||
+            record['stockMinimo'] ||
+            record['stock_minimo'] ||
+            record['minStock'],
+        ),
       };
     });
 
-    return rows.filter((row) => row.identifier.trim() && row.name.trim());
+    return mappedRows.filter((row) => row.identifier.trim() && row.name.trim());
+  }
+
+  private parseCsvRows(csvText: string): string[][] {
+    const normalized = csvText.replace(/^\uFEFF/, '');
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentValue = '';
+    let inQuotes = false;
+    let delimiter = ',';
+
+    const firstLine = normalized.split(/\r?\n/, 1)[0] ?? '';
+    if (firstLine.includes(';') && !firstLine.includes(',')) {
+      delimiter = ';';
+    }
+
+    for (let index = 0; index < normalized.length; index += 1) {
+      const char = normalized[index];
+      const nextChar = normalized[index + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          currentValue += '"';
+          index += 1;
+          continue;
+        }
+        inQuotes = !inQuotes;
+        continue;
+      }
+
+      if (!inQuotes && char === delimiter) {
+        currentRow.push(currentValue);
+        currentValue = '';
+        continue;
+      }
+
+      if (!inQuotes && (char === '\n' || char === '\r')) {
+        if (char === '\r' && nextChar === '\n') {
+          index += 1;
+        }
+        currentRow.push(currentValue);
+        if (currentRow.some((value) => value.trim().length > 0)) {
+          rows.push(currentRow.map((value) => value.trim()));
+        }
+        currentRow = [];
+        currentValue = '';
+        continue;
+      }
+
+      currentValue += char;
+    }
+
+    currentRow.push(currentValue);
+    if (currentRow.some((value) => value.trim().length > 0)) {
+      rows.push(currentRow.map((value) => value.trim()));
+    }
+
+    return rows;
+  }
+
+  private parseOptionalInteger(value: string | undefined): number | undefined {
+    const normalized = value?.trim();
+    if (!normalized) {
+      return undefined;
+    }
+
+    const parsed = Number.parseInt(normalized, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new BadRequestException(`Valor entero inválido en importación: "${normalized}".`);
+    }
+
+    return parsed;
+  }
+
+  private validateCommercialRules(input: {
+    salesPrice: string;
+    offerPrice?: string | null;
+    discountPercent?: string | null;
+    negotiationAllowed?: boolean;
+    negotiationMarginPercent?: string | null;
+    stockQuantity?: number | null;
+    lowStockThreshold?: number | null;
+  }) {
+    const salesPrice = Number.parseFloat(input.salesPrice);
+    if (!Number.isFinite(salesPrice) || salesPrice < 0) {
+      throw new BadRequestException('El precio de venta debe ser un número válido mayor o igual a 0.');
+    }
+
+    if (input.offerPrice?.trim()) {
+      const offerPrice = Number.parseFloat(input.offerPrice);
+      if (!Number.isFinite(offerPrice) || offerPrice < 0) {
+        throw new BadRequestException('El precio de oferta debe ser un número válido mayor o igual a 0.');
+      }
+      if (offerPrice > salesPrice) {
+        throw new BadRequestException('El precio de oferta no puede ser mayor que el precio de venta.');
+      }
+    }
+
+    if (input.discountPercent?.trim()) {
+      const discountPercent = Number.parseFloat(input.discountPercent);
+      if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+        throw new BadRequestException('El descuento debe estar entre 0 y 100.');
+      }
+    }
+
+    if (input.negotiationMarginPercent?.trim()) {
+      const negotiationMarginPercent = Number.parseFloat(input.negotiationMarginPercent);
+      if (
+        !Number.isFinite(negotiationMarginPercent) ||
+        negotiationMarginPercent < 0 ||
+        negotiationMarginPercent > 100
+      ) {
+        throw new BadRequestException('El margen de negociación debe estar entre 0 y 100.');
+      }
+    }
+
+    if (input.stockQuantity != null && input.stockQuantity < 0) {
+      throw new BadRequestException('El stock no puede ser negativo.');
+    }
+
+    if (input.lowStockThreshold != null && input.lowStockThreshold < 0) {
+      throw new BadRequestException('El stock mínimo no puede ser negativo.');
+    }
+
+    if (
+      input.stockQuantity != null &&
+      input.lowStockThreshold != null &&
+      input.lowStockThreshold > input.stockQuantity
+    ) {
+      throw new BadRequestException('El stock mínimo no puede ser mayor que el stock disponible.');
+    }
   }
 
   private computeSearchScore(product: ProductEntity, query: string): number {
@@ -426,6 +587,8 @@ export class ProductsService {
       description: product.description,
       benefits: product.benefits,
       availabilityText: product.availabilityText,
+      stockQuantity: product.stockQuantity,
+      lowStockThreshold: product.lowStockThreshold,
       negotiationAllowed: product.negotiationAllowed,
       negotiationMarginPercent: product.negotiationMarginPercent,
       imageCount,

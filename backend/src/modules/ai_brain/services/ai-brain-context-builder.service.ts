@@ -87,7 +87,11 @@ export class AiBrainContextBuilderService {
               product.negotiationAllowed && product.negotiationMarginPercent
                 ? ` Negociacion permitida hasta ${product.negotiationMarginPercent}%.`
                 : '';
-            return `- ${product.name} [${product.identifier}]${product.category ? `, ${product.category}` : ''}${product.brand ? `, ${product.brand}` : ''}: ${priceLine}.${product.description ? ` ${product.description}` : ''}${product.benefits ? ` Beneficios: ${product.benefits}.` : ''}${product.availabilityText ? ` Disponibilidad: ${product.availabilityText}.` : ''}${negotiationLine}${product.imageCount > 0 ? ` Tiene ${product.imageCount} imagen(es).` : ''}${product.videoCount > 0 ? ` Tiene ${product.videoCount} video(s).` : ''}`;
+            const stockLine =
+              product.stockQuantity != null
+                ? ` Stock actual: ${product.stockQuantity}${product.lowStockThreshold != null ? ` (minimo recomendado ${product.lowStockThreshold})` : ''}.`
+                : '';
+            return `- ${product.name} [${product.identifier}]${product.category ? `, ${product.category}` : ''}${product.brand ? `, ${product.brand}` : ''}: ${priceLine}.${product.description ? ` ${product.description}` : ''}${product.benefits ? ` Beneficios: ${product.benefits}.` : ''}${product.availabilityText ? ` Disponibilidad: ${product.availabilityText}.` : ''}${stockLine}${negotiationLine}${product.imageCount > 0 ? ` Tiene ${product.imageCount} imagen(es).` : ''}${product.videoCount > 0 ? ` Tiene ${product.videoCount} video(s).` : ''}`;
           })
           .join('\n')
       : '- No matching products were found for this message.';

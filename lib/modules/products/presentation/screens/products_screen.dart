@@ -260,6 +260,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                           const SizedBox(height: 4),
                           Text('${item.identifier} • ${item.currency} ${item.offerPrice ?? item.salesPrice}'),
                           const SizedBox(height: 6),
+                          if (item.stockQuantity != null)
+                            Text(
+                              'Stock: ${item.stockQuantity}${item.lowStockThreshold != null ? ' • Min: ${item.lowStockThreshold}' : ''}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          if (item.stockQuantity != null) const SizedBox(height: 6),
                           Text(
                             item.description ?? 'Sin descripción.',
                             maxLines: 2,
@@ -318,6 +324,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               _chip('Precio', '${product.currency} ${product.salesPrice}'),
               _chip('Oferta', product.offerPrice ?? 'Sin oferta'),
               _chip('Negociación', product.negotiationAllowed ? 'Sí' : 'No'),
+              _chip('Stock', product.stockQuantity?.toString() ?? 'No definido'),
+              if (product.lowStockThreshold != null)
+                _chip('Stock mínimo', product.lowStockThreshold!.toString()),
             ],
           ),
           const SizedBox(height: 16),
@@ -492,8 +501,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   }
 
   Future<void> _copyTemplateCsv() async {
-    const csv = 'identifier,name,description,salesPrice,offerPrice,discountPercent,negotiationAllowed,negotiationMarginPercent,currency,category,brand,benefits,availabilityText\n'
-        'SKU-001,Audifonos P9 Ultra 2,Audifonos inalambricos con buena bateria,1500.00,1295.00,13.67,true,10,DOP,Audio,P9,Bluetooth y bateria extendida,Entrega inmediata';
+    const csv = 'identifier,name,description,salesPrice,offerPrice,discountPercent,negotiationAllowed,negotiationMarginPercent,currency,category,brand,benefits,availabilityText,stockQuantity,lowStockThreshold\n'
+        'SKU-001,Audifonos P9 Ultra 2,Audifonos inalambricos con buena bateria,1500.00,1295.00,13.67,true,10,DOP,Audio,P9,Bluetooth y bateria extendida,Entrega inmediata,18,4';
     await Clipboard.setData(const ClipboardData(text: csv));
     if (!mounted) {
       return;
@@ -609,6 +618,8 @@ class _ProductDialogState extends State<_ProductDialog> {
   late final TextEditingController _brand;
   late final TextEditingController _benefits;
   late final TextEditingController _availability;
+  late final TextEditingController _stockQuantity;
+  late final TextEditingController _lowStockThreshold;
   late final TextEditingController _tags;
   bool _negotiationAllowed = false;
   bool _active = true;
@@ -629,6 +640,8 @@ class _ProductDialogState extends State<_ProductDialog> {
     _brand = TextEditingController(text: product?.brand ?? '');
     _benefits = TextEditingController(text: product?.benefits ?? '');
     _availability = TextEditingController(text: product?.availabilityText ?? '');
+    _stockQuantity = TextEditingController(text: product?.stockQuantity?.toString() ?? '');
+    _lowStockThreshold = TextEditingController(text: product?.lowStockThreshold?.toString() ?? '');
     _tags = TextEditingController(text: product == null ? '' : product.tags.join(', '));
     _negotiationAllowed = product?.negotiationAllowed ?? false;
     _active = product?.active ?? true;
@@ -657,6 +670,8 @@ class _ProductDialogState extends State<_ProductDialog> {
                 _field(_category, 'Categoría'),
                 _field(_brand, 'Marca'),
                 _field(_availability, 'Disponibilidad'),
+                _field(_stockQuantity, 'Stock disponible', validator: _optionalWholeNumber),
+                _field(_lowStockThreshold, 'Stock mínimo', validator: _optionalWholeNumber),
                 _field(_description, 'Descripción', maxLines: 3, fullWidth: true),
                 _field(_benefits, 'Beneficios', maxLines: 3, fullWidth: true),
                 _field(_tags, 'Etiquetas separadas por coma', fullWidth: true),
@@ -682,6 +697,39 @@ class _ProductDialogState extends State<_ProductDialog> {
             if (_formKey.currentState?.validate() != true) {
               return;
             }
+            final salesPriceValue = double.tryParse(_salesPrice.text.trim());
+            final offerPriceValue = _offerPrice.text.trim().isEmpty
+                ? null
+                : double.tryParse(_offerPrice.text.trim());
+            final discountValue = _discountPercent.text.trim().isEmpty
+                ? null
+                : double.tryParse(_discountPercent.text.trim());
+            final negotiationMarginValue = _negotiationMarginPercent.text.trim().isEmpty
+                ? null
+                : double.tryParse(_negotiationMarginPercent.text.trim());
+            final stockValue = _stockQuantity.text.trim().isEmpty ? null : int.tryParse(_stockQuantity.text.trim());
+            final lowStockValue = _lowStockThreshold.text.trim().isEmpty
+                ? null
+                : int.tryParse(_lowStockThreshold.text.trim());
+
+            String? errorMessage;
+            if (salesPriceValue == null || salesPriceValue < 0) {
+              errorMessage = 'El precio de venta debe ser válido.';
+            } else if (offerPriceValue != null && offerPriceValue > salesPriceValue) {
+              errorMessage = 'La oferta no puede superar el precio de venta.';
+            } else if (discountValue != null && (discountValue < 0 || discountValue > 100)) {
+              errorMessage = 'El descuento debe estar entre 0 y 100.';
+            } else if (negotiationMarginValue != null &&
+                (negotiationMarginValue < 0 || negotiationMarginValue > 100)) {
+              errorMessage = 'El margen de negociación debe estar entre 0 y 100.';
+            } else if (stockValue != null && lowStockValue != null && lowStockValue > stockValue) {
+              errorMessage = 'El stock mínimo no puede ser mayor que el stock disponible.';
+            }
+
+            if (errorMessage != null) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage)));
+              return;
+            }
             Navigator.of(context).pop(_ProductDraft(
               identifier: _identifier.text.trim(),
               name: _name.text.trim(),
@@ -696,6 +744,8 @@ class _ProductDialogState extends State<_ProductDialog> {
               brand: _nullable(_brand.text),
               benefits: _nullable(_benefits.text),
               availabilityText: _nullable(_availability.text),
+              stockQuantity: stockValue,
+              lowStockThreshold: lowStockValue,
               active: _active,
               tags: _tags.text
                   .split(',')
@@ -800,6 +850,8 @@ class _ProductDraft {
     this.brand,
     this.benefits,
     this.availabilityText,
+    this.stockQuantity,
+    this.lowStockThreshold,
   });
 
   final String identifier;
@@ -815,6 +867,8 @@ class _ProductDraft {
   final String? brand;
   final String? benefits;
   final String? availabilityText;
+  final int? stockQuantity;
+  final int? lowStockThreshold;
   final bool active;
   final List<String> tags;
 
@@ -832,6 +886,8 @@ class _ProductDraft {
         'brand': brand,
         'benefits': benefits,
         'availabilityText': availabilityText,
+        'stockQuantity': stockQuantity,
+        'lowStockThreshold': lowStockThreshold,
         'active': active,
         'tags': tags,
       };
@@ -847,4 +903,16 @@ String? _required(String? value) {
 String? _nullable(String value) {
   final trimmed = value.trim();
   return trimmed.isEmpty ? null : trimmed;
+}
+
+String? _optionalWholeNumber(String? value) {
+  final trimmed = value?.trim() ?? '';
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  final parsed = int.tryParse(trimmed);
+  if (parsed == null || parsed < 0) {
+    return 'Debe ser un entero mayor o igual a 0';
+  }
+  return null;
 }

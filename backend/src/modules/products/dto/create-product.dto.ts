@@ -1,11 +1,14 @@
 import {
+  IsInt,
   IsArray,
   IsBoolean,
   IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateProductDto {
   @IsString()
@@ -58,6 +61,18 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   availabilityText?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  stockQuantity?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  lowStockThreshold?: number;
 
   @IsOptional()
   @IsBoolean()

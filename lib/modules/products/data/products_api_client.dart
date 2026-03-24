@@ -175,6 +175,8 @@ class ProductRecord {
     this.brand,
     this.benefits,
     this.availabilityText,
+    this.stockQuantity,
+    this.lowStockThreshold,
     this.tags = const [],
   });
 
@@ -194,6 +196,8 @@ class ProductRecord {
       brand: _asNullableString(json['brand']),
       benefits: _asNullableString(json['benefits']),
       availabilityText: _asNullableString(json['availabilityText']),
+      stockQuantity: _asNullableInt(json['stockQuantity']),
+      lowStockThreshold: _asNullableInt(json['lowStockThreshold']),
       active: json['active'] != false,
       tags: _asStringList(json['tags']),
       images: _asMediaList(json['images']),
@@ -215,6 +219,8 @@ class ProductRecord {
   final String? brand;
   final String? benefits;
   final String? availabilityText;
+  final int? stockQuantity;
+  final int? lowStockThreshold;
   final bool active;
   final List<String> tags;
   final List<ProductMediaRecord> images;
@@ -299,6 +305,19 @@ String _asString(dynamic value, {String fallback = ''}) {
 String? _asNullableString(dynamic value) {
   if (value is String && value.trim().isNotEmpty) {
     return value.trim();
+  }
+  return null;
+}
+
+int? _asNullableInt(dynamic value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String && value.trim().isNotEmpty) {
+    return int.tryParse(value.trim());
   }
   return null;
 }

@@ -55,6 +55,12 @@ export class ProductEntity extends BaseEntity {
   @Column({ type: 'text', name: 'availability_text', nullable: true })
   availabilityText!: string | null;
 
+  @Column({ type: 'integer', name: 'stock_quantity', nullable: true })
+  stockQuantity!: number | null;
+
+  @Column({ type: 'integer', name: 'low_stock_threshold', nullable: true })
+  lowStockThreshold!: number | null;
+
   @Column({ type: 'boolean', default: true })
   active!: boolean;
 

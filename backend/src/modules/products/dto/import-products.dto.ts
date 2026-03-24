@@ -1,10 +1,12 @@
 import {
   ArrayMaxSize,
+  IsInt,
   IsArray,
   IsBoolean,
   IsNumberString,
   IsOptional,
   IsString,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -59,6 +61,18 @@ class ImportProductRowDto {
   @IsOptional()
   @IsString()
   availabilityText?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  stockQuantity?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  lowStockThreshold?: number;
 }
 
 export class ImportProductsDto {
