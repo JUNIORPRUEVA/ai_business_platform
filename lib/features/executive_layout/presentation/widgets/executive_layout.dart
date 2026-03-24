@@ -67,8 +67,10 @@ class _ExecutiveLayoutState extends ConsumerState<ExecutiveLayout> {
     final isMessagesPage = pageTitle.toLowerCase().contains('mensajes');
     final isPromptsKnowledgePage =
         pageTitle.toLowerCase().contains('prompts y conocimiento');
+    final isProductsPage = pageTitle.toLowerCase().contains('productos');
     final useWhatsappShell = isMessagesPage;
-    final useFullWidthWorkspace = isMessagesPage || isPromptsKnowledgePage;
+    final useFullWidthWorkspace =
+        isMessagesPage || isPromptsKnowledgePage || isProductsPage;
     final useSingleLineAppBar = isPromptsKnowledgePage;
 
     if (!_didAutoCollapseOnce && isNarrow) {

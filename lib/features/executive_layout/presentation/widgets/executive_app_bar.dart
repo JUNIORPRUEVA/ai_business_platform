@@ -1,6 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -94,7 +92,7 @@ class ExecutiveAppBar extends ConsumerWidget {
                   ),
                 ),
                 if (singleLine && !isMobile) ...[
-                  _TenantSwitcher(isCompact: true),
+                  const _TenantSwitcher(isCompact: true),
                   const SizedBox(width: 10),
                   SizedBox(
                     width: math
@@ -140,13 +138,16 @@ class ExecutiveAppBar extends ConsumerWidget {
                     children: [
                       Text(
                         'Espacio de trabajo empresarial',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.primary,
                           fontWeight: FontWeight.w800,
+                          fontSize: isMobile ? 11 : 12,
                           letterSpacing: 0.3,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
                         title,
                         maxLines: 1,

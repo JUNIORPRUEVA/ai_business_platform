@@ -63,22 +63,28 @@ export class ProductsService {
       return [];
     }
 
+    const terms = this.extractSearchTerms(normalized);
+    const searchTerms = [normalized, ...terms].slice(0, 8);
+    const whereClauses = searchTerms.flatMap((term) => [
+      { companyId, active: true, identifier: ILike(`%${term}%`) },
+      { companyId, active: true, name: ILike(`%${term}%`) },
+      { companyId, active: true, description: ILike(`%${term}%`) },
+      { companyId, active: true, category: ILike(`%${term}%`) },
+      { companyId, active: true, brand: ILike(`%${term}%`) },
+      { companyId, active: true, benefits: ILike(`%${term}%`) },
+      { companyId, active: true, availabilityText: ILike(`%${term}%`) },
+    ]);
+
     const candidates = await this.productsRepository.find({
-      where: [
-        { companyId, active: true, identifier: ILike(`%${normalized}%`) },
-        { companyId, active: true, name: ILike(`%${normalized}%`) },
-        { companyId, active: true, description: ILike(`%${normalized}%`) },
-        { companyId, active: true, category: ILike(`%${normalized}%`) },
-        { companyId, active: true, brand: ILike(`%${normalized}%`) },
-      ],
+      where: whereClauses,
       order: { updatedAt: 'DESC' },
-      take: Math.max(limit * 2, 12),
+      take: Math.max(limit * 6, 36),
     });
 
     const ranked = candidates
       .map((product) => ({
         product,
-        score: this.computeSearchScore(product, normalized),
+        score: this.computeSearchScore(product, normalized, terms),
       }))
       .sort((left, right) => right.score - left.score)
       .slice(0, limit);
@@ -549,12 +555,55 @@ export class ProductsService {
     }
   }
 
-  private computeSearchScore(product: ProductEntity, query: string): number {
+  private extractSearchTerms(query: string): string[] {
+    const stopwords = new Set([
+      'de',
+      'la',
+      'el',
+      'los',
+      'las',
+      'un',
+      'una',
+      'y',
+      'o',
+      'para',
+      'con',
+      'en',
+      'por',
+      'del',
+      'al',
+      'que',
+      'cuanto',
+      'cuál',
+      'cual',
+      'tiene',
+      'precio',
+      'quiero',
+      'necesito',
+      'busco',
+      'me',
+      'mi',
+      'tu',
+      'su',
+    ]);
+
+    return query
+      .toLowerCase()
+      .split(/[^a-z0-9áéíóúñ]+/i)
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 2 && !stopwords.has(term));
+  }
+
+  private computeSearchScore(product: ProductEntity, query: string, terms: string[]): number {
     const normalized = query.toLowerCase();
     let score = 0;
     const identifier = product.identifier.toLowerCase();
     const name = product.name.toLowerCase();
     const description = (product.description ?? '').toLowerCase();
+    const category = (product.category ?? '').toLowerCase();
+    const brand = (product.brand ?? '').toLowerCase();
+    const benefits = (product.benefits ?? '').toLowerCase();
+    const availabilityText = (product.availabilityText ?? '').toLowerCase();
 
     if (identifier === normalized) score += 200;
     if (name === normalized) score += 180;
@@ -563,8 +612,25 @@ export class ProductsService {
     if (identifier.includes(normalized)) score += 80;
     if (name.includes(normalized)) score += 70;
     if (description.includes(normalized)) score += 35;
-    if ((product.category ?? '').toLowerCase().includes(normalized)) score += 20;
-    if ((product.brand ?? '').toLowerCase().includes(normalized)) score += 20;
+    if (category.includes(normalized)) score += 20;
+    if (brand.includes(normalized)) score += 20;
+    if (benefits.includes(normalized)) score += 18;
+    if (availabilityText.includes(normalized)) score += 12;
+
+    for (const term of terms) {
+      if (identifier === term) score += 130;
+      if (name === term) score += 120;
+      if (identifier.startsWith(term)) score += 65;
+      if (name.startsWith(term)) score += 55;
+      if (identifier.includes(term)) score += 40;
+      if (name.includes(term)) score += 35;
+      if (description.includes(term)) score += 16;
+      if (category.includes(term)) score += 14;
+      if (brand.includes(term)) score += 14;
+      if (benefits.includes(term)) score += 12;
+      if (availabilityText.includes(term)) score += 8;
+    }
+
     if (product.offerPrice) score += 5;
     return score;
   }

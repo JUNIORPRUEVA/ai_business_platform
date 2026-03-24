@@ -128,6 +128,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final query = _searchController.text.trim().toLowerCase();
     final filtered = query.isEmpty
         ? _products
@@ -139,156 +140,139 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 (item.brand ?? '').toLowerCase().contains(query);
           }).toList(growable: false);
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ModuleHeader(
-            title: 'Productos',
-            subtitle:
-                'Crea tu catálogo, importa tablas tipo POS y conecta imágenes o videos para que el bot venda con mejor contexto.',
-            trailing: Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                FilledButton.icon(
-                  onPressed: _isBusy ? null : _openCreateDialog,
-                  icon: const Icon(Icons.add_box_outlined),
-                  label: const Text('Crear producto'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _isBusy ? null : _importCsv,
-                  icon: const Icon(Icons.file_upload_outlined),
-                  label: const Text('Importar CSV'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _copyTemplateCsv,
-                  icon: const Icon(Icons.content_copy_outlined),
-                  label: const Text('Plantilla'),
-                ),
-              ],
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 1120;
+        final horizontalPadding = compact ? 12.0 : 18.0;
+        final verticalPadding = compact ? 12.0 : 16.0;
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            verticalPadding,
+            horizontalPadding,
+            8,
           ),
-          const SizedBox(height: 14),
-          if (_error != null) ...[
-            ExecutiveGlassCard(padding: const EdgeInsets.all(14), child: Text(_error!)),
-            const SizedBox(height: 12),
-          ],
-          if (_success != null) ...[
-            ExecutiveGlassCard(padding: const EdgeInsets.all(14), child: Text(_success!)),
-            const SizedBox(height: 12),
-          ],
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 1180;
-              return Wrap(
-                spacing: 14,
-                runSpacing: 14,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ModuleHeader(
+                title: 'Productos',
+                subtitle:
+                    'Gestiona tu catálogo comercial, precios, inventario y multimedia desde un panel optimizado para ventas y operación diaria.',
+                trailing: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _isBusy ? null : _openCreateDialog,
+                      icon: const Icon(Icons.add_box_outlined),
+                      label: const Text('Crear producto'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _isBusy ? null : _importCsv,
+                      icon: const Icon(Icons.file_upload_outlined),
+                      label: const Text('Importar CSV'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _copyTemplateCsv,
+                      icon: const Icon(Icons.content_copy_outlined),
+                      label: const Text('Plantilla'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
                 children: [
-                  SizedBox(
-                    width: compact ? constraints.maxWidth : 390,
-                    child: _buildListPanel(filtered),
+                  _buildHeadlineMetric(
+                    context,
+                    label: 'Catálogo activo',
+                    value: _products.length.toString(),
+                    icon: Icons.inventory_2_outlined,
                   ),
-                  SizedBox(
-                    width: compact ? constraints.maxWidth : constraints.maxWidth - 404,
-                    child: _buildDetailPanel(_selected),
+                  _buildHeadlineMetric(
+                    context,
+                    label: 'Resultados visibles',
+                    value: filtered.length.toString(),
+                    icon: Icons.search_rounded,
+                  ),
+                  _buildHeadlineMetric(
+                    context,
+                    label: 'Con stock crítico',
+                    value: _products
+                        .where(
+                          (item) =>
+                              item.stockQuantity != null &&
+                              item.lowStockThreshold != null &&
+                              item.stockQuantity! <= item.lowStockThreshold!,
+                        )
+                        .length
+                        .toString(),
+                    icon: Icons.warning_amber_rounded,
+                    accentColor: const Color(0xFFC27832),
                   ),
                 ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildListPanel(List<ProductRecord> filtered) {
-    return ExecutiveGlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _searchController,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              hintText: 'Buscar producto...',
-              prefixIcon: Icon(Icons.search_rounded),
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: LinearProgressIndicator(),
-            )
-          else if (filtered.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No hay productos disponibles.'),
-            )
-          else
-            ...filtered.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: InkWell(
-                    onTap: () async {
-                      setState(() => _selectedId = item.id);
-                      final token = await _requireToken();
-                      await _ensureImageUrls(token, item);
-                    },
-                    borderRadius: BorderRadius.circular(18),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        color: item.id == _selectedId
-                            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14)
-                            : Theme.of(context).colorScheme.surface.withValues(alpha: 0.12),
-                        border: Border.all(
-                          color: item.id == _selectedId
-                              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)
-                              : Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                _buildMessageBanner(
+                  context,
+                  message: _error!,
+                  icon: Icons.error_outline_rounded,
+                  color: theme.colorScheme.error,
+                ),
+              ],
+              if (_success != null) ...[
+                const SizedBox(height: 12),
+                _buildMessageBanner(
+                  context,
+                  message: _success!,
+                  icon: Icons.check_circle_outline_rounded,
+                  color: const Color(0xFF2E8B57),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Expanded(
+                child: compact
+                    ? Column(
                         children: [
-                          Text(
-                            item.name,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w900),
+                          SizedBox(
+                            height: 320,
+                            width: double.infinity,
+                            child: _buildListPanel(filtered, compact: true),
                           ),
-                          const SizedBox(height: 4),
-                          Text('${item.identifier} • ${item.currency} ${item.offerPrice ?? item.salesPrice}'),
-                          const SizedBox(height: 6),
-                          if (item.stockQuantity != null)
-                            Text(
-                              'Stock: ${item.stockQuantity}${item.lowStockThreshold != null ? ' • Min: ${item.lowStockThreshold}' : ''}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          if (item.stockQuantity != null) const SizedBox(height: 6),
-                          Text(
-                            item.description ?? 'Sin descripción.',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
+                          const SizedBox(height: 14),
+                          Expanded(
+                            child: _buildDetailPanel(_selected, compact: true),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: constraints.maxWidth < 1360 ? 360 : 400,
+                            child: _buildListPanel(filtered),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildDetailPanel(_selected),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                )),
-        ],
-      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildDetailPanel(ProductRecord? product) {
-    if (product == null) {
-      return const ExecutiveGlassCard(
-        padding: EdgeInsets.all(18),
-        child: Text('Selecciona un producto para ver su detalle comercial.'),
-      );
-    }
+  Widget _buildListPanel(List<ProductRecord> filtered, {bool compact = false}) {
+    final theme = Theme.of(context);
 
     return ExecutiveGlassCard(
       padding: const EdgeInsets.all(18),
@@ -297,120 +281,905 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         children: [
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  product.name,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.10),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: Icon(
+                  Icons.inventory_2_outlined,
+                  color: theme.colorScheme.primary,
                 ),
               ),
-              OutlinedButton.icon(
-                onPressed: _isBusy ? null : () => _openEditDialog(product),
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text('Editar'),
-              ),
-              const SizedBox(width: 10),
-              OutlinedButton.icon(
-                onPressed: _isBusy ? null : () => _deleteProduct(product),
-                icon: const Icon(Icons.delete_outline_rounded),
-                label: const Text('Eliminar'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Catálogo comercial',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${filtered.length} resultados ${_searchController.text.trim().isEmpty ? 'disponibles' : 'filtrados'}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.64),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Buscar producto...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {});
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+            ),
           ),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _chip('Precio', '${product.currency} ${product.salesPrice}'),
-              _chip('Oferta', product.offerPrice ?? 'Sin oferta'),
-              _chip('Negociación', product.negotiationAllowed ? 'Sí' : 'No'),
-              _chip('Stock', product.stockQuantity?.toString() ?? 'No definido'),
-              if (product.lowStockThreshold != null)
-                _chip('Stock mínimo', product.lowStockThreshold!.toString()),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(product.description ?? 'Sin descripción comercial.'),
-          const SizedBox(height: 10),
-          Text('Beneficios: ${product.benefits ?? 'No definidos.'}'),
-          const SizedBox(height: 10),
-          Text('Disponibilidad: ${product.availabilityText ?? 'No definida.'}'),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Text('Imágenes', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-              const Spacer(),
-              OutlinedButton.icon(
-                onPressed: _isBusy || product.images.length >= 3 ? null : () => _uploadImages(product),
-                icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: Text(product.images.length >= 3 ? 'Límite 3/3' : 'Agregar'),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.28),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
               ),
-            ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  size: 18,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Selecciona un producto para revisar precio, inventario, beneficios y multimedia.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      height: 1.35,
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.68),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: product.images.isEmpty
-                ? const [Text('Sin imágenes cargadas.')]
-                : product.images.map((image) {
-                    final imageUrl = _imageUrls[image.storageKey];
-                    return SizedBox(
-                      width: 170,
+          const SizedBox(height: 14),
+          if (_isLoading)
+            const Expanded(
+              child: Center(
+                child: SizedBox(
+                  width: 220,
+                  child: LinearProgressIndicator(),
+                ),
+              ),
+            )
+          else if (filtered.isEmpty)
+            Expanded(
+              child: Center(
+                child: Text(
+                  'No hay productos disponibles.',
+                  style: theme.textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: filtered.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final item = filtered[index];
+                  final selected = item.id == _selectedId;
+                  final stockWarning = item.stockQuantity != null &&
+                      item.lowStockThreshold != null &&
+                      item.stockQuantity! <= item.lowStockThreshold!;
+
+                  return InkWell(
+                    onTap: () async {
+                      setState(() => _selectedId = item.id);
+                      final token = await _requireToken();
+                      await _ensureImageUrls(token, item);
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: selected
+                              ? [
+                                  theme.colorScheme.primary
+                                      .withValues(alpha: 0.16),
+                                  theme.colorScheme.primary
+                                      .withValues(alpha: 0.06),
+                                ]
+                              : [
+                                  theme.colorScheme.surface,
+                                  theme.colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.16),
+                                ],
+                        ),
+                        border: Border.all(
+                          color: selected
+                              ? theme.colorScheme.primary
+                                  .withValues(alpha: 0.34)
+                              : theme.colorScheme.outlineVariant
+                                  .withValues(alpha: 0.60),
+                        ),
+                        boxShadow: selected
+                            ? [
+                                BoxShadow(
+                                  color: theme.colorScheme.primary
+                                      .withValues(alpha: 0.08),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 14),
+                                ),
+                              ]
+                            : null,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            height: 110,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.14),
-                              image: imageUrl == null
-                                  ? null
-                                  : DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover),
-                            ),
-                            child: imageUrl == null ? const Center(child: Icon(Icons.image_outlined)) : null,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.name,
+                                      maxLines: compact ? 1 : 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style:
+                                          theme.textTheme.bodyLarge?.copyWith(
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      item.identifier,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurface
+                                            .withValues(alpha: 0.60),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(999),
+                                  color: stockWarning
+                                      ? const Color(0xFFF9EAD9)
+                                      : theme.colorScheme.surface
+                                          .withValues(alpha: 0.72),
+                                  border: Border.all(
+                                    color: stockWarning
+                                        ? const Color(0xFFE1BB87)
+                                        : theme.colorScheme.outlineVariant
+                                            .withValues(alpha: 0.55),
+                                  ),
+                                ),
+                                child: Text(
+                                  '${item.currency} ${item.offerPrice ?? item.salesPrice}',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(image.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: IconButton(
-                              onPressed: _isBusy ? null : () => _deleteImage(product, image),
-                              icon: const Icon(Icons.delete_outline_rounded),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _miniBadge(
+                                context,
+                                icon: Icons.category_outlined,
+                                text: item.category ?? 'Sin categoría',
+                              ),
+                              _miniBadge(
+                                context,
+                                icon: Icons.sell_outlined,
+                                text: item.brand ?? 'Sin marca',
+                              ),
+                              if (item.stockQuantity != null)
+                                _miniBadge(
+                                  context,
+                                  icon: stockWarning
+                                      ? Icons.warning_amber_rounded
+                                      : Icons.inventory_outlined,
+                                  text: item.lowStockThreshold != null
+                                      ? 'Stock ${item.stockQuantity} / mín ${item.lowStockThreshold}'
+                                      : 'Stock ${item.stockQuantity}',
+                                  accentColor: stockWarning
+                                      ? const Color(0xFFC27832)
+                                      : null,
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            item.description ?? 'Sin descripción comercial.',
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              height: 1.45,
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.74),
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }).toList(growable: false),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailPanel(ProductRecord? product, {bool compact = false}) {
+    final theme = Theme.of(context);
+
+    if (product == null) {
+      return ExecutiveGlassCard(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 74,
+                  height: 74,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.10),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.16),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.inventory_2_outlined,
+                    size: 34,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Selecciona un producto',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Aquí verás el resumen comercial, estado de inventario, beneficios y multimedia del producto elegido.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    height: 1.55,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Text('Videos', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-              const Spacer(),
-              OutlinedButton.icon(
+        ),
+      );
+    }
+
+    return ExecutiveGlassCard(
+      padding: const EdgeInsets.all(22),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildDetailHeader(context, product),
+                      const SizedBox(height: 14),
+                      _buildDetailActions(product),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _buildDetailHeader(context, product)),
+                      const SizedBox(width: 16),
+                      _buildDetailActions(product),
+                    ],
+                  ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _infoCard(
+                  context,
+                  label: 'Precio base',
+                  value: '${product.currency} ${product.salesPrice}',
+                  icon: Icons.payments_outlined,
+                ),
+                _infoCard(
+                  context,
+                  label: 'Oferta activa',
+                  value: product.offerPrice ?? 'Sin oferta',
+                  icon: Icons.local_offer_outlined,
+                ),
+                _infoCard(
+                  context,
+                  label: 'Negociación',
+                  value: product.negotiationAllowed
+                      ? 'Habilitada'
+                      : 'No permitida',
+                  icon: Icons.handshake_outlined,
+                ),
+                _infoCard(
+                  context,
+                  label: 'Inventario',
+                  value: product.stockQuantity?.toString() ?? 'No definido',
+                  icon: Icons.inventory_outlined,
+                  detail: product.lowStockThreshold == null
+                      ? null
+                      : 'Mínimo ${product.lowStockThreshold}',
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            _sectionCard(
+              context,
+              title: 'Resumen comercial',
+              icon: Icons.article_outlined,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.description ?? 'Sin descripción comercial.',
+                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _chip('Categoría', product.category ?? 'No definida'),
+                      _chip('Marca', product.brand ?? 'No definida'),
+                      _chip('Disponibilidad',
+                          product.availabilityText ?? 'No definida'),
+                      _chip('Estado', product.active ? 'Activo' : 'Inactivo'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Beneficios',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    product.benefits ?? 'No definidos.',
+                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.55),
+                  ),
+                  if (product.tags.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Etiquetas',
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: product.tags
+                          .map((tag) => _chip('#tag', tag))
+                          .toList(growable: false),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _sectionCard(
+              context,
+              title: 'Galería de imágenes',
+              icon: Icons.photo_library_outlined,
+              trailing: OutlinedButton.icon(
+                onPressed: _isBusy || product.images.length >= 3
+                    ? null
+                    : () => _uploadImages(product),
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label:
+                    Text(product.images.length >= 3 ? 'Límite 3/3' : 'Agregar'),
+              ),
+              child: product.images.isEmpty
+                  ? Text(
+                      'Sin imágenes cargadas.',
+                      style: theme.textTheme.bodyMedium,
+                    )
+                  : Wrap(
+                      spacing: 14,
+                      runSpacing: 14,
+                      children: product.images.map((image) {
+                        final imageUrl = _imageUrls[image.storageKey];
+                        return Container(
+                          width: compact ? double.infinity : 196,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.18),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant
+                                  .withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                height: 132,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  color: theme.colorScheme.surface
+                                      .withValues(alpha: 0.18),
+                                  image: imageUrl == null
+                                      ? null
+                                      : DecorationImage(
+                                          image: NetworkImage(imageUrl),
+                                          fit: BoxFit.cover,
+                                        ),
+                                ),
+                                child: imageUrl == null
+                                    ? const Center(
+                                        child: Icon(Icons.image_outlined))
+                                    : null,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                image.fileName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: IconButton(
+                                  onPressed: _isBusy
+                                      ? null
+                                      : () => _deleteImage(product, image),
+                                  icon:
+                                      const Icon(Icons.delete_outline_rounded),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(growable: false),
+                    ),
+            ),
+            const SizedBox(height: 16),
+            _sectionCard(
+              context,
+              title: 'Videos de venta',
+              icon: Icons.ondemand_video_outlined,
+              trailing: OutlinedButton.icon(
                 onPressed: _isBusy ? null : () => _uploadVideo(product),
                 icon: const Icon(Icons.video_call_outlined),
                 label: const Text('Agregar'),
               ),
+              child: product.videos.isEmpty
+                  ? Text(
+                      'Sin videos cargados.',
+                      style: theme.textTheme.bodyMedium,
+                    )
+                  : Column(
+                      children: product.videos
+                          .map(
+                            (video) => Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color: theme.colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.18),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: 0.45),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(14),
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.10),
+                                    ),
+                                    child: Icon(
+                                      Icons.play_circle_outline_rounded,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          video.title,
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          video.description ?? video.fileName,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: theme.colorScheme.onSurface
+                                                .withValues(alpha: 0.68),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: _isBusy
+                                        ? null
+                                        : () => _deleteVideo(product, video),
+                                    icon: const Icon(
+                                        Icons.delete_outline_rounded),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailHeader(BuildContext context, ProductRecord product) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          product.name,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w900,
+            height: 1.1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${product.identifier} • ${product.currency}',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.64),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Vista ejecutiva del producto para revisar propuesta de valor, precio, stock y materiales multimedia en un mismo espacio.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            height: 1.5,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailActions(ProductRecord product) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _isBusy ? null : () => _openEditDialog(product),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Editar'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _isBusy ? null : () => _deleteProduct(product),
+          icon: const Icon(Icons.delete_outline_rounded),
+          label: const Text('Eliminar'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeadlineMetric(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required IconData icon,
+    Color? accentColor,
+  }) {
+    final theme = Theme.of(context);
+    final color = accentColor ?? theme.colorScheme.primary;
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: theme.colorScheme.surface.withValues(alpha: 0.90),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.62),
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0C0F172A),
+            blurRadius: 20,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: color.withValues(alpha: 0.12),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          if (product.videos.isEmpty)
-            const Text('Sin videos cargados.')
-          else
-            ...product.videos.map((video) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.play_circle_outline_rounded),
-                  title: Text(video.title),
-                  subtitle: Text(video.description ?? video.fileName),
-                  trailing: IconButton(
-                    onPressed: _isBusy ? null : () => _deleteVideo(product, video),
-                    icon: const Icon(Icons.delete_outline_rounded),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageBanner(
+    BuildContext context, {
+    required String message,
+    required IconData icon,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniBadge(
+    BuildContext context, {
+    required IconData icon,
+    required String text,
+    Color? accentColor,
+  }) {
+    final theme = Theme.of(context);
+    final color = accentColor ?? theme.colorScheme.onSurface;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: theme.colorScheme.surface.withValues(alpha: 0.72),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color.withValues(alpha: 0.78)),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: color.withValues(alpha: 0.82),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCard(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required IconData icon,
+    String? detail,
+  }) {
+    final theme = Theme.of(context);
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 180, maxWidth: 250),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color:
+            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.18),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: theme.colorScheme.primary),
+          const SizedBox(height: 12),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          if (detail != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              detail,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.60),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionCard(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required Widget child,
+    Widget? trailing,
+  }) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: theme.colorScheme.surface.withValues(alpha: 0.78),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.10),
+                ),
+                child: Icon(icon, color: theme.colorScheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
                   ),
-                )),
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
+          ),
+          const SizedBox(height: 16),
+          child,
         ],
       ),
     );
@@ -421,9 +1190,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.20),
         border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
-      child: Text('$label: $value'),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+      ),
     );
   }
 
@@ -462,10 +1240,15 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Eliminar producto'),
-        content: Text('Se eliminará "${product.name}" con su multimedia asociada.'),
+        content:
+            Text('Se eliminará "${product.name}" con su multimedia asociada.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Eliminar')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar')),
         ],
       ),
     );
@@ -495,13 +1278,15 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         token,
         csvText: utf8.decode(file!.bytes!, allowMalformed: true),
       );
-      _success = 'Importación lista. Creados: ${result['created'] ?? 0}, actualizados: ${result['updated'] ?? 0}.';
+      _success =
+          'Importación lista. Creados: ${result['created'] ?? 0}, actualizados: ${result['updated'] ?? 0}.';
       await _loadProducts();
     });
   }
 
   Future<void> _copyTemplateCsv() async {
-    const csv = 'identifier,name,description,salesPrice,offerPrice,discountPercent,negotiationAllowed,negotiationMarginPercent,currency,category,brand,benefits,availabilityText,stockQuantity,lowStockThreshold\n'
+    const csv =
+        'identifier,name,description,salesPrice,offerPrice,discountPercent,negotiationAllowed,negotiationMarginPercent,currency,category,brand,benefits,availabilityText,stockQuantity,lowStockThreshold\n'
         'SKU-001,Audifonos P9 Ultra 2,Audifonos inalambricos con buena bateria,1500.00,1295.00,13.67,true,10,DOP,Audio,P9,Bluetooth y bateria extendida,Entrega inmediata,18,4';
     await Clipboard.setData(const ClipboardData(text: csv));
     if (!mounted) {
@@ -545,40 +1330,49 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
   Future<void> _uploadVideo(ProductRecord product) async {
     final picked = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
+      allowMultiple: true,
       withData: true,
       type: FileType.custom,
       allowedExtensions: const ['mp4', 'mov', 'webm'],
     );
-    final file = picked?.files.single;
-    if (file == null) {
+    final files = picked?.files
+            .where((file) => file.bytes != null)
+            .toList(growable: false) ??
+        const [];
+    if (files.isEmpty) {
       return;
     }
     if (!mounted) {
       return;
     }
-    final metadata = await showDialog<Map<String, String>>(
+    final metadata = await showDialog<_VideoUploadPlan>(
       context: context,
-      builder: (context) => _VideoDialog(fileName: file.name),
+      builder: (context) => _VideoDialog(files: files),
     );
     if (metadata == null) {
       return;
     }
     await _runBusy((token) async {
-      await _api.uploadVideo(
-        token: token,
-        productId: product.id,
-        file: file,
-        title: metadata['title'] ?? '',
-        description: metadata['description'],
-        sortOrder: product.videos.length,
-      );
-      _success = 'Video cargado correctamente.';
+      for (var index = 0; index < files.length; index += 1) {
+        final file = files[index];
+        await _api.uploadVideo(
+          token: token,
+          productId: product.id,
+          file: file,
+          title: metadata.buildTitle(file.name, index),
+          description: metadata.description,
+          sortOrder: product.videos.length + index,
+        );
+      }
+      _success = files.length == 1
+          ? 'Video cargado correctamente.'
+          : '${files.length} videos cargados correctamente.';
       await _loadProducts();
     });
   }
 
-  Future<void> _deleteImage(ProductRecord product, ProductMediaRecord image) async {
+  Future<void> _deleteImage(
+      ProductRecord product, ProductMediaRecord image) async {
     await _runBusy((token) async {
       await _api.deleteImage(token, product.id, image.id);
       _success = 'Imagen eliminada.';
@@ -586,7 +1380,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     });
   }
 
-  Future<void> _deleteVideo(ProductRecord product, ProductVideoRecord video) async {
+  Future<void> _deleteVideo(
+      ProductRecord product, ProductVideoRecord video) async {
     await _runBusy((token) async {
       await _api.deleteVideo(token, product.id, video.id);
       _success = 'Video eliminado.';
@@ -623,6 +1418,7 @@ class _ProductDialogState extends State<_ProductDialog> {
   late final TextEditingController _tags;
   bool _negotiationAllowed = false;
   bool _active = true;
+  bool _identifierTouched = false;
 
   @override
   void initState() {
@@ -633,26 +1429,68 @@ class _ProductDialogState extends State<_ProductDialog> {
     _description = TextEditingController(text: product?.description ?? '');
     _salesPrice = TextEditingController(text: product?.salesPrice ?? '');
     _offerPrice = TextEditingController(text: product?.offerPrice ?? '');
-    _discountPercent = TextEditingController(text: product?.discountPercent ?? '');
-    _negotiationMarginPercent = TextEditingController(text: product?.negotiationMarginPercent ?? '');
+    _discountPercent =
+        TextEditingController(text: product?.discountPercent ?? '');
+    _negotiationMarginPercent =
+        TextEditingController(text: product?.negotiationMarginPercent ?? '');
     _currency = TextEditingController(text: product?.currency ?? 'DOP');
     _category = TextEditingController(text: product?.category ?? '');
     _brand = TextEditingController(text: product?.brand ?? '');
     _benefits = TextEditingController(text: product?.benefits ?? '');
-    _availability = TextEditingController(text: product?.availabilityText ?? '');
-    _stockQuantity = TextEditingController(text: product?.stockQuantity?.toString() ?? '');
-    _lowStockThreshold = TextEditingController(text: product?.lowStockThreshold?.toString() ?? '');
-    _tags = TextEditingController(text: product == null ? '' : product.tags.join(', '));
+    _availability =
+        TextEditingController(text: product?.availabilityText ?? '');
+    _stockQuantity =
+        TextEditingController(text: product?.stockQuantity?.toString() ?? '');
+    _lowStockThreshold = TextEditingController(
+        text: product?.lowStockThreshold?.toString() ?? '');
+    _tags = TextEditingController(
+        text: product == null ? '' : product.tags.join(', '));
     _negotiationAllowed = product?.negotiationAllowed ?? false;
     _active = product?.active ?? true;
+    if (product == null) {
+      _name.addListener(_syncIdentifierFromName);
+    } else {
+      _identifierTouched = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    _identifier.dispose();
+    _name.dispose();
+    _description.dispose();
+    _salesPrice.dispose();
+    _offerPrice.dispose();
+    _discountPercent.dispose();
+    _negotiationMarginPercent.dispose();
+    _currency.dispose();
+    _category.dispose();
+    _brand.dispose();
+    _benefits.dispose();
+    _availability.dispose();
+    _stockQuantity.dispose();
+    _lowStockThreshold.dispose();
+    _tags.dispose();
+    super.dispose();
+  }
+
+  void _syncIdentifierFromName() {
+    if (_identifierTouched) {
+      return;
+    }
+    final generated = _slugifyIdentifier(_name.text);
+    if (_identifier.text != generated) {
+      _identifier.text = generated;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.product == null ? 'Crear producto' : 'Editar producto'),
+      title:
+          Text(widget.product == null ? 'Crear producto' : 'Editar producto'),
       content: SizedBox(
-        width: 760,
+        width: 700,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -660,9 +1498,16 @@ class _ProductDialogState extends State<_ProductDialog> {
               spacing: 12,
               runSpacing: 12,
               children: [
-                _field(_identifier, 'Identificador', validator: _required),
-                _field(_name, 'Nombre', validator: _required),
-                _field(_salesPrice, 'Precio venta', validator: _required),
+                _field(
+                  _identifier,
+                  'Identificador',
+                  validator: _required,
+                  helperText:
+                      'Se completa solo desde el nombre si lo dejas sin tocar.',
+                  onChanged: (_) => _identifierTouched = true,
+                ),
+                _field(_name, 'Nombre del producto', validator: _required),
+                _field(_salesPrice, 'Precio de venta', validator: _required),
                 _field(_offerPrice, 'Precio oferta'),
                 _field(_discountPercent, 'Descuento %'),
                 _field(_negotiationMarginPercent, 'Margen negociación %'),
@@ -670,14 +1515,19 @@ class _ProductDialogState extends State<_ProductDialog> {
                 _field(_category, 'Categoría'),
                 _field(_brand, 'Marca'),
                 _field(_availability, 'Disponibilidad'),
-                _field(_stockQuantity, 'Stock disponible', validator: _optionalWholeNumber),
-                _field(_lowStockThreshold, 'Stock mínimo', validator: _optionalWholeNumber),
-                _field(_description, 'Descripción', maxLines: 3, fullWidth: true),
-                _field(_benefits, 'Beneficios', maxLines: 3, fullWidth: true),
+                _field(_stockQuantity, 'Stock',
+                    validator: _optionalWholeNumber),
+                _field(_lowStockThreshold, 'Stock mínimo',
+                    validator: _optionalWholeNumber),
+                _field(_description, 'Descripción',
+                    maxLines: 3, fullWidth: true),
+                _field(_benefits, 'Beneficios o puntos de venta',
+                    maxLines: 3, fullWidth: true),
                 _field(_tags, 'Etiquetas separadas por coma', fullWidth: true),
                 SwitchListTile(
                   value: _negotiationAllowed,
-                  onChanged: (value) => setState(() => _negotiationAllowed = value),
+                  onChanged: (value) =>
+                      setState(() => _negotiationAllowed = value),
                   title: const Text('Permitir negociación'),
                 ),
                 SwitchListTile(
@@ -691,7 +1541,9 @@ class _ProductDialogState extends State<_ProductDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar')),
         FilledButton(
           onPressed: () {
             if (_formKey.currentState?.validate() != true) {
@@ -704,10 +1556,13 @@ class _ProductDialogState extends State<_ProductDialog> {
             final discountValue = _discountPercent.text.trim().isEmpty
                 ? null
                 : double.tryParse(_discountPercent.text.trim());
-            final negotiationMarginValue = _negotiationMarginPercent.text.trim().isEmpty
+            final negotiationMarginValue =
+                _negotiationMarginPercent.text.trim().isEmpty
+                    ? null
+                    : double.tryParse(_negotiationMarginPercent.text.trim());
+            final stockValue = _stockQuantity.text.trim().isEmpty
                 ? null
-                : double.tryParse(_negotiationMarginPercent.text.trim());
-            final stockValue = _stockQuantity.text.trim().isEmpty ? null : int.tryParse(_stockQuantity.text.trim());
+                : int.tryParse(_stockQuantity.text.trim());
             final lowStockValue = _lowStockThreshold.text.trim().isEmpty
                 ? null
                 : int.tryParse(_lowStockThreshold.text.trim());
@@ -715,19 +1570,26 @@ class _ProductDialogState extends State<_ProductDialog> {
             String? errorMessage;
             if (salesPriceValue == null || salesPriceValue < 0) {
               errorMessage = 'El precio de venta debe ser válido.';
-            } else if (offerPriceValue != null && offerPriceValue > salesPriceValue) {
+            } else if (offerPriceValue != null &&
+                offerPriceValue > salesPriceValue) {
               errorMessage = 'La oferta no puede superar el precio de venta.';
-            } else if (discountValue != null && (discountValue < 0 || discountValue > 100)) {
+            } else if (discountValue != null &&
+                (discountValue < 0 || discountValue > 100)) {
               errorMessage = 'El descuento debe estar entre 0 y 100.';
             } else if (negotiationMarginValue != null &&
                 (negotiationMarginValue < 0 || negotiationMarginValue > 100)) {
-              errorMessage = 'El margen de negociación debe estar entre 0 y 100.';
-            } else if (stockValue != null && lowStockValue != null && lowStockValue > stockValue) {
-              errorMessage = 'El stock mínimo no puede ser mayor que el stock disponible.';
+              errorMessage =
+                  'El margen de negociación debe estar entre 0 y 100.';
+            } else if (stockValue != null &&
+                lowStockValue != null &&
+                lowStockValue > stockValue) {
+              errorMessage =
+                  'El stock mínimo no puede ser mayor que el stock disponible.';
             }
 
             if (errorMessage != null) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage)));
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(errorMessage)));
               return;
             }
             Navigator.of(context).pop(_ProductDraft(
@@ -738,8 +1600,10 @@ class _ProductDialogState extends State<_ProductDialog> {
               offerPrice: _nullable(_offerPrice.text),
               discountPercent: _nullable(_discountPercent.text),
               negotiationAllowed: _negotiationAllowed,
-              negotiationMarginPercent: _nullable(_negotiationMarginPercent.text),
-              currency: _currency.text.trim().isEmpty ? 'DOP' : _currency.text.trim(),
+              negotiationMarginPercent:
+                  _nullable(_negotiationMarginPercent.text),
+              currency:
+                  _currency.text.trim().isEmpty ? 'DOP' : _currency.text.trim(),
               category: _nullable(_category.text),
               brand: _nullable(_brand.text),
               benefits: _nullable(_benefits.text),
@@ -766,6 +1630,8 @@ class _ProductDialogState extends State<_ProductDialog> {
     String? Function(String?)? validator,
     int maxLines = 1,
     bool fullWidth = false,
+    String? helperText,
+    ValueChanged<String>? onChanged,
   }) {
     return SizedBox(
       width: fullWidth ? 720 : 354,
@@ -773,63 +1639,110 @@ class _ProductDialogState extends State<_ProductDialog> {
         controller: controller,
         validator: validator,
         maxLines: maxLines,
-        decoration: InputDecoration(labelText: label),
+        onChanged: onChanged,
+        decoration: InputDecoration(labelText: label, helperText: helperText),
       ),
     );
   }
 }
 
 class _VideoDialog extends StatefulWidget {
-  const _VideoDialog({required this.fileName});
+  const _VideoDialog({required this.files});
 
-  final String fileName;
+  final List<PlatformFile> files;
 
   @override
   State<_VideoDialog> createState() => _VideoDialogState();
 }
 
 class _VideoDialogState extends State<_VideoDialog> {
-  late final TextEditingController _title;
+  late final TextEditingController _titlePrefix;
   final _description = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _title = TextEditingController(
-      text: widget.fileName.replaceFirst(RegExp(r'\.[^.]+$'), ''),
+    _titlePrefix = TextEditingController(
+      text: '',
     );
+  }
+
+  @override
+  void dispose() {
+    _titlePrefix.dispose();
+    _description.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Datos del video'),
+      title: Text(
+          widget.files.length == 1 ? 'Datos del video' : 'Datos de los videos'),
       content: SizedBox(
         width: 420,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(controller: _title, decoration: const InputDecoration(labelText: 'Título')),
+            Text(
+              widget.files.length == 1
+                  ? 'Puedes dejar el prefijo vacío y usaré el nombre del archivo.'
+                  : 'Seleccionaste ${widget.files.length} videos. Puedes poner un prefijo opcional y una sola descripción para todos.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _titlePrefix,
+              decoration: const InputDecoration(
+                  labelText: 'Prefijo de título opcional'),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: _description,
               maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Descripción'),
+              decoration:
+                  const InputDecoration(labelText: 'Descripción opcional'),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar')),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop({
-            'title': _title.text.trim(),
-            'description': _nullable(_description.text),
-          }),
+          onPressed: () => Navigator.of(context).pop(
+            _VideoUploadPlan(
+              titlePrefix: _nullable(_titlePrefix.text),
+              description: _nullable(_description.text),
+            ),
+          ),
           child: const Text('Aceptar'),
         ),
       ],
     );
+  }
+}
+
+class _VideoUploadPlan {
+  const _VideoUploadPlan({
+    this.titlePrefix,
+    this.description,
+  });
+
+  final String? titlePrefix;
+  final String? description;
+
+  String buildTitle(String fileName, int index) {
+    final baseName = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '').trim();
+    if (titlePrefix == null || titlePrefix!.isEmpty) {
+      return baseName;
+    }
+    if (index == 0) {
+      return '$titlePrefix - $baseName';
+    }
+    return '$titlePrefix ${index + 1} - $baseName';
   }
 }
 
@@ -915,4 +1828,13 @@ String? _optionalWholeNumber(String? value) {
     return 'Debe ser un entero mayor o igual a 0';
   }
   return null;
+}
+
+String _slugifyIdentifier(String input) {
+  final normalized = input
+      .toUpperCase()
+      .replaceAll(RegExp(r'[^A-Z0-9]+'), '-')
+      .replaceAll(RegExp(r'-{2,}'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '');
+  return normalized.isEmpty ? 'PRODUCTO' : normalized;
 }

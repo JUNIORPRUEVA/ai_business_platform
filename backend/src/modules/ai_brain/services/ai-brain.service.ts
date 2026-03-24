@@ -319,7 +319,9 @@ export class AiBrainService {
       );
       this.logger.log(`[AI BRAIN] tools resolved count=${activeTools.length}`);
       this.logger.log(`[AI BRAIN] retrieved knowledge chunks=${retrievedKnowledge.length}`);
-      this.logger.log(`[AI BRAIN] matched products=${matchedProducts.length}`);
+      this.logger.log(
+        `[AI BRAIN] matched products=${matchedProducts.length}${matchedProducts.length > 0 ? ` ids=${matchedProducts.map((product) => product.identifier).join(',')}` : ''}`,
+      );
 
       const recentTranscriptMessages = this.buildRecentTranscriptMessages(
         recentMessages,
