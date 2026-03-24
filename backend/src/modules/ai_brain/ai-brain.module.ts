@@ -14,6 +14,7 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { EvolutionModule } from '../evolution/evolution.module';
 import { MessagesModule } from '../messages/messages.module';
 import { OpenAiModule } from '../openai/openai.module';
+import { ProductsModule } from '../products/products.module';
 import { PromptsModule } from '../prompts/prompts.module';
 import { StorageModule } from '../storage/storage.module';
 import { ToolEntity } from '../tools/entities/tool.entity';
@@ -66,6 +67,7 @@ import { AiBrainVideoService } from './services/ai-brain-video.service';
     ToolsModule,
     EvolutionModule,
     OpenAiModule,
+    ProductsModule,
     PromptsModule,
     StorageModule,
     WhatsappChannelModule,

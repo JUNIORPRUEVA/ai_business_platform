@@ -4,6 +4,7 @@ import { BotEntity } from '../../bots/entities/bot.entity';
 import { CompanyEntity } from '../../companies/entities/company.entity';
 import { ContactEntity } from '../../contacts/entities/contact.entity';
 import { OpenAiChatMessage } from '../../openai/types/openai.types';
+import { ProductCatalogSnippet } from '../../products/products.service';
 import { ToolEntity } from '../../tools/entities/tool.entity';
 import { KnowledgeDocumentEntity } from '../entities/knowledge-document.entity';
 import { AiBrainContext } from '../types/ai-brain.types';
@@ -40,6 +41,7 @@ export class AiBrainContextBuilderService {
     memoryItems: Array<{ key: string; value: string; category: string }>;
     documents: KnowledgeDocumentEntity[];
     retrievedKnowledge: RetrievedKnowledgeChunk[];
+    matchedProducts: ProductCatalogSnippet[];
     activeTools: ToolEntity[];
     assembledMemoryContext: string;
     detectedIntent: string;
@@ -74,6 +76,21 @@ export class AiBrainContextBuilderService {
       name: tool.name,
       type: tool.type,
     }));
+
+    const matchedProductsDescription = params.matchedProducts.length > 0
+      ? params.matchedProducts
+          .map((product) => {
+            const priceLine = product.offerPrice
+              ? `${product.currency} ${product.offerPrice} en oferta (precio regular ${product.currency} ${product.salesPrice})`
+              : `${product.currency} ${product.salesPrice}`;
+            const negotiationLine =
+              product.negotiationAllowed && product.negotiationMarginPercent
+                ? ` Negociacion permitida hasta ${product.negotiationMarginPercent}%.`
+                : '';
+            return `- ${product.name} [${product.identifier}]${product.category ? `, ${product.category}` : ''}${product.brand ? `, ${product.brand}` : ''}: ${priceLine}.${product.description ? ` ${product.description}` : ''}${product.benefits ? ` Beneficios: ${product.benefits}.` : ''}${product.availabilityText ? ` Disponibilidad: ${product.availabilityText}.` : ''}${negotiationLine}${product.imageCount > 0 ? ` Tiene ${product.imageCount} imagen(es).` : ''}${product.videoCount > 0 ? ` Tiene ${product.videoCount} video(s).` : ''}`;
+          })
+          .join('\n')
+      : '- No matching products were found for this message.';
 
     const businessRules = params.businessRules.length > 0
       ? params.businessRules.map((rule, index) => `${index + 1}. ${rule}`).join('\n\n')
@@ -156,6 +173,9 @@ export class AiBrainContextBuilderService {
       '',
       'RETRIEVED KNOWLEDGE FOR THIS MESSAGE',
       retrievedKnowledgeDescription,
+      '',
+      'MATCHED PRODUCTS FOR THIS MESSAGE',
+      matchedProductsDescription,
       '',
       'AVAILABLE TOOLS',
       toolsDescription,

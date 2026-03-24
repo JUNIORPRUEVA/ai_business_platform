@@ -16,6 +16,7 @@ import { MessageEntity, MessageSender } from '../../messages/entities/message.en
 import { MessagesService } from '../../messages/messages.service';
 import { OpenAiChatMessage, OpenAiDraftResponse } from '../../openai/types/openai.types';
 import { OpenAiService } from '../../openai/services/openai.service';
+import { ProductsService } from '../../products/products.service';
 import { PromptEntity } from '../../prompts/entities/prompt.entity';
 import { PromptsService } from '../../prompts/prompts.service';
 import { ToolEntity } from '../../tools/entities/tool.entity';
@@ -75,6 +76,8 @@ export class AiBrainService {
     private readonly aiBrainEmbeddingService?: AiBrainEmbeddingService,
     @Optional()
     private readonly aiBrainKnowledgeChunkService?: AiBrainKnowledgeChunkService,
+    @Optional()
+    private readonly productsService?: ProductsService,
   ) {}
 
   async processInboundMessage(params: {
@@ -283,6 +286,10 @@ export class AiBrainService {
         botId: bot.id,
         incomingMessage: userMessage,
       });
+      const matchedProducts = await this.retrieveProductsForMessage(
+        params.companyId,
+        userMessage,
+      );
 
       const memoryFacts = [
         ...assembledMemory.keyFacts.map((item) => ({
@@ -312,6 +319,7 @@ export class AiBrainService {
       );
       this.logger.log(`[AI BRAIN] tools resolved count=${activeTools.length}`);
       this.logger.log(`[AI BRAIN] retrieved knowledge chunks=${retrievedKnowledge.length}`);
+      this.logger.log(`[AI BRAIN] matched products=${matchedProducts.length}`);
 
       const recentTranscriptMessages = this.buildRecentTranscriptMessages(
         recentMessages,
@@ -324,6 +332,7 @@ export class AiBrainService {
         memoryItems: memoryFacts,
         documents,
         retrievedKnowledge,
+        matchedProducts,
         activeTools,
         assembledMemoryContext: assembledMemory.contextText,
         detectedIntent,
@@ -752,6 +761,25 @@ export class AiBrainService {
       const message = error instanceof Error ? error.message : 'unknown_error';
       this.logger.warn(
         `[AI BRAIN] knowledge retrieval failed companyId=${params.companyId} botId=${params.botId} reason=${message}`,
+      );
+      return [];
+    }
+  }
+
+  private async retrieveProductsForMessage(
+    companyId: string,
+    incomingMessage: string,
+  ) {
+    try {
+      if (!this.productsService) {
+        return [];
+      }
+
+      return this.productsService.search(companyId, incomingMessage, 4);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      this.logger.warn(
+        `[AI BRAIN] product retrieval failed companyId=${companyId} reason=${message}`,
       );
       return [];
     }

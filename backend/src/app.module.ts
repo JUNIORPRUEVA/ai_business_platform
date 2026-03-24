@@ -18,6 +18,7 @@ import { ConversationsModule } from './modules/conversations/conversations.modul
 import { MemoryModule } from './modules/memory/memory.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { PromptsModule } from './modules/prompts/prompts.module';
+import { ProductsModule } from './modules/products/products.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { ToolsModule } from './modules/tools/tools.module';
 import { UsersModule } from './modules/users/users.module';
@@ -44,6 +45,7 @@ import { WhatsappChannelModule } from './modules/whatsapp-channel/whatsapp-chann
     ConversationsModule,
     MessagesModule,
     PromptsModule,
+    ProductsModule,
     MemoryModule,
     ToolsModule,
     AutomationsModule,

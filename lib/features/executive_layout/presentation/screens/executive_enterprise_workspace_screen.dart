@@ -6,6 +6,7 @@ import '../../../../modules/automations/presentation/screens/automations_screen.
 import '../../../../modules/channels/presentation/screens/channels_screen.dart';
 import '../../../../modules/dashboard/presentation/screens/dashboard_screen.dart';
 import '../../../../modules/messages/presentation/screens/messages_screen.dart';
+import '../../../../modules/products/presentation/screens/products_screen.dart';
 import '../../../../modules/prompts_knowledge/presentation/screens/prompts_knowledge_screen.dart';
 import '../../../../modules/settings/presentation/screens/settings_screen.dart';
 import '../../../../modules/storage/presentation/screens/storage_screen.dart';
@@ -24,6 +25,7 @@ class ExecutiveEnterpriseWorkspaceScreen extends StatelessWidget {
       ExecutiveNavItem(label: 'Panel', icon: Icons.space_dashboard_outlined),
       ExecutiveNavItem(label: 'Mensajes', icon: Icons.forum_outlined),
       ExecutiveNavItem(label: 'Prompts y conocimiento', icon: Icons.psychology_outlined),
+      ExecutiveNavItem(label: 'Productos', icon: Icons.inventory_2_outlined),
       ExecutiveNavItem(label: 'Herramientas', icon: Icons.handyman_outlined),
       ExecutiveNavItem(label: 'Canales', icon: Icons.hub_outlined),
       ExecutiveNavItem(label: 'Configuración de IA', icon: Icons.auto_awesome_outlined),
@@ -46,20 +48,22 @@ class ExecutiveEnterpriseWorkspaceScreen extends StatelessWidget {
           case 2:
             return const PromptsKnowledgeScreen();
           case 3:
-            return const ToolsScreen();
+            return const ProductsScreen();
           case 4:
-            return const ChannelsScreen();
+            return const ToolsScreen();
           case 5:
-            return const AiConfigurationScreen();
+            return const ChannelsScreen();
           case 6:
-            return const StorageScreen();
+            return const AiConfigurationScreen();
           case 7:
-            return const AutomationsScreen();
+            return const StorageScreen();
           case 8:
-            return const UsersRolesScreen();
+            return const AutomationsScreen();
           case 9:
-            return const AnalyticsScreen();
+            return const UsersRolesScreen();
           case 10:
+            return const AnalyticsScreen();
+          case 11:
             return const SettingsScreen();
           default:
             return _PlaceholderSection(title: items[selectedIndex].label);

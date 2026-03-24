@@ -38,6 +38,7 @@ test('ai brain context builder injects summary and facts as dedicated system mes
     ],
     documents: [],
     retrievedKnowledge: [],
+    matchedProducts: [],
     activeTools: [],
     assembledMemoryContext: 'Cliente interesado en camaras para negocio.',
     detectedIntent: 'sales',
