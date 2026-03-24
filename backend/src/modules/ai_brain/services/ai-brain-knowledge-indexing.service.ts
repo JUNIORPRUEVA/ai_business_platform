@@ -85,7 +85,13 @@ export class AiBrainKnowledgeIndexingService {
         `[AI KNOWLEDGE] document indexed companyId=${job.companyId} documentId=${job.documentId} chunks=${chunks.length}`,
       );
     } catch (error) {
-      await this.aiBrainKnowledgeChunkService.removeDocumentChunks(job.companyId, job.documentId);
+      try {
+        await this.aiBrainKnowledgeChunkService.removeDocumentChunks(job.companyId, job.documentId);
+      } catch (cleanupError) {
+        this.logger.warn(
+          `[AI KNOWLEDGE] cleanup failed companyId=${job.companyId} documentId=${job.documentId} reason=${cleanupError instanceof Error ? cleanupError.message : 'unknown_error'}`,
+        );
+      }
       await this.aiBrainDocumentService.update(job.companyId, job.documentId, {
         status: 'failed',
       });

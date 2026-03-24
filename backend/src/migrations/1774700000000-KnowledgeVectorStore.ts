@@ -4,6 +4,19 @@ export class KnowledgeVectorStore1774700000000 implements MigrationInterface {
   name = 'KnowledgeVectorStore1774700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const availableExtensions = await queryRunner.query(`
+      SELECT name
+      FROM pg_available_extensions
+      WHERE name = 'vector'
+    `);
+
+    if (!Array.isArray(availableExtensions) || availableExtensions.length === 0) {
+      console.warn(
+        '[KnowledgeVectorStore1774700000000] pgvector extension is not installed in this PostgreSQL instance. Skipping vector store migration.',
+      );
+      return;
+    }
+
     await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
 
     await queryRunner.query(`

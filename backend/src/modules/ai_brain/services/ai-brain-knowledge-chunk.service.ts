@@ -9,6 +9,7 @@ import {
 @Injectable()
 export class AiBrainKnowledgeChunkService {
   private readonly logger = new Logger(AiBrainKnowledgeChunkService.name);
+  private availabilityCache: { checkedAt: number; available: boolean } | null = null;
 
   constructor(private readonly dataSource: DataSource) {}
 
@@ -18,6 +19,10 @@ export class AiBrainKnowledgeChunkService {
     documentId: string;
     chunks: Array<KnowledgeChunkCandidate & { embedding: number[] }>;
   }): Promise<void> {
+    if (!(await this.isVectorStoreAvailable())) {
+      throw new Error('knowledge_vector_store_unavailable');
+    }
+
     await this.dataSource.transaction(async (manager) => {
       await manager.query(
         `DELETE FROM knowledge_document_chunks WHERE company_id = $1 AND document_id = $2`,
@@ -56,6 +61,10 @@ export class AiBrainKnowledgeChunkService {
   }
 
   async removeDocumentChunks(companyId: string, documentId: string): Promise<void> {
+    if (!(await this.isVectorStoreAvailable())) {
+      return;
+    }
+
     await this.dataSource.query(
       `DELETE FROM knowledge_document_chunks WHERE company_id = $1 AND document_id = $2`,
       [companyId, documentId],
@@ -69,6 +78,10 @@ export class AiBrainKnowledgeChunkService {
     limit?: number;
   }): Promise<RetrievedKnowledgeChunk[]> {
     const limit = Math.min(Math.max(params.limit ?? 6, 1), 12);
+
+    if (!(await this.isVectorStoreAvailable())) {
+      return [];
+    }
 
     try {
       const rows = await this.dataSource.query(
@@ -110,6 +123,49 @@ export class AiBrainKnowledgeChunkService {
         `[AI KNOWLEDGE] similarity search unavailable reason=${error instanceof Error ? error.message : 'unknown_error'}`,
       );
       return [];
+    }
+  }
+
+  private async isVectorStoreAvailable(): Promise<boolean> {
+    const now = Date.now();
+    if (this.availabilityCache && now - this.availabilityCache.checkedAt < 60_000) {
+      return this.availabilityCache.available;
+    }
+
+    try {
+      const [row] = await this.dataSource.query(
+        `
+          SELECT
+            EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS "hasVector",
+            to_regclass('public.knowledge_document_chunks') IS NOT NULL AS "hasChunksTable"
+        `,
+      );
+
+      const available =
+        Boolean(row?.hasVector ?? row?.hasvector) &&
+        Boolean(row?.hasChunksTable ?? row?.haschunkstable);
+
+      this.availabilityCache = {
+        checkedAt: now,
+        available,
+      };
+
+      if (!available) {
+        this.logger.warn(
+          '[AI KNOWLEDGE] vector store unavailable; pgvector extension or knowledge_document_chunks table is missing',
+        );
+      }
+
+      return available;
+    } catch (error) {
+      this.availabilityCache = {
+        checkedAt: now,
+        available: false,
+      };
+      this.logger.warn(
+        `[AI KNOWLEDGE] vector store availability check failed reason=${error instanceof Error ? error.message : 'unknown_error'}`,
+      );
+      return false;
     }
   }
 
