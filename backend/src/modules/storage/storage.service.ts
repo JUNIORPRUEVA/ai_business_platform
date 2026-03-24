@@ -62,7 +62,6 @@ export class StorageService {
       Bucket: bucket,
       Key: key,
       ContentType: params.contentType,
-      ContentDisposition: this.resolveContentDisposition(params.contentDisposition),
     });
 
     const url = await getSignedUrl(this.s3, command, { expiresIn: expiresInSeconds });
