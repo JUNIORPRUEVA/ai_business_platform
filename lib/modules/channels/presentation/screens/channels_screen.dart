@@ -93,9 +93,7 @@ class ChannelsScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(
-                      width: secondaryWidth is double
-                          ? secondaryWidth
-                          : double.infinity,
+                      width: secondaryWidth,
                       child: Wrap(
                         spacing: 12,
                         runSpacing: 12,

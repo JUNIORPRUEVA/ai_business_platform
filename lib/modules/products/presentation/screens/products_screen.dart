@@ -143,8 +143,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 1120;
-        final horizontalPadding = compact ? 12.0 : 18.0;
-        final verticalPadding = compact ? 12.0 : 16.0;
+        final horizontalPadding = compact ? 10.0 : 14.0;
+        final verticalPadding = compact ? 10.0 : 12.0;
+        final largeDesktop = constraints.maxWidth >= 1440;
 
         return Padding(
           padding: EdgeInsets.fromLTRB(
@@ -156,68 +157,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ModuleHeader(
-                title: 'Productos',
-                subtitle:
-                    'Gestiona tu catálogo comercial, precios, inventario y multimedia desde un panel optimizado para ventas y operación diaria.',
-                trailing: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: _isBusy ? null : _openCreateDialog,
-                      icon: const Icon(Icons.add_box_outlined),
-                      label: const Text('Crear producto'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _isBusy ? null : _importCsv,
-                      icon: const Icon(Icons.file_upload_outlined),
-                      label: const Text('Importar CSV'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _copyTemplateCsv,
-                      icon: const Icon(Icons.content_copy_outlined),
-                      label: const Text('Plantilla'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _buildHeadlineMetric(
-                    context,
-                    label: 'Catálogo activo',
-                    value: _products.length.toString(),
-                    icon: Icons.inventory_2_outlined,
-                  ),
-                  _buildHeadlineMetric(
-                    context,
-                    label: 'Resultados visibles',
-                    value: filtered.length.toString(),
-                    icon: Icons.search_rounded,
-                  ),
-                  _buildHeadlineMetric(
-                    context,
-                    label: 'Con stock crítico',
-                    value: _products
-                        .where(
-                          (item) =>
-                              item.stockQuantity != null &&
-                              item.lowStockThreshold != null &&
-                              item.stockQuantity! <= item.lowStockThreshold!,
-                        )
-                        .length
-                        .toString(),
-                    icon: Icons.warning_amber_rounded,
-                    accentColor: const Color(0xFFC27832),
-                  ),
-                ],
+              _buildTopWorkspaceStrip(
+                context,
+                filteredCount: filtered.length,
+                compact: compact,
               ),
               if (_error != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildMessageBanner(
                   context,
                   message: _error!,
@@ -226,7 +172,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 ),
               ],
               if (_success != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 _buildMessageBanner(
                   context,
                   message: _success!,
@@ -234,17 +180,17 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   color: const Color(0xFF2E8B57),
                 ),
               ],
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               Expanded(
                 child: compact
                     ? Column(
                         children: [
                           SizedBox(
-                            height: 320,
+                            height: 292,
                             width: double.infinity,
                             child: _buildListPanel(filtered, compact: true),
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 10),
                           Expanded(
                             child: _buildDetailPanel(_selected, compact: true),
                           ),
@@ -254,10 +200,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           SizedBox(
-                            width: constraints.maxWidth < 1360 ? 360 : 400,
+                            width: largeDesktop ? 430 : 390,
                             child: _buildListPanel(filtered),
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: _buildDetailPanel(_selected),
                           ),
@@ -275,17 +221,17 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final theme = Theme.of(context);
 
     return ExecutiveGlassCard(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   color: theme.colorScheme.primary.withValues(alpha: 0.10),
                   border: Border.all(
                     color: theme.colorScheme.primary.withValues(alpha: 0.18),
@@ -303,14 +249,15 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   children: [
                     Text(
                       'Catálogo comercial',
-                      style: theme.textTheme.titleMedium?.copyWith(
+                      style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                     Text(
                       '${filtered.length} resultados ${_searchController.text.trim().isEmpty ? 'disponibles' : 'filtrados'}',
                       style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11.5,
                         color:
                             theme.colorScheme.onSurface.withValues(alpha: 0.64),
                       ),
@@ -320,13 +267,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           TextField(
             controller: _searchController,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               hintText: 'Buscar producto...',
               prefixIcon: const Icon(Icons.search_rounded),
+              isDense: true,
               suffixIcon: _searchController.text.isEmpty
                   ? null
                   : IconButton(
@@ -338,11 +286,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     ),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               color: theme.colorScheme.surfaceContainerHighest
                   .withValues(alpha: 0.28),
               border: Border.all(
@@ -361,7 +309,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   child: Text(
                     'Selecciona un producto para revisar precio, inventario, beneficios y multimedia.',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      height: 1.35,
+                      fontSize: 11.8,
+                      height: 1.28,
                       color:
                           theme.colorScheme.onSurface.withValues(alpha: 0.68),
                     ),
@@ -370,7 +319,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           if (_isLoading)
             const Expanded(
               child: Center(
@@ -409,13 +358,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                       final token = await _requireToken();
                       await _ensureImageUrls(token, item);
                     },
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(16),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
                       curve: Curves.easeOutCubic,
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(16),
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -465,15 +414,16 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                       maxLines: compact ? 1 : 2,
                                       overflow: TextOverflow.ellipsis,
                                       style:
-                                          theme.textTheme.bodyLarge?.copyWith(
+                                          theme.textTheme.bodyMedium?.copyWith(
                                         fontWeight: FontWeight.w900,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 3),
                                     Text(
                                       item.identifier,
                                       style:
                                           theme.textTheme.bodySmall?.copyWith(
+                                        fontSize: 11.5,
                                         color: theme.colorScheme.onSurface
                                             .withValues(alpha: 0.60),
                                         fontWeight: FontWeight.w700,
@@ -484,7 +434,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                               ),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
+                                    horizontal: 8, vertical: 5),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(999),
                                   color: stockWarning
@@ -501,13 +451,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                 child: Text(
                                   '${item.currency} ${item.offerPrice ?? item.salesPrice}',
                                   style: theme.textTheme.bodySmall?.copyWith(
+                                    fontSize: 11.5,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -537,13 +488,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           Text(
                             item.description ?? 'Sin descripción comercial.',
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              height: 1.45,
+                              fontSize: 11.9,
+                              height: 1.35,
                               color: theme.colorScheme.onSurface
                                   .withValues(alpha: 0.74),
                             ),
@@ -613,223 +565,153 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     }
 
     return ExecutiveGlassCard(
-      padding: const EdgeInsets.all(22),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            compact
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildDetailHeader(context, product),
-                      const SizedBox(height: 14),
-                      _buildDetailActions(product),
-                    ],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: _buildDetailHeader(context, product)),
-                      const SizedBox(width: 16),
-                      _buildDetailActions(product),
-                    ],
-                  ),
-            const SizedBox(height: 18),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
+      padding: const EdgeInsets.all(16),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1160),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _infoCard(
-                  context,
-                  label: 'Precio base',
-                  value: '${product.currency} ${product.salesPrice}',
-                  icon: Icons.payments_outlined,
-                ),
-                _infoCard(
-                  context,
-                  label: 'Oferta activa',
-                  value: product.offerPrice ?? 'Sin oferta',
-                  icon: Icons.local_offer_outlined,
-                ),
-                _infoCard(
-                  context,
-                  label: 'Negociación',
-                  value: product.negotiationAllowed
-                      ? 'Habilitada'
-                      : 'No permitida',
-                  icon: Icons.handshake_outlined,
-                ),
-                _infoCard(
-                  context,
-                  label: 'Inventario',
-                  value: product.stockQuantity?.toString() ?? 'No definido',
-                  icon: Icons.inventory_outlined,
-                  detail: product.lowStockThreshold == null
-                      ? null
-                      : 'Mínimo ${product.lowStockThreshold}',
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            _sectionCard(
-              context,
-              title: 'Resumen comercial',
-              icon: Icons.article_outlined,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.description ?? 'Sin descripción comercial.',
-                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _chip('Categoría', product.category ?? 'No definida'),
-                      _chip('Marca', product.brand ?? 'No definida'),
-                      _chip('Disponibilidad',
-                          product.availabilityText ?? 'No definida'),
-                      _chip('Estado', product.active ? 'Activo' : 'Inactivo'),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Beneficios',
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    product.benefits ?? 'No definidos.',
-                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.55),
-                  ),
-                  if (product.tags.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Etiquetas',
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                compact
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildDetailHeader(context, product),
+                          const SizedBox(height: 10),
+                          _buildDetailActions(product),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildDetailHeader(context, product)),
+                          const SizedBox(width: 12),
+                          _buildDetailActions(product),
+                        ],
+                      ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _infoCard(
+                      context,
+                      label: 'Precio base',
+                      value: '${product.currency} ${product.salesPrice}',
+                      icon: Icons.payments_outlined,
                     ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: product.tags
-                          .map((tag) => _chip('#tag', tag))
-                          .toList(growable: false),
+                    _infoCard(
+                      context,
+                      label: 'Oferta activa',
+                      value: product.offerPrice ?? 'Sin oferta',
+                      icon: Icons.local_offer_outlined,
+                    ),
+                    _infoCard(
+                      context,
+                      label: 'Negociación',
+                      value: product.negotiationAllowed
+                          ? 'Habilitada'
+                          : 'No permitida',
+                      icon: Icons.handshake_outlined,
+                    ),
+                    _infoCard(
+                      context,
+                      label: 'Inventario',
+                      value: product.stockQuantity?.toString() ?? 'No definido',
+                      icon: Icons.inventory_outlined,
+                      detail: product.lowStockThreshold == null
+                          ? null
+                          : 'Mínimo ${product.lowStockThreshold}',
                     ),
                   ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _sectionCard(
-              context,
-              title: 'Galería de imágenes',
-              icon: Icons.photo_library_outlined,
-              trailing: OutlinedButton.icon(
-                onPressed: _isBusy || product.images.length >= 3
-                    ? null
-                    : () => _uploadImages(product),
-                icon: const Icon(Icons.add_photo_alternate_outlined),
-                label:
-                    Text(product.images.length >= 3 ? 'Límite 3/3' : 'Agregar'),
-              ),
-              child: product.images.isEmpty
-                  ? Text(
-                      'Sin imágenes cargadas.',
-                      style: theme.textTheme.bodyMedium,
-                    )
-                  : Wrap(
-                      spacing: 14,
-                      runSpacing: 14,
-                      children: product.images.map((image) {
-                        final imageUrl = _imageUrls[image.storageKey];
-                        return Container(
-                          width: compact ? double.infinity : 196,
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(18),
-                            color: theme.colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.18),
-                            border: Border.all(
-                              color: theme.colorScheme.outlineVariant
-                                  .withValues(alpha: 0.45),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                height: 132,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(14),
-                                  color: theme.colorScheme.surface
-                                      .withValues(alpha: 0.18),
-                                  image: imageUrl == null
-                                      ? null
-                                      : DecorationImage(
-                                          image: NetworkImage(imageUrl),
-                                          fit: BoxFit.cover,
-                                        ),
-                                ),
-                                child: imageUrl == null
-                                    ? const Center(
-                                        child: Icon(Icons.image_outlined))
-                                    : null,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                image.fileName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: IconButton(
-                                  onPressed: _isBusy
-                                      ? null
-                                      : () => _deleteImage(product, image),
-                                  icon:
-                                      const Icon(Icons.delete_outline_rounded),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(growable: false),
-                    ),
-            ),
-            const SizedBox(height: 16),
-            _sectionCard(
-              context,
-              title: 'Videos de venta',
-              icon: Icons.ondemand_video_outlined,
-              trailing: OutlinedButton.icon(
-                onPressed: _isBusy ? null : () => _uploadVideo(product),
-                icon: const Icon(Icons.video_call_outlined),
-                label: const Text('Agregar'),
-              ),
-              child: product.videos.isEmpty
-                  ? Text(
-                      'Sin videos cargados.',
-                      style: theme.textTheme.bodyMedium,
-                    )
-                  : Column(
-                      children: product.videos
-                          .map(
-                            (video) => Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Resumen comercial',
+                  icon: Icons.article_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.description ?? 'Sin descripción comercial.',
+                        style:
+                            theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _chip('Categoría', product.category ?? 'No definida'),
+                          _chip('Marca', product.brand ?? 'No definida'),
+                          _chip('Disponibilidad',
+                              product.availabilityText ?? 'No definida'),
+                          _chip(
+                              'Estado', product.active ? 'Activo' : 'Inactivo'),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Beneficios',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        product.benefits ?? 'No definidos.',
+                        style:
+                            theme.textTheme.bodyMedium?.copyWith(height: 1.55),
+                      ),
+                      if (product.tags.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Etiquetas',
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: product.tags
+                              .map((tag) => _chip('#tag', tag))
+                              .toList(growable: false),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Galería de imágenes',
+                  icon: Icons.photo_library_outlined,
+                  trailing: OutlinedButton.icon(
+                    onPressed: _isBusy || product.images.length >= 3
+                        ? null
+                        : () => _uploadImages(product),
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: Text(
+                        product.images.length >= 3 ? 'Límite 3/3' : 'Agregar'),
+                  ),
+                  child: product.images.isEmpty
+                      ? Text(
+                          'Sin imágenes cargadas.',
+                          style: theme.textTheme.bodyMedium,
+                        )
+                      : Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: product.images.map((image) {
+                            final imageUrl = _imageUrls[image.storageKey];
+                            return Container(
+                              width: compact ? double.infinity : 168,
+                              padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(14),
                                 color: theme.colorScheme.surfaceContainerHighest
                                     .withValues(alpha: 0.18),
                                 border: Border.all(
@@ -837,61 +719,147 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                       .withValues(alpha: 0.45),
                                 ),
                               ),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Container(
-                                    width: 44,
-                                    height: 44,
+                                    height: 112,
                                     decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(14),
-                                      color: theme.colorScheme.primary
-                                          .withValues(alpha: 0.10),
+                                      borderRadius: BorderRadius.circular(12),
+                                      color: theme.colorScheme.surface
+                                          .withValues(alpha: 0.18),
+                                      image: imageUrl == null
+                                          ? null
+                                          : DecorationImage(
+                                              image: NetworkImage(imageUrl),
+                                              fit: BoxFit.cover,
+                                            ),
                                     ),
-                                    child: Icon(
-                                      Icons.play_circle_outline_rounded,
-                                      color: theme.colorScheme.primary,
+                                    child: imageUrl == null
+                                        ? const Center(
+                                            child: Icon(Icons.image_outlined))
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    image.fileName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          video.title,
-                                          style: theme.textTheme.bodyLarge
-                                              ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          video.description ?? video.fileName,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: theme.colorScheme.onSurface
-                                                .withValues(alpha: 0.68),
-                                          ),
-                                        ),
-                                      ],
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: IconButton(
+                                      onPressed: _isBusy
+                                          ? null
+                                          : () => _deleteImage(product, image),
+                                      icon: const Icon(
+                                          Icons.delete_outline_rounded),
                                     ),
-                                  ),
-                                  IconButton(
-                                    onPressed: _isBusy
-                                        ? null
-                                        : () => _deleteVideo(product, video),
-                                    icon: const Icon(
-                                        Icons.delete_outline_rounded),
                                   ),
                                 ],
                               ),
-                            ),
-                          )
-                          .toList(growable: false),
-                    ),
+                            );
+                          }).toList(growable: false),
+                        ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Videos de venta',
+                  icon: Icons.ondemand_video_outlined,
+                  trailing: OutlinedButton.icon(
+                    onPressed: _isBusy ? null : () => _uploadVideo(product),
+                    icon: const Icon(Icons.video_call_outlined),
+                    label: const Text('Agregar'),
+                  ),
+                  child: product.videos.isEmpty
+                      ? Text(
+                          'Sin videos cargados.',
+                          style: theme.textTheme.bodyMedium,
+                        )
+                      : Column(
+                          children: product.videos
+                              .map(
+                                (video) => Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(14),
+                                    color: theme
+                                        .colorScheme.surfaceContainerHighest
+                                        .withValues(alpha: 0.18),
+                                    border: Border.all(
+                                      color: theme.colorScheme.outlineVariant
+                                          .withValues(alpha: 0.45),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 38,
+                                        height: 38,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          color: theme.colorScheme.primary
+                                              .withValues(alpha: 0.10),
+                                        ),
+                                        child: Icon(
+                                          Icons.play_circle_outline_rounded,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              video.title,
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              video.description ??
+                                                  video.fileName,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                fontSize: 11.8,
+                                                color: theme
+                                                    .colorScheme.onSurface
+                                                    .withValues(alpha: 0.68),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: _isBusy
+                                            ? null
+                                            : () =>
+                                                _deleteVideo(product, video),
+                                        icon: const Icon(
+                                            Icons.delete_outline_rounded),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -905,24 +873,27 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       children: [
         Text(
           product.name,
-          style: theme.textTheme.headlineSmall?.copyWith(
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontSize: 26,
             fontWeight: FontWeight.w900,
             height: 1.1,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(
           '${product.identifier} • ${product.currency}',
           style: theme.textTheme.bodyMedium?.copyWith(
+            fontSize: 13,
             color: theme.colorScheme.onSurface.withValues(alpha: 0.64),
             fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Text(
           'Vista ejecutiva del producto para revisar propuesta de valor, precio, stock y materiales multimedia en un mismo espacio.',
           style: theme.textTheme.bodyMedium?.copyWith(
-            height: 1.5,
+            fontSize: 12.8,
+            height: 1.4,
             color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
           ),
         ),
@@ -932,8 +903,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
   Widget _buildDetailActions(ProductRecord product) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         OutlinedButton.icon(
           onPressed: _isBusy ? null : () => _openEditDialog(product),
@@ -955,15 +926,22 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     required String value,
     required IconData icon,
     Color? accentColor,
+    bool compact = false,
   }) {
     final theme = Theme.of(context);
     final color = accentColor ?? theme.colorScheme.primary;
 
     return Container(
-      constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      constraints: BoxConstraints(
+        minWidth: compact ? 150 : 180,
+        maxWidth: compact ? 190 : 220,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 8 : 10,
+      ),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         color: theme.colorScheme.surface.withValues(alpha: 0.90),
         border: Border.all(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.62),
@@ -979,32 +957,201 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: compact ? 30 : 34,
+            height: compact ? 30 : 34,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(compact ? 10 : 11),
               color: color.withValues(alpha: 0.12),
             ),
-            child: Icon(icon, color: color),
+            child: Icon(icon, color: color, size: compact ? 16 : 18),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: compact ? 8 : 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 value,
-                style: theme.textTheme.titleLarge?.copyWith(
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontSize: compact ? 18 : null,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
                 label,
                 style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: compact ? 10.8 : 11.5,
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.66),
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopWorkspaceStrip(
+    BuildContext context, {
+    required int filteredCount,
+    required bool compact,
+  }) {
+    final theme = Theme.of(context);
+    final topMetrics = [
+      _buildHeadlineMetric(
+        context,
+        label: 'Catálogo activo',
+        value: _products.length.toString(),
+        icon: Icons.inventory_2_outlined,
+        compact: true,
+      ),
+      _buildHeadlineMetric(
+        context,
+        label: 'Resultados',
+        value: filteredCount.toString(),
+        icon: Icons.search_rounded,
+        compact: true,
+      ),
+      _buildHeadlineMetric(
+        context,
+        label: 'Stock crítico',
+        value: _products
+            .where(
+              (item) =>
+                  item.stockQuantity != null &&
+                  item.lowStockThreshold != null &&
+                  item.stockQuantity! <= item.lowStockThreshold!,
+            )
+            .length
+            .toString(),
+        icon: Icons.warning_amber_rounded,
+        accentColor: const Color(0xFFC27832),
+        compact: true,
+      ),
+    ];
+
+    final actionButtons = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        FilledButton.icon(
+          onPressed: _isBusy ? null : _openCreateDialog,
+          icon: const Icon(Icons.add_box_outlined),
+          label: const Text('Crear producto'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _isBusy ? null : _importCsv,
+          icon: const Icon(Icons.file_upload_outlined),
+          label: const Text('Importar CSV'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _copyTemplateCsv,
+          icon: const Icon(Icons.content_copy_outlined),
+          label: const Text('Plantilla'),
+        ),
+      ],
+    );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ModuleHeader(
+            compact: true,
+            title: 'Productos',
+            subtitle:
+                'Gestiona tu catálogo comercial, precios, inventario y multimedia desde un panel optimizado para ventas y operación diaria.',
+            trailing: actionButtons,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: topMetrics,
+          ),
+          const SizedBox(height: 10),
+        ],
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: theme.colorScheme.surface.withValues(alpha: 0.58),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.14),
+                    ),
+                  ),
+                  child: Text(
+                    'Workspace',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 11.2,
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Productos',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Gestiona tu catálogo comercial, precios, inventario y multimedia desde un panel optimizado para ventas y operación diaria.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12.2,
+                    height: 1.35,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            flex: 5,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...topMetrics.map(
+                    (metric) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: metric,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  actionButtons,
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -1021,9 +1168,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         color: color.withValues(alpha: 0.10),
         border: Border.all(color: color.withValues(alpha: 0.24)),
       ),
@@ -1035,6 +1182,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
             child: Text(
               message,
               style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 12.5,
                 color: theme.colorScheme.onSurface,
                 fontWeight: FontWeight.w600,
               ),
@@ -1055,7 +1203,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final color = accentColor ?? theme.colorScheme.onSurface;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: theme.colorScheme.surface.withValues(alpha: 0.72),
@@ -1066,11 +1214,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color.withValues(alpha: 0.78)),
-          const SizedBox(width: 6),
+          Icon(icon, size: 13, color: color.withValues(alpha: 0.78)),
+          const SizedBox(width: 5),
           Text(
             text,
             style: theme.textTheme.labelMedium?.copyWith(
+              fontSize: 11.2,
               color: color.withValues(alpha: 0.82),
               fontWeight: FontWeight.w700,
             ),
@@ -1090,10 +1239,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final theme = Theme.of(context);
 
     return Container(
-      constraints: const BoxConstraints(minWidth: 180, maxWidth: 250),
-      padding: const EdgeInsets.all(16),
+      constraints: const BoxConstraints(minWidth: 148, maxWidth: 200),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         color:
             theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.18),
         border: Border.all(
@@ -1103,27 +1252,29 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: theme.colorScheme.primary),
-          const SizedBox(height: 12),
+          Icon(icon, color: theme.colorScheme.primary, size: 18),
+          const SizedBox(height: 8),
           Text(
             label,
             style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11.2,
               color: theme.colorScheme.onSurface.withValues(alpha: 0.62),
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             value,
-            style: theme.textTheme.titleMedium?.copyWith(
+            style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w900,
             ),
           ),
           if (detail != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               detail,
               style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 11.2,
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.60),
               ),
             ),
@@ -1144,9 +1295,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
         color: theme.colorScheme.surface.withValues(alpha: 0.78),
         border: Border.all(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.42),
@@ -1158,19 +1309,19 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           Row(
             children: [
               Container(
-                width: 38,
-                height: 38,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   color: theme.colorScheme.primary.withValues(alpha: 0.10),
                 ),
-                child: Icon(icon, color: theme.colorScheme.primary),
+                child: Icon(icon, color: theme.colorScheme.primary, size: 17),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -1178,7 +1329,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               if (trailing != null) trailing,
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           child,
         ],
       ),
@@ -1187,7 +1338,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
   Widget _chip(String label, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: Theme.of(context)
@@ -1199,6 +1350,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       child: Text(
         '$label: $value',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontSize: 11.5,
               fontWeight: FontWeight.w700,
             ),
       ),

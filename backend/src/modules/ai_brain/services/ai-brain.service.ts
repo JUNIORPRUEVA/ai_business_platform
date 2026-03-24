@@ -847,22 +847,22 @@ export class AiBrainService {
   } {
     const configuredPrimaryPrompt =
       configuration.prompts
-        .map((prompt) => prompt.content.trim())
+        .map((prompt) => this.sanitizeConfiguredPrompt(prompt.content))
         .find((content) => content.length > 0) || '';
     const activeSystemPrompt =
       activePrompts.find((prompt) => prompt.type === 'system')?.content?.trim() || '';
     const previewSystemPrompt = configuration.openai.systemPromptPreview.trim();
 
-    const systemInstructions =
-      configuredPrimaryPrompt || activeSystemPrompt || previewSystemPrompt;
-    const systemSource = configuredPrimaryPrompt
-      ? 'bot_configuration.prompts[0]'
-      : activeSystemPrompt
+    const systemInstructions = activeSystemPrompt || previewSystemPrompt;
+    const systemSource = activeSystemPrompt
         ? 'prompts.system.active'
         : 'openai.systemPromptPreview';
 
     const botSystemPrompt = bot.systemPrompt?.trim() || '';
-    const mainBotPrompt = configuredPrimaryPrompt || botSystemPrompt || systemInstructions;
+    const mainBotPrompt =
+      configuredPrimaryPrompt ||
+      this.sanitizeConfiguredPrompt(botSystemPrompt) ||
+      systemInstructions;
     const mainSource = configuredPrimaryPrompt
       ? 'bot_configuration.prompts[0]'
       : botSystemPrompt
@@ -871,7 +871,7 @@ export class AiBrainService {
     const promptTypes = this.resolvePromptTypesForIntent(detectedIntent);
     const configuredBusinessRules = configuration.prompts
       .slice(1)
-      .map((prompt) => prompt.content.trim())
+      .map((prompt) => this.sanitizeConfiguredPrompt(prompt.content))
       .filter((value) => value.length > 0);
     const dynamicBusinessRules = activePrompts
       .filter((prompt) => prompt.type === 'behavior' || promptTypes.includes(prompt.type))
@@ -879,11 +879,13 @@ export class AiBrainService {
       .filter((value) => value.length > 0);
     const behaviorGuardrails = [
       'Siempre responde primero la pregunta real del usuario antes de intentar vender o guiar la conversación.',
+      'Nunca reformules, repitas ni devuelvas la misma pregunta del cliente como si fuera tu respuesta.',
       'Después de responder, guía la conversación de forma natural hacia el siguiente paso comercial.',
       'Responde como una persona real por WhatsApp, no como soporte genérico ni como folleto.',
       'Usa normalmente entre 2 y 4 frases cortas cuando haga falta contexto; evita párrafos largos y pesados.',
       'No uses lenguaje técnico, rebuscado o demasiado formal si el cliente no lo pide.',
       'Haz como máximo una pregunta corta para mover la conversación.',
+      'No uses muletillas como "Entiendo", "Seguimos con" o "¿Quieres que te recomiende algo?" si no agregan informacion nueva.',
       'Nunca saltes directamente al registro o captura de datos si el usuario no lo pidió explícitamente.',
       'Nunca repitas en bloque "nombre, teléfono, email" ni solicites esos datos sin contexto.',
       'Si el usuario pregunta qué venden, explica productos o servicios primero.',
@@ -1049,7 +1051,10 @@ export class AiBrainService {
       normalizedDraft.includes('si hay algo específico que te gustaría saber') ||
       normalizedDraft.includes('si hay algo especifico que te gustaria saber') ||
       normalizedDraft.includes('nombre, teléfono, email') ||
-      normalizedDraft.includes('nombre, telefono, email');
+      normalizedDraft.includes('nombre, telefono, email') ||
+      normalizedDraft.includes('seguimos con');
+
+    const echoesUserQuestion = this.isQuestionEcho(conversationalDraft, trimmedUserMessage);
 
     const isTooLong =
       conversationalDraft.length > 280 ||
@@ -1070,7 +1075,13 @@ export class AiBrainService {
       return this.buildDocumentAwareReply(trimmedUserMessage, recentDocumentContext);
     }
 
-    if (!looksLikeGenericShortMessageReply && !soundsRobotic && !repeatsLastAssistant && !isTooLong) {
+    if (
+      !looksLikeGenericShortMessageReply &&
+      !soundsRobotic &&
+      !echoesUserQuestion &&
+      !repeatsLastAssistant &&
+      !isTooLong
+    ) {
       return conversationalDraft;
     }
 
@@ -1100,17 +1111,6 @@ export class AiBrainService {
     );
     const trimmedSenderName = params.senderName?.trim() ?? '';
     const namePrefix = trimmedSenderName.length > 0 ? `${trimmedSenderName}, ` : '';
-    const previousClientTopic = [...params.recentMessages]
-      .reverse()
-      .find((message) => message.sender === 'client' && message.content.trim() !== params.userMessage.trim())
-      ?.content
-      .trim();
-    const shortPreviousTopic = previousClientTopic == null || previousClientTopic.length === 0
-      ? null
-      : previousClientTopic.length > 80
-        ? `${previousClientTopic.slice(0, 77)}...`
-        : previousClientTopic;
-
     if (!normalized) {
       return 'Hola. Dime qué necesitas y te ayudo rápido.';
     }
@@ -1124,21 +1124,15 @@ export class AiBrainService {
     }
 
     if (/^(hola|buenas|buenos dias|buenos d[ií]as|buenas tardes|buenas noches|hey|ey)\b/.test(normalized)) {
-      return shortPreviousTopic != null
-        ? `Hola ${namePrefix}seguimos con ${shortPreviousTopic}. ¿Quieres precio o más detalles?`
-        : `Hola ${namePrefix}¿qué estás buscando?`;
+      return `Hola ${namePrefix}cuéntame qué necesitas y te ayudo.`;
     }
 
     if (/(como estas|c[oó]mo est[aá]s|que tal|q tal|todo bien)/.test(normalized)) {
-      return shortPreviousTopic != null
-        ? `Todo bien. Seguimos con ${shortPreviousTopic}. ¿Te paso precio o detalles?`
-        : 'Todo bien. Dime qué necesitas.';
+      return 'Todo bien. Cuéntame qué necesitas y te ayudo.';
     }
 
     if (/^(si|sí|ok|oki|dale|perfecto|de acuerdo|claro|yes)\b/.test(normalized)) {
-      return shortPreviousTopic != null
-        ? `Perfecto. Sobre ${shortPreviousTopic}, ¿quieres precio o detalles?`
-        : 'Perfecto. ¿Quieres precio o más detalles?';
+      return 'Perfecto. Dime si quieres precio, detalles o disponibilidad.';
     }
 
     if (/(que venden|qué venden|que ofrecen|qué ofrecen|productos|servicios)/.test(normalized)) {
@@ -1157,9 +1151,11 @@ export class AiBrainService {
       if (params.detectedIntent === 'pricing') {
         return 'Claro. Dime cuál te interesa y te paso el precio.';
       }
-      return shortPreviousTopic != null
-        ? `Seguimos con ${shortPreviousTopic}. ¿Quieres precio, detalles o disponibilidad?`
-        : `Claro ${namePrefix}¿quieres precio, detalles o disponibilidad?`;
+      return `Claro ${namePrefix}¿quieres precio, detalles o disponibilidad?`;
+    }
+
+    if (this.isDirectInformationQuestion(normalized)) {
+      return 'Te respondo directo y sin rodeos. Si quieres, te aclaro ese dato puntual.';
     }
 
     if (params.detectedIntent === 'pricing') {
@@ -1167,12 +1163,20 @@ export class AiBrainService {
     }
 
     if (params.detectedIntent === 'support') {
-      return 'Entiendo. Dime qué te está fallando y lo revisamos.';
+      return 'Cuéntame qué te está fallando y lo revisamos.';
     }
 
-    return shortPreviousTopic != null
-      ? `Entiendo. Seguimos con ${shortPreviousTopic}. ¿Quieres que te recomiende algo?`
-      : 'Entiendo. ¿Quieres que te recomiende una opción?';
+    return 'Claro. Te ayudo con eso.';
+  }
+
+  private sanitizeConfiguredPrompt(content: string): string {
+    return content
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/seguimos con/gi, 'continua la conversacion sobre')
+      .replace(/¿quieres que te recomiende algo\?/gi, '')
+      .replace(/\?quieres que te recomiende algo\?/gi, '')
+      .trim();
   }
 
   private isVideoQuestion(message: string): boolean {
@@ -1444,6 +1448,70 @@ export class AiBrainService {
     }
 
     return `${documentContext.summary}.`;
+  }
+
+  private isQuestionEcho(draft: string, userMessage: string): boolean {
+    if (!this.isDirectInformationQuestion(userMessage)) {
+      return false;
+    }
+
+    const normalizedUser = this.normalizeHeuristicText(userMessage);
+    const normalizedDraft = this.normalizeHeuristicText(draft)
+      .replace(/^(entiendo|claro|perfecto|ok|vale|listo)\s+/i, '')
+      .replace(/^seguimos con\s+/i, '')
+      .trim();
+
+    if (normalizedUser.length < 18 || normalizedDraft.length < 18) {
+      return false;
+    }
+
+    if (normalizedDraft.includes(normalizedUser) || normalizedUser.includes(normalizedDraft)) {
+      return true;
+    }
+
+    const userTokens = Array.from(
+      new Set(normalizedUser.split(' ').filter((token) => token.length >= 4)),
+    );
+    if (userTokens.length < 4) {
+      return false;
+    }
+
+    const sharedTokens = userTokens.filter((token) => normalizedDraft.includes(token)).length;
+    return sharedTokens / userTokens.length >= 0.75;
+  }
+
+  private shouldUseTopicAsFollowUp(topic: string | null): boolean {
+    if (topic == null) {
+      return false;
+    }
+
+    const normalizedTopic = this.normalizeHeuristicText(topic);
+    if (normalizedTopic.length < 4 || normalizedTopic.length > 64 || /[?¿]/.test(topic)) {
+      return false;
+    }
+
+    return !this.isDirectInformationQuestion(normalizedTopic);
+  }
+
+  private isDirectInformationQuestion(message: string): boolean {
+    const normalized = this.normalizeHeuristicText(message);
+    if (!normalized) {
+      return false;
+    }
+
+    return /^(que|cual|como|cuando|cuanto|cuantos|donde|quien|quienes)\b/.test(normalized) ||
+      /\b(que|cual|como|cuando|cuanto|cuantos|donde|quien|quienes)\b/.test(normalized) ||
+      /[?¿]/.test(message);
+  }
+
+  private normalizeHeuristicText(value: string): string {
+    return value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private enforceConversationalStyle(draft: string): string {

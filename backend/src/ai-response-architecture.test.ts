@@ -162,6 +162,76 @@ test('ai brain replaces long robotic sales copy with a short human whatsapp repl
   assert.match(normalized, /precio|detalles|recomiende/i);
 });
 
+test('ai brain replaces replies that echo the same client question', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const normalized = (service as any).normalizeAssistantReply({
+    draft:
+      'Entiendo. Seguimos con cuál es la cédula de la persona que se está contratando. ¿Quieres que te recomiende algo?',
+    userMessage: '¿Cuál es la cédula de la persona que se está contratando?',
+    recentMessages: [],
+    senderName: 'Junior',
+    detectedIntent: 'general',
+  });
+
+  assert.doesNotMatch(normalized, /seguimos con|recomiende algo/i);
+  assert.doesNotMatch(normalized, /cu[aá]l es la c[ée]dula de la persona que se est[aá] contratando/i);
+  assert.match(normalized, /te respondo directo|te ayudo/i);
+});
+
+test('ai brain does not reuse previous client questions as a follow-up topic', () => {
+  const service = new AiBrainService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const fallback = (service as any).buildHumanSalesReply({
+    userMessage: 'ok',
+    recentMessages: [
+      {
+        sender: 'client',
+        content: '¿Cuándo se termina el contrato?',
+      },
+    ],
+    senderName: 'Junior',
+    detectedIntent: 'sales',
+  });
+
+  assert.doesNotMatch(fallback, /seguimos con|cu[aá]ndo se termina el contrato/i);
+  assert.match(fallback, /precio|detalles|disponibilidad/i);
+});
+
 test('ai brain answers video questions using the stored video analysis context', () => {
   const service = new AiBrainService(
     {} as never,

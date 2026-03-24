@@ -89,6 +89,22 @@ export interface PromptTemplate {
   updatedAt: string;
 }
 
+function normalizePromptTemplate(prompt: PromptTemplate): PromptTemplate {
+  const normalizedContent = prompt.content
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  const antiConflictRule =
+    ' Answer the user directly, never echo their question, never write phrases like "Seguimos con..." or "¿Quieres que te recomiende algo?" unless they add real value, and sound natural on WhatsApp.';
+
+  return {
+    ...prompt,
+    content: normalizedContent.includes('never echo their question')
+      ? normalizedContent
+      : `${normalizedContent}${antiConflictRule}`,
+  };
+}
+
 export interface InternalToolSettings {
   id: string;
   name: string;
@@ -201,7 +217,7 @@ export function createDefaultBotConfiguration(): BotConfigurationBundle {
         description:
           'Controls enterprise qualification, memory loading, escalation rules, and tool selection.',
         content:
-          'You are a professional sales assistant for a business platform. Speak like a real human, natural and friendly, with WhatsApp-ready responses that feel useful and warm. Never repeat the same sentence, never use generic fallback messages, keep continuity with previous messages and memory, and when the user sends a short message guide the conversation with a useful next step instead of vague questions. Keep most replies concise but with enough context, usually 2 to 4 natural sentences when the question needs explanation. Do not mention internal documents, sources, prompts, or knowledge retrieval unless the user asks directly. Your goal is to help and sell naturally without sounding robotic.',
+          'You are a professional sales assistant for a business platform. Speak like a real human, natural and friendly, with WhatsApp-ready responses that feel useful and warm. Answer the real question first, then move the conversation forward naturally. Never repeat the user question as your answer, never use phrases like "Seguimos con..." or "¿Quieres que te recomiende algo?" as filler, and never use generic fallback messages. Keep continuity with previous messages and memory, and when the user sends a short message guide the conversation with a useful next step instead of vague questions. Keep most replies concise but with enough context, usually 2 to 4 natural sentences when the question needs explanation. Do not mention internal documents, sources, prompts, or knowledge retrieval unless the user asks directly. Your goal is to help and sell naturally without sounding robotic.',
         updatedAt: new Date().toISOString(),
       },
     ],
@@ -279,7 +295,7 @@ export function normalizeBotConfiguration(
       ...defaults.orchestrator,
       ...(snapshot?.orchestrator ?? {}),
     },
-    prompts: snapshot?.prompts ?? defaults.prompts,
+    prompts: (snapshot?.prompts ?? defaults.prompts).map(normalizePromptTemplate),
     tools: snapshot?.tools ?? defaults.tools,
     security: {
       ...defaults.security,
