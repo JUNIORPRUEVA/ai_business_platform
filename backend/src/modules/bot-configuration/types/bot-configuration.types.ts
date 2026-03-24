@@ -92,7 +92,12 @@ export interface PromptTemplate {
 function normalizePromptTemplate(prompt: PromptTemplate): PromptTemplate {
   const normalizedContent = prompt.content
     .trim()
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    .replace(/seguimos con/gi, 'continua la conversacion sobre')
+    .replace(/¿quieres que te recomiende algo\?/gi, '')
+    .replace(/\?quieres que te recomiende algo\?/gi, '')
+    .replace(/nunca reformules la pregunta del cliente como respuesta/gi, '')
+    .trim();
 
   const antiConflictRule =
     ' Answer the user directly, never echo their question, never write phrases like "Seguimos con..." or "¿Quieres que te recomiende algo?" unless they add real value, and sound natural on WhatsApp.';

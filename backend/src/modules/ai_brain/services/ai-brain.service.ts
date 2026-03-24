@@ -849,8 +849,9 @@ export class AiBrainService {
       configuration.prompts
         .map((prompt) => this.sanitizeConfiguredPrompt(prompt.content))
         .find((content) => content.length > 0) || '';
-    const activeSystemPrompt =
-      activePrompts.find((prompt) => prompt.type === 'system')?.content?.trim() || '';
+    const activeSystemPrompt = this.sanitizeConfiguredPrompt(
+      activePrompts.find((prompt) => prompt.type === 'system')?.content?.trim() || '',
+    );
     const previewSystemPrompt = configuration.openai.systemPromptPreview.trim();
 
     const systemInstructions = activeSystemPrompt || previewSystemPrompt;
@@ -875,7 +876,7 @@ export class AiBrainService {
       .filter((value) => value.length > 0);
     const dynamicBusinessRules = activePrompts
       .filter((prompt) => prompt.type === 'behavior' || promptTypes.includes(prompt.type))
-      .map((prompt) => prompt.content.trim())
+      .map((prompt) => this.sanitizeConfiguredPrompt(prompt.content))
       .filter((value) => value.length > 0);
     const behaviorGuardrails = [
       'Siempre responde primero la pregunta real del usuario antes de intentar vender o guiar la conversación.',
@@ -1052,7 +1053,8 @@ export class AiBrainService {
       normalizedDraft.includes('si hay algo especifico que te gustaria saber') ||
       normalizedDraft.includes('nombre, teléfono, email') ||
       normalizedDraft.includes('nombre, telefono, email') ||
-      normalizedDraft.includes('seguimos con');
+      normalizedDraft.includes('seguimos con') ||
+      /^(entiendo|claro|perfecto|ok|vale)\b/.test(normalizedDraft) && normalizedDraft.includes('?');
 
     const echoesUserQuestion = this.isQuestionEcho(conversationalDraft, trimmedUserMessage);
 
@@ -1170,13 +1172,23 @@ export class AiBrainService {
   }
 
   private sanitizeConfiguredPrompt(content: string): string {
-    return content
+    const normalized = content
       .trim()
       .replace(/\s+/g, ' ')
       .replace(/seguimos con/gi, 'continua la conversacion sobre')
       .replace(/¿quieres que te recomiende algo\?/gi, '')
       .replace(/\?quieres que te recomiende algo\?/gi, '')
+      .replace(/repite la pregunta del cliente/gi, '')
+      .replace(/reformular la pregunta del cliente/gi, '')
+      .replace(/reformula la pregunta del cliente/gi, '')
+      .replace(/retoma la pregunta del cliente/gi, '')
       .trim();
+
+    if (!normalized) {
+      return '';
+    }
+
+    return `Prioridad absoluta: responde la intención actual del usuario de forma natural, no repitas su pregunta ni uses coletillas vacías. ${normalized}`;
   }
 
   private isVideoQuestion(message: string): boolean {
