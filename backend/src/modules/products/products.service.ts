@@ -45,6 +45,8 @@ export interface ProductCatalogSnippet {
   videoCount: number;
   primaryImage: ProductMediaSnippet | null;
   primaryVideo: ProductMediaSnippet | null;
+  images?: ProductMediaSnippet[];
+  videos?: ProductMediaSnippet[];
 }
 
 @Injectable()
@@ -647,23 +649,27 @@ export class ProductsService {
   }
 
   private async toCatalogSnippet(product: ProductEntity): Promise<ProductCatalogSnippet> {
-    const [imageCount, videoCount, primaryImageEntity, primaryVideoEntity] = await Promise.all([
+    const [imageCount, videoCount, imageEntities, videoEntities] = await Promise.all([
       this.productImagesRepository.count({ where: { companyId: product.companyId, productId: product.id } }),
       this.productVideosRepository.count({ where: { companyId: product.companyId, productId: product.id } }),
-      this.productImagesRepository.findOne({
+      this.productImagesRepository.find({
         where: { companyId: product.companyId, productId: product.id, active: true },
         order: { sortOrder: 'ASC', createdAt: 'ASC' },
+        take: 6,
       }),
-      this.productVideosRepository.findOne({
+      this.productVideosRepository.find({
         where: { companyId: product.companyId, productId: product.id, active: true },
         order: { sortOrder: 'ASC', createdAt: 'ASC' },
+        take: 4,
       }),
     ]);
 
-    const [primaryImage, primaryVideo] = await Promise.all([
-      this.toProductImageSnippet(product.companyId, primaryImageEntity),
-      this.toProductVideoSnippet(product.companyId, primaryVideoEntity),
+    const [images, videos] = await Promise.all([
+      this.toProductImageSnippets(product.companyId, imageEntities),
+      this.toProductVideoSnippets(product.companyId, videoEntities),
     ]);
+    const primaryImage = images[0] ?? null;
+    const primaryVideo = videos[0] ?? null;
 
     return {
       id: product.id,
@@ -685,7 +691,27 @@ export class ProductsService {
       videoCount,
       primaryImage,
       primaryVideo,
+      images,
+      videos,
     };
+  }
+
+  private async toProductImageSnippets(
+    companyId: string,
+    images: ProductImageEntity[],
+  ): Promise<ProductMediaSnippet[]> {
+    return Promise.all(
+      images.map((image) => this.toProductImageSnippet(companyId, image)),
+    ).then((items) => items.filter((item): item is ProductMediaSnippet => item != null));
+  }
+
+  private async toProductVideoSnippets(
+    companyId: string,
+    videos: ProductVideoEntity[],
+  ): Promise<ProductMediaSnippet[]> {
+    return Promise.all(
+      videos.map((video) => this.toProductVideoSnippet(companyId, video)),
+    ).then((items) => items.filter((item): item is ProductMediaSnippet => item != null));
   }
 
   private async toProductImageSnippet(

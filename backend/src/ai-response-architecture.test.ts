@@ -1398,7 +1398,7 @@ test('ai brain sends a product image through whatsapp media when the user asks f
       draftResponse: async () => ({
         provider: 'mock',
         model: 'gpt-5.4-mini',
-        content: 'Claro, te la envío ahora mismo.',
+        content: 'Claro, aquí tienes una imagen de P9 Ultra 2: ![P9 Ultra 2](URL_DE_LA_IMAGEN)',
         usedMockFallback: false,
         systemPrompt: 'Vende con contexto.',
       }),
@@ -1448,7 +1448,7 @@ test('ai brain sends a product image through whatsapp media when the user asks f
           lowStockThreshold: 2,
           negotiationAllowed: false,
           negotiationMarginPercent: null,
-          imageCount: 1,
+          imageCount: 2,
           videoCount: 0,
           primaryImage: {
             id: 'image-1',
@@ -1458,6 +1458,24 @@ test('ai brain sends a product image through whatsapp media when the user asks f
             thumbnailUrl: null,
             durationSeconds: null,
           },
+          images: [
+            {
+              id: 'image-1',
+              fileName: 'p9-ultra-2.jpg',
+              mimeType: 'image/jpeg',
+              url: 'https://media.example.com/p9-ultra-2.jpg',
+              thumbnailUrl: null,
+              durationSeconds: null,
+            },
+            {
+              id: 'image-2',
+              fileName: 'p9-ultra-2-side.jpg',
+              mimeType: 'image/jpeg',
+              url: 'https://media.example.com/p9-ultra-2-side.jpg',
+              thumbnailUrl: null,
+              durationSeconds: null,
+            },
+          ],
           primaryVideo: null,
         },
       ],
@@ -1480,7 +1498,15 @@ test('ai brain sends a product image through whatsapp media when the user asks f
       mediaUrl: 'https://media.example.com/p9-ultra-2.jpg',
       mimeType: 'image/jpeg',
       fileName: 'p9-ultra-2.jpg',
-      caption: 'Claro, te la envío ahora mismo.',
+      caption: 'Claro, aquí tienes varias imágenes de P9 Ultra 2:',
+    },
+    {
+      remoteJid: '18095550123@s.whatsapp.net',
+      mediaType: 'image',
+      mediaUrl: 'https://media.example.com/p9-ultra-2-side.jpg',
+      mimeType: 'image/jpeg',
+      fileName: 'p9-ultra-2-side.jpg',
+      caption: '',
     },
   ]);
 });
@@ -1645,7 +1671,7 @@ test('ai brain sends a product video through whatsapp media when the user asks f
           negotiationAllowed: false,
           negotiationMarginPercent: null,
           imageCount: 0,
-          videoCount: 1,
+          videoCount: 2,
           primaryImage: null,
           primaryVideo: {
             id: 'video-1',
@@ -1655,6 +1681,24 @@ test('ai brain sends a product video through whatsapp media when the user asks f
             thumbnailUrl: 'https://media.example.com/p9-ultra-2-thumb.jpg',
             durationSeconds: 15,
           },
+          videos: [
+            {
+              id: 'video-1',
+              fileName: 'p9-ultra-2.mp4',
+              mimeType: 'video/mp4',
+              url: 'https://media.example.com/p9-ultra-2.mp4',
+              thumbnailUrl: 'https://media.example.com/p9-ultra-2-thumb.jpg',
+              durationSeconds: 15,
+            },
+            {
+              id: 'video-2',
+              fileName: 'p9-ultra-2-demo.mp4',
+              mimeType: 'video/mp4',
+              url: 'https://media.example.com/p9-ultra-2-demo.mp4',
+              thumbnailUrl: 'https://media.example.com/p9-ultra-2-demo-thumb.jpg',
+              durationSeconds: 22,
+            },
+          ],
         },
       ],
     } as never,
@@ -1676,7 +1720,15 @@ test('ai brain sends a product video through whatsapp media when the user asks f
       mediaUrl: 'https://media.example.com/p9-ultra-2.mp4',
       mimeType: 'video/mp4',
       fileName: 'p9-ultra-2.mp4',
-      caption: 'Perfecto, te comparto el video de una vez.',
+      caption: 'Perfecto, te comparto los videos de una vez.',
+    },
+    {
+      remoteJid: '18095550123@s.whatsapp.net',
+      mediaType: 'video',
+      mediaUrl: 'https://media.example.com/p9-ultra-2-demo.mp4',
+      mimeType: 'video/mp4',
+      fileName: 'p9-ultra-2-demo.mp4',
+      caption: '',
     },
   ]);
 });
@@ -1864,6 +1916,16 @@ test('ai brain reuses the previous product context when the user asks for a phot
                 thumbnailUrl: null,
                 durationSeconds: null,
               },
+              images: [
+                {
+                  id: 'image-1',
+                  fileName: 'fullpos.jpg',
+                  mimeType: 'image/jpeg',
+                  url: 'https://media.example.com/fullpos.jpg',
+                  thumbnailUrl: null,
+                  durationSeconds: null,
+                },
+              ],
               primaryVideo: null,
             },
           ];

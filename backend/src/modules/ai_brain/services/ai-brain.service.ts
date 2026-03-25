@@ -16,7 +16,7 @@ import { MessageEntity, MessageSender } from '../../messages/entities/message.en
 import { MessagesService } from '../../messages/messages.service';
 import { OpenAiChatMessage, OpenAiDraftResponse } from '../../openai/types/openai.types';
 import { OpenAiService } from '../../openai/services/openai.service';
-import { ProductCatalogSnippet, ProductsService } from '../../products/products.service';
+import { ProductCatalogSnippet, ProductMediaSnippet, ProductsService } from '../../products/products.service';
 import { PromptEntity } from '../../prompts/entities/prompt.entity';
 import { PromptsService } from '../../prompts/prompts.service';
 import { ToolEntity } from '../../tools/entities/tool.entity';
@@ -42,6 +42,8 @@ export class AiBrainService {
   private static readonly responseFrequencyPenalty = 0.4;
   private static readonly aiResourceCacheTtlSeconds = 30;
   private static readonly mediaResolutionCacheTtlSeconds = 21_600;
+  private static readonly maxOutboundProductImages = 4;
+  private static readonly maxOutboundProductVideos = 2;
   private readonly logger = new Logger(AiBrainService.name);
 
   constructor(
@@ -481,14 +483,17 @@ export class AiBrainService {
         userMessage,
         matchedProducts,
       );
+      if (outboundMediaPlan) {
+        finalContent = this.sanitizeOutboundMediaCaption(finalContent, outboundMediaPlan);
+      }
 
       const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
         sender: 'bot',
         content: finalContent,
         type: outboundMediaPlan?.mediaType ?? 'text',
-        mediaUrl: outboundMediaPlan?.mediaUrl ?? null,
-        mimeType: outboundMediaPlan?.mimeType ?? null,
-        fileName: outboundMediaPlan?.fileName ?? null,
+        mediaUrl: outboundMediaPlan?.items[0]?.mediaUrl ?? null,
+        mimeType: outboundMediaPlan?.items[0]?.mimeType ?? null,
+        fileName: outboundMediaPlan?.items[0]?.fileName ?? null,
         metadata: {
           provider: firstDraft.provider,
           model: bot.model,
@@ -496,6 +501,7 @@ export class AiBrainService {
           tool: executedTool?.tool ?? null,
           usedMockFallback: firstDraft.usedMockFallback,
           outboundMediaType: outboundMediaPlan?.mediaType ?? null,
+          outboundMediaCount: outboundMediaPlan?.items.length ?? 0,
           outboundProductId: outboundMediaPlan?.productId ?? null,
           outboundProductIdentifier: outboundMediaPlan?.productIdentifier ?? null,
         },
@@ -528,23 +534,29 @@ export class AiBrainService {
             `[AI BRAIN] whatsapp send skipped conversationId=${params.conversationId} reason=missing_response_target`,
           );
         } else {
-          const outboundDispatch = outboundMediaPlan
-            ? await this.whatsappMessagingService.sendMedia(params.companyId, {
+          if (outboundMediaPlan) {
+            for (const [index, mediaItem] of outboundMediaPlan.items.entries()) {
+              const outboundDispatch = await this.whatsappMessagingService.sendMedia(params.companyId, {
                 remoteJid: targetRemoteJid,
                 mediaType: outboundMediaPlan.mediaType,
-                mediaUrl: outboundMediaPlan.mediaUrl,
-                mimeType: outboundMediaPlan.mimeType ?? undefined,
-                fileName: outboundMediaPlan.fileName,
-                caption: botMessage.content,
-              })
-            : await this.whatsappMessagingService.sendText(params.companyId, {
-                remoteJid: targetRemoteJid,
-                text: botMessage.content,
+                mediaUrl: mediaItem.mediaUrl,
+                mimeType: mediaItem.mimeType ?? undefined,
+                fileName: mediaItem.fileName,
+                caption: index === 0 ? botMessage.content : '',
               });
-          const outboundMessageView = this.readRecord(outboundDispatch['message']);
-          outboundTransportMessageId = this.readString(outboundMessageView['id']) || null;
+              const outboundMessageView = this.readRecord(outboundDispatch['message']);
+              outboundTransportMessageId = this.readString(outboundMessageView['id']) || outboundTransportMessageId;
+            }
+          } else {
+            const outboundDispatch = await this.whatsappMessagingService.sendText(params.companyId, {
+              remoteJid: targetRemoteJid,
+              text: botMessage.content,
+            });
+            const outboundMessageView = this.readRecord(outboundDispatch['message']);
+            outboundTransportMessageId = this.readString(outboundMessageView['id']) || null;
+          }
           this.logger.log(
-            `[AI BRAIN] whatsapp send success conversationId=${params.conversationId} target=${targetRemoteJid} mode=${outboundMediaPlan?.mediaType ?? 'text'} whatsappMessageId=${outboundTransportMessageId ?? 'n/a'}`,
+            `[AI BRAIN] whatsapp send success conversationId=${params.conversationId} target=${targetRemoteJid} mode=${outboundMediaPlan?.mediaType ?? 'text'} mediaCount=${outboundMediaPlan?.items.length ?? 0} whatsappMessageId=${outboundTransportMessageId ?? 'n/a'}`,
           );
         }
       }
@@ -1343,9 +1355,12 @@ export class AiBrainService {
   ):
     | {
         mediaType: 'image' | 'video';
-        mediaUrl: string;
-        mimeType: string | null;
-        fileName: string;
+        productName: string;
+        items: Array<{
+          mediaUrl: string;
+          mimeType: string | null;
+          fileName: string;
+        }>;
         productId: string;
         productIdentifier: string;
       }
@@ -1362,21 +1377,45 @@ export class AiBrainService {
     }
 
     const product = matchedProducts[0];
-    const requestedMedia = asksForVideo ? product.primaryVideo : product.primaryImage;
     const requestedMediaType = asksForVideo ? 'video' : 'image';
+    const availableMedia = this.resolveProductMediaBatch(product, requestedMediaType);
 
-    if (!requestedMedia?.url?.trim()) {
+    if (availableMedia.length === 0) {
       return null;
     }
 
     return {
       mediaType: requestedMediaType,
-      mediaUrl: requestedMedia.url,
-      mimeType: requestedMedia.mimeType,
-      fileName: requestedMedia.fileName || this.buildDefaultMediaFileName(product.identifier, requestedMediaType),
+      productName: product.name,
+      items: availableMedia.map((media, index) => ({
+        mediaUrl: media.url,
+        mimeType: media.mimeType,
+        fileName:
+          media.fileName
+          || this.buildDefaultMediaFileName(product.identifier, requestedMediaType, index),
+      })),
       productId: product.id,
       productIdentifier: product.identifier,
     };
+  }
+
+  private resolveProductMediaBatch(
+    product: ProductCatalogSnippet,
+    mediaType: 'image' | 'video',
+  ): ProductMediaSnippet[] {
+    const fallbackMedia = mediaType === 'video'
+      ? [product.primaryVideo].filter((item): item is ProductMediaSnippet => item != null)
+      : [product.primaryImage].filter((item): item is ProductMediaSnippet => item != null);
+    const configuredMedia = mediaType === 'video' ? product.videos ?? [] : product.images ?? [];
+    const maxItems = mediaType === 'video'
+      ? AiBrainService.maxOutboundProductVideos
+      : AiBrainService.maxOutboundProductImages;
+
+    return [...new Map(
+      [...configuredMedia, ...fallbackMedia]
+        .filter((item) => item.url.trim().length > 0)
+        .map((item) => [item.id, item]),
+    ).values()].slice(0, maxItems);
   }
 
   private isExplicitImageRequest(message: string): boolean {
@@ -1387,9 +1426,62 @@ export class AiBrainService {
     return /(video|v[ií]deo|clip|demo|demostracion|demostraci[oó]n)/.test(message);
   }
 
-  private buildDefaultMediaFileName(identifier: string, mediaType: 'image' | 'video'): string {
+  private buildDefaultMediaFileName(
+    identifier: string,
+    mediaType: 'image' | 'video',
+    index = 0,
+  ): string {
     const normalizedIdentifier = identifier.replace(/[^a-z0-9_-]/gi, '-').toLowerCase() || 'producto';
-    return mediaType === 'video' ? `${normalizedIdentifier}.mp4` : `${normalizedIdentifier}.jpg`;
+    const suffix = index > 0 ? `-${index + 1}` : '';
+    return mediaType === 'video'
+      ? `${normalizedIdentifier}${suffix}.mp4`
+      : `${normalizedIdentifier}${suffix}.jpg`;
+  }
+
+  private sanitizeOutboundMediaCaption(
+    content: string,
+    mediaPlan: {
+      mediaType: 'image' | 'video';
+      productName: string;
+      items: Array<unknown>;
+    },
+  ): string {
+    const sanitized = content
+      .replace(/!?\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/(?:url_de_la_imagen(?:_\d+)?|url_del_video(?:_\d+)?)/gi, ' ')
+      .replace(/\b\d+\.\s*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+([,.:;!?])/g, '$1')
+      .trim();
+
+    if (sanitized) {
+      if (mediaPlan.items.length > 1 && mediaPlan.mediaType === 'image') {
+        return sanitized
+          .replace(/\buna foto\b/i, 'varias fotos')
+          .replace(/\buna imagen\b/i, 'varias imágenes')
+          .replace(/\bla foto\b/i, 'las fotos')
+          .replace(/\bla imagen\b/i, 'las imágenes');
+      }
+
+      if (mediaPlan.items.length > 1 && mediaPlan.mediaType === 'video') {
+        return sanitized
+          .replace(/\bun video\b/i, 'varios videos')
+          .replace(/\bel video\b/i, 'los videos');
+      }
+
+      return sanitized;
+    }
+
+    const productName = mediaPlan.productName.trim() || 'este producto';
+    if (mediaPlan.mediaType === 'video') {
+      return mediaPlan.items.length > 1
+        ? `Claro, aquí tienes varios videos de ${productName}.`
+        : `Claro, aquí tienes un video de ${productName}.`;
+    }
+
+    return mediaPlan.items.length > 1
+      ? `Claro, aquí tienes varias imágenes de ${productName}.`
+      : `Claro, aquí tienes una imagen de ${productName}.`;
   }
 
   private isVideoQuestion(message: string): boolean {
