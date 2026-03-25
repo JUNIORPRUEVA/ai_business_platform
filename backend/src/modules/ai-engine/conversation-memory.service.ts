@@ -152,9 +152,10 @@ export class ConversationMemoryService {
       .orderBy('memory.created_at', 'ASC')
       .limit(200);
 
-    if (params.sinceCreatedAt) {
+    const normalizedSinceCreatedAt = this.normalizeDateInput(params.sinceCreatedAt);
+    if (normalizedSinceCreatedAt) {
       query.andWhere('memory.created_at > :sinceCreatedAt', {
-        sinceCreatedAt: params.sinceCreatedAt.toISOString(),
+        sinceCreatedAt: normalizedSinceCreatedAt.toISOString(),
       });
     }
 
@@ -261,5 +262,18 @@ export class ConversationMemoryService {
     }
 
     return null;
+  }
+
+  private normalizeDateInput(value: Date | string | null | undefined): Date | null {
+    if (!value) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 }

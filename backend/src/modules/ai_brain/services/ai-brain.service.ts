@@ -16,7 +16,7 @@ import { MessageEntity, MessageSender } from '../../messages/entities/message.en
 import { MessagesService } from '../../messages/messages.service';
 import { OpenAiChatMessage, OpenAiDraftResponse } from '../../openai/types/openai.types';
 import { OpenAiService } from '../../openai/services/openai.service';
-import { ProductsService } from '../../products/products.service';
+import { ProductCatalogSnippet, ProductsService } from '../../products/products.service';
 import { PromptEntity } from '../../prompts/entities/prompt.entity';
 import { PromptsService } from '../../prompts/prompts.service';
 import { ToolEntity } from '../../tools/entities/tool.entity';
@@ -398,6 +398,7 @@ export class AiBrainService {
           recentMessages,
           senderName: contact.name || null,
           detectedIntent,
+          matchedProducts,
         });
       }
 
@@ -472,6 +473,7 @@ export class AiBrainService {
         recentMessages,
         senderName: contact.name || null,
         detectedIntent,
+        matchedProducts,
       });
 
       const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
@@ -1011,6 +1013,7 @@ export class AiBrainService {
     recentMessages: MessageEntity[];
     senderName: string | null;
     detectedIntent: string;
+    matchedProducts: ProductCatalogSnippet[];
   }): string {
     const trimmedDraft = params.draft.trim();
     const trimmedUserMessage = params.userMessage.trim();
@@ -1030,6 +1033,7 @@ export class AiBrainService {
         recentMessages: params.recentMessages,
         senderName: params.senderName,
         detectedIntent: params.detectedIntent,
+        matchedProducts: params.matchedProducts,
       });
     }
 
@@ -1069,6 +1073,11 @@ export class AiBrainService {
       /^(entiendo|claro|perfecto|ok|vale)\b/.test(normalizedDraft) && normalizedDraft.includes('?');
 
     const echoesUserQuestion = this.isQuestionEcho(conversationalDraft, trimmedUserMessage);
+    const echoesPreviousClientQuestion = this.referencesPreviousClientQuestion(
+      conversationalDraft,
+      params.recentMessages,
+      trimmedUserMessage,
+    );
 
     const isTooLong =
       conversationalDraft.length > 280 ||
@@ -1093,6 +1102,7 @@ export class AiBrainService {
       !looksLikeGenericShortMessageReply &&
       !soundsRobotic &&
       !echoesUserQuestion &&
+      !echoesPreviousClientQuestion &&
       !repeatsLastAssistant &&
       !isTooLong
     ) {
@@ -1104,6 +1114,7 @@ export class AiBrainService {
       recentMessages: params.recentMessages,
       senderName: params.senderName,
       detectedIntent: params.detectedIntent,
+      matchedProducts: params.matchedProducts,
     });
     return fallback || conversationalDraft;
   }
@@ -1113,6 +1124,7 @@ export class AiBrainService {
     recentMessages: MessageEntity[];
     senderName: string | null;
     detectedIntent: string;
+    matchedProducts: ProductCatalogSnippet[];
   }): string {
     const normalized = params.userMessage.toLowerCase().trim();
     const recentVideoContext = this.extractRecentVideoContext(
@@ -1127,6 +1139,14 @@ export class AiBrainService {
     const namePrefix = trimmedSenderName.length > 0 ? `${trimmedSenderName}, ` : '';
     if (!normalized) {
       return 'Hola. Dime qué necesitas y te ayudo rápido.';
+    }
+
+    const productAwareReply = this.buildProductAwareReply(
+      normalized,
+      params.matchedProducts,
+    );
+    if (productAwareReply) {
+      return productAwareReply;
     }
 
     if (this.isVideoQuestion(normalized) && recentVideoContext != null) {
@@ -1208,6 +1228,43 @@ export class AiBrainService {
     }
 
     return `Prioridad absoluta: responde la intención actual del usuario de forma natural, no repitas su pregunta ni uses coletillas vacías. ${normalized}`;
+  }
+
+  private buildProductAwareReply(
+    userMessage: string,
+    matchedProducts: ProductCatalogSnippet[],
+  ): string | null {
+    if (matchedProducts.length === 0) {
+      return null;
+    }
+
+    const normalized = this.normalizeHeuristicText(userMessage);
+    const product = matchedProducts[0];
+    const priceLine = product.offerPrice
+      ? `Ahora mismo ${product.name} tiene oferta en ${product.currency} ${product.offerPrice} y su precio regular es ${product.currency} ${product.salesPrice}.`
+      : `${product.name} tiene un precio de ${product.currency} ${product.salesPrice}.`;
+    const detailLine = product.description?.trim()
+      || product.benefits?.trim()
+      || product.availabilityText?.trim()
+      || '';
+    const stockLine = product.stockQuantity != null
+      ? `Tenemos ${product.stockQuantity} unidad${product.stockQuantity === 1 ? '' : 'es'} disponible${product.stockQuantity === 1 ? '' : 's'}${product.lowStockThreshold != null && product.stockQuantity <= product.lowStockThreshold ? ', así que conviene apartarlo pronto' : ''}.`
+      : '';
+
+    if (/(que venden|que producto venden|que productos venden|productos|servicios|software|sistema|punto de venta|fullpos)/.test(normalized)) {
+      return `Sí, trabajamos con ${product.name}. ${detailLine || 'Es una solución pensada para ayudarte a manejar el negocio de forma más simple.'} ${priceLine}`.trim();
+    }
+
+    if (/(detalle|detalles|informacion|destalle|caracteristica|caracteristicas|cuentame|me gustaria saber|quiero saber|softwore|software)/.test(normalized)) {
+      const body = detailLine || `${product.name} está pensado para ayudarte con ventas, operación y control del negocio.`;
+      return `${body} ${priceLine}${stockLine ? ` ${stockLine}` : ''}`.trim();
+    }
+
+    if (/(precio|cuanto|cotiz|costo)/.test(normalized)) {
+      return `${priceLine}${stockLine ? ` ${stockLine}` : ''}`.trim();
+    }
+
+    return null;
   }
 
   private isVideoQuestion(message: string): boolean {
@@ -1509,6 +1566,53 @@ export class AiBrainService {
 
     const sharedTokens = userTokens.filter((token) => normalizedDraft.includes(token)).length;
     return sharedTokens / userTokens.length >= 0.75;
+  }
+
+  private referencesPreviousClientQuestion(
+    draft: string,
+    recentMessages: MessageEntity[],
+    currentUserMessage: string,
+  ): boolean {
+    const normalizedDraft = this.normalizeHeuristicText(draft)
+      .replace(/^(entiendo|claro|perfecto|ok|vale|listo)\s+/i, '')
+      .trim();
+    const normalizedCurrentUser = this.normalizeHeuristicText(currentUserMessage);
+
+    if (normalizedDraft.length < 18) {
+      return false;
+    }
+
+    const previousClientMessages = [...recentMessages]
+      .filter((message) => message.sender === 'client')
+      .map((message) => message.content.trim())
+      .filter((content) => content.length > 0)
+      .filter((content) => this.normalizeHeuristicText(content) !== normalizedCurrentUser)
+      .slice(-6);
+
+    for (const previousMessage of previousClientMessages) {
+      const normalizedPrevious = this.normalizeHeuristicText(previousMessage);
+      if (normalizedPrevious.length < 12) {
+        continue;
+      }
+
+      if (normalizedDraft.includes(normalizedPrevious)) {
+        return true;
+      }
+
+      const previousTokens = Array.from(
+        new Set(normalizedPrevious.split(' ').filter((token) => token.length >= 4)),
+      );
+      if (previousTokens.length < 3) {
+        continue;
+      }
+
+      const sharedTokens = previousTokens.filter((token) => normalizedDraft.includes(token)).length;
+      if (sharedTokens / previousTokens.length >= 0.7) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private shouldUseTopicAsFollowUp(topic: string | null): boolean {
