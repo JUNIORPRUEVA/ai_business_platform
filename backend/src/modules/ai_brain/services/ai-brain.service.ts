@@ -854,7 +854,7 @@ export class AiBrainService {
     const normalizedIncoming = this.normalizeHeuristicText(incomingMessage);
     const clientQueries = [...recentMessages]
       .reverse()
-      .filter((message) => message.sender === 'client')
+      .filter((message) => message.sender === 'client' || message.sender === 'user')
       .map((message) => message.content.trim())
       .filter((content) => content.length > 6)
       .filter((content) => this.normalizeHeuristicText(content) !== normalizedIncoming)
@@ -866,10 +866,33 @@ export class AiBrainService {
       .filter((message) => message.sender === 'bot')
       .filter((message) => this.isRelevantAssistantProductContext(message))
       .map((message) => this.toAssistantProductContextQuery(message))
-      .filter((content) => content.length > 12)
+      .filter((content) => content.length > 2)
       .filter((content) => !/url_de_la_imagen|!\[|\[.*\]\(/i.test(content));
 
-    return [...new Set([...clientQueries, ...assistantQueries])].slice(0, 6);
+    const prioritizedClientQueries = clientQueries.filter((content) => this.isLikelyProductContextText(content));
+    const fallbackClientQueries = clientQueries.filter(
+      (content) => !prioritizedClientQueries.includes(content),
+    );
+
+    return [
+      ...new Set([
+        ...assistantQueries,
+        ...prioritizedClientQueries,
+        ...fallbackClientQueries.slice(0, 2),
+      ]),
+    ].slice(0, 6);
+  }
+
+  private isLikelyProductContextText(content: string): boolean {
+    const normalizedContent = this.normalizeHeuristicText(content);
+
+    if (/\b\d{3,}\b/.test(content)) {
+      return true;
+    }
+
+    return /(fullpos|software|softwore|sistema|punto de venta|producto|catalogo|cat[aá]logo|plan|licencia|inventario|facturaci[oó]n|facturacion)/i.test(
+      normalizedContent,
+    );
   }
 
   private isRelevantAssistantProductContext(message: MessageEntity): boolean {
@@ -900,7 +923,7 @@ export class AiBrainService {
       return true;
     }
 
-    return /(fullpos|software|softwore|sistema|punto de venta|producto|catalogo|cat[aá]logo)/i.test(content);
+    return this.isLikelyProductContextText(content);
   }
 
   private toAssistantProductContextQuery(message: MessageEntity): string {

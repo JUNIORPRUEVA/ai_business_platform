@@ -1,0 +1,281 @@
+﻿[33m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [33m   WARN[39m [38;5;3m[OpenAiService] [39m[33mOpenAI mock fallback enabled reason=missing_or_invalid_api_key model=gpt-5.4-mini source=configuration[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] inbound received conversationId=conversation-1 companyId=company-1 channelId=channel-1 messageId=message-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] bot resolved botId=bot-1 channelId=channel-1 model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt resolved systemSource=openai.systemPromptPreview mainSource=bots.systemPrompt rules=14[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] memory loaded summary=false facts=0 window=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] tools resolved count=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] retrieved knowledge chunks=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] matched products=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt built tokens=1135 messages=4[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai request started model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai response received provider=mock fallback=false[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] assistant message saved id=bot-message-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] whatsapp send success conversationId=conversation-1 target=234840490270800@lid mode=text mediaCount=0 whatsappMessageId=wa-message-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] completed conversationId=conversation-1 companyId=company-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] inbound received conversationId=conversation-1 companyId=company-1 channelId=channel-1 messageId=message-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] bot resolved botId=bot-1 channelId=channel-1 model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt resolved systemSource=openai.systemPromptPreview mainSource=bots.systemPrompt rules=14[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] memory loaded summary=false facts=0 window=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] tools resolved count=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] retrieved knowledge chunks=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] matched products=1 ids=P9-ULTRA-2[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt built tokens=1171 messages=4[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai request started model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai response received provider=mock fallback=false[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] assistant message saved id=bot-message-image-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] whatsapp send success conversationId=conversation-1 target=18095550123@s.whatsapp.net mode=image mediaCount=2 whatsappMessageId=wa-image-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] completed conversationId=conversation-1 companyId=company-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] inbound received conversationId=conversation-1 companyId=company-1 channelId=channel-1 messageId=message-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] bot resolved botId=bot-1 channelId=channel-1 model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt resolved systemSource=openai.systemPromptPreview mainSource=bots.systemPrompt rules=14[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] memory loaded summary=false facts=0 window=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] tools resolved count=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] retrieved knowledge chunks=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] matched products=1 ids=P9-ULTRA-2[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt built tokens=1170 messages=4[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai request started model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai response received provider=mock fallback=false[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] assistant message saved id=bot-message-video-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] whatsapp send success conversationId=conversation-1 target=18095550123@s.whatsapp.net mode=video mediaCount=2 whatsappMessageId=wa-video-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] completed conversationId=conversation-1 companyId=company-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] inbound received conversationId=conversation-1 companyId=company-1 channelId=channel-1 messageId=message-2[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] bot resolved botId=bot-1 channelId=channel-1 model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt resolved systemSource=openai.systemPromptPreview mainSource=bots.systemPrompt rules=14[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] product retrieval reused context query="Hola me gustaria saber los destalle del softwore FULLPOS" matches=1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] memory loaded summary=false facts=0 window=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] tools resolved count=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] retrieved knowledge chunks=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] matched products=1 ids=1001[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt built tokens=1188 messages=5[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai request started model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai response received provider=mock fallback=false[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] assistant message saved id=bot-message-context-image-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] whatsapp send success conversationId=conversation-1 target=18095550123@s.whatsapp.net mode=image mediaCount=1 whatsappMessageId=wa-context-image-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] completed conversationId=conversation-1 companyId=company-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] inbound received conversationId=conversation-1 companyId=company-1 channelId=channel-1 messageId=message-4[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] bot resolved botId=bot-1 channelId=channel-1 model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt resolved systemSource=openai.systemPromptPreview mainSource=bots.systemPrompt rules=14[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] product retrieval reused context query="Quiero ver FULLPOS" matches=1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] memory loaded summary=false facts=0 window=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] tools resolved count=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] retrieved knowledge chunks=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] matched products=1 ids=1001[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt built tokens=1206 messages=7[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai request started model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai response received provider=mock fallback=false[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] assistant message saved id=bot-message-context-multi-image-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] whatsapp send success conversationId=conversation-1 target=18095550123@s.whatsapp.net mode=image mediaCount=2 whatsappMessageId=wa-image-2[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] completed conversationId=conversation-1 companyId=company-1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] inbound received conversationId=conversation-1 companyId=company-1 channelId=channel-1 messageId=message-current[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] bot resolved botId=bot-1 channelId=channel-1 model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt resolved systemSource=openai.systemPromptPreview mainSource=bots.systemPrompt rules=14[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] product retrieval reused context query="Quiero ver FULLPOS" matches=1[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] memory loaded summary=false facts=0 window=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] tools resolved count=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] retrieved knowledge chunks=0[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] matched products=1 ids=1001[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] prompt built tokens=1230 messages=12[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai request started model=gpt-5.4-mini[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] openai response received provider=mock fallback=false[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] assistant message saved id=bot-message-more-photos[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] whatsapp send success conversationId=conversation-1 target=18095550123@s.whatsapp.net mode=image mediaCount=2 whatsappMessageId=wa-image-2[39m
+[32m[Nest] 17048  - [39m25/03/2026, 12:46:26 a.┬ám. [32m    LOG[39m [38;5;3m[AiBrainService] [39m[32m[AI BRAIN] completed conversationId=conversation-1 companyId=company-1[39m
+TAP version 13
+# Subtest: ai brain context builder injects summary and facts as dedicated system messages
+ok 1 - ai brain context builder injects summary and facts as dedicated system messages
+  ---
+  duration_ms: 4.7182
+  ...
+# Subtest: openai mock fallback responds naturally for greetings
+ok 2 - openai mock fallback responds naturally for greetings
+  ---
+  duration_ms: 6.2816
+  ...
+# Subtest: ai brain replaces generic repetitive replies with a human sales reply
+ok 3 - ai brain replaces generic repetitive replies with a human sales reply
+  ---
+  duration_ms: 3.5802
+  ...
+# Subtest: ai brain replaces long robotic sales copy with a short human whatsapp reply
+ok 4 - ai brain replaces long robotic sales copy with a short human whatsapp reply
+  ---
+  duration_ms: 2.1436
+  ...
+# Subtest: ai brain replaces replies that echo the same client question
+ok 5 - ai brain replaces replies that echo the same client question
+  ---
+  duration_ms: 1.2663
+  ...
+# Subtest: ai brain does not reuse previous client questions as a follow-up topic
+ok 6 - ai brain does not reuse previous client questions as a follow-up topic
+  ---
+  duration_ms: 0.6529
+  ...
+# Subtest: ai brain answers video questions using the stored video analysis context
+ok 7 - ai brain answers video questions using the stored video analysis context
+  ---
+  duration_ms: 2.4646
+  ...
+# Subtest: ai brain falls back to the visual summary when asking about a video without transcript
+ok 8 - ai brain falls back to the visual summary when asking about a video without transcript
+  ---
+  duration_ms: 1.537
+  ...
+# Subtest: ai brain uses the nearest previous analyzed video when multiple videos exist in the conversation
+ok 9 - ai brain uses the nearest previous analyzed video when multiple videos exist in the conversation
+  ---
+  duration_ms: 3.7733
+  ...
+# Subtest: ai brain cleans technical video summaries before replying
+ok 10 - ai brain cleans technical video summaries before replying
+  ---
+  duration_ms: 1.2933
+  ...
+# Subtest: ai brain transcript builder keeps chronological order and ignores operator messages
+ok 11 - ai brain transcript builder keeps chronological order and ignores operator messages
+  ---
+  duration_ms: 2.026
+  ...
+# Subtest: ai brain prioriza el prompt configurado en bot-configuration sobre otras fuentes
+not ok 12 - ai brain prioriza el prompt configurado en bot-configuration sobre otras fuentes
+  ---
+  duration_ms: 6.051
+  location: 'C:\\Users\\PC\\Desktop\\botposvendedor\\backend\\dist\\ai-response-architecture.test.js:313:22'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    [32m+ actual[39m [31m- expected[39m
+    
+    [32m+[39m 'Prioridad absoluta: responde la intenci├│n actual del usuario de forma natural, no repitas su pregunta ni uses coletillas vac├¡as. PROMPT DESDE CONFIGURACION'
+    [31m-[39m 'PROMPT DESDE CONFIGURACION'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'PROMPT DESDE CONFIGURACION'
+  actual: 'Prioridad absoluta: responde la intenci├│n actual del usuario de forma natural, no repitas su pregunta ni uses coletillas vac├¡as. PROMPT DESDE CONFIGURACION'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Users\PC\Desktop\botposvendedor\backend\dist\ai-response-architecture.test.js:340:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:526:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: ai brain audio recupera audio real desde rawPayloadJson cuando el storage guardado no es reproducible
+ok 13 - ai brain audio recupera audio real desde rawPayloadJson cuando el storage guardado no es reproducible
+  ---
+  duration_ms: 2.4101
+  ...
+# Subtest: ai brain reutiliza la transcripcion ya guardada del audio sin reprocesarlo
+ok 14 - ai brain reutiliza la transcripcion ya guardada del audio sin reprocesarlo
+  ---
+  duration_ms: 1.0876
+  ...
+# Subtest: ai brain reutiliza el analisis ya guardado de la imagen sin reprocesarla
+ok 15 - ai brain reutiliza el analisis ya guardado de la imagen sin reprocesarla
+  ---
+  duration_ms: 1.6726
+  ...
+# Subtest: ai brain reutiliza el analisis ya guardado del video sin reprocesarlo
+ok 16 - ai brain reutiliza el analisis ya guardado del video sin reprocesarlo
+  ---
+  duration_ms: 1.2264
+  ...
+# Subtest: ai brain reutiliza el texto ya extraido de un documento sin reprocesarlo
+ok 17 - ai brain reutiliza el texto ya extraido de un documento sin reprocesarlo
+  ---
+  duration_ms: 1.0894
+  ...
+# Subtest: ai brain responde preguntas de cotizacion usando campos estructurados del documento
+ok 18 - ai brain responde preguntas de cotizacion usando campos estructurados del documento
+  ---
+  duration_ms: 2.0259
+  ...
+# Subtest: ai brain responde preguntas amplias sobre el contenido de la factura usando el resumen del documento
+not ok 19 - ai brain responde preguntas amplias sobre el contenido de la factura usando el resumen del documento
+  ---
+  duration_ms: 1.4584
+  location: 'C:\\Users\\PC\\Desktop\\botposvendedor\\backend\\dist\\ai-response-architecture.test.js:605:22'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    [32m+ actual[39m [31m- expected[39m
+    
+    [32m+[39m 'una cotizaci├â┬│n COT-00047 a nombre de JONAS J. CELL para equipos y accesorios por RD$ 25,000.'
+    [31m-[39m 'En el documento aparece una cotizaci├â┬│n COT-00047 a nombre de JONAS J. CELL para equipos y accesorios por RD$ 25,000.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'En el documento aparece una cotizaci├â┬│n COT-00047 a nombre de JONAS J. CELL para equipos y accesorios por RD$ 25,000.'
+  actual: 'una cotizaci├â┬│n COT-00047 a nombre de JONAS J. CELL para equipos y accesorios por RD$ 25,000.'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Users\PC\Desktop\botposvendedor\backend\dist\ai-response-architecture.test.js:635:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:526:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: ai brain rejects openai payloads when the last message is not the latest user input
+ok 20 - ai brain rejects openai payloads when the last message is not the latest user input
+  ---
+  duration_ms: 1.2835
+  ...
+# Subtest: ai brain sends whatsapp reply to inbound remoteJid before contactPhone fallback
+ok 21 - ai brain sends whatsapp reply to inbound remoteJid before contactPhone fallback
+  ---
+  duration_ms: 7.6819
+  ...
+# Subtest: ai brain sends a product image through whatsapp media when the user asks for a photo
+ok 22 - ai brain sends a product image through whatsapp media when the user asks for a photo
+  ---
+  duration_ms: 8.2191
+  ...
+# Subtest: ai brain sends a product video through whatsapp media when the user asks for a video
+ok 23 - ai brain sends a product video through whatsapp media when the user asks for a video
+  ---
+  duration_ms: 3.8794
+  ...
+# Subtest: ai brain reuses the previous product context when the user asks for a photo without repeating the product name
+ok 24 - ai brain reuses the previous product context when the user asks for a photo without repeating the product name
+  ---
+  duration_ms: 7.9644
+  ...
+# Subtest: ai brain ignores technical assistant replies and reuses prior outbound product context for multiple photos
+ok 25 - ai brain ignores technical assistant replies and reuses prior outbound product context for multiple photos
+  ---
+  duration_ms: 6.1122
+  ...
+# Subtest: ai brain prioritizes prior bot product context over generic recent client chatter for more photos requests
+not ok 26 - ai brain prioritizes prior bot product context over generic recent client chatter for more photos requests
+  ---
+  duration_ms: 10.2138
+  location: 'C:\\Users\\PC\\Desktop\\botposvendedor\\backend\\dist\\ai-response-architecture.test.js:1597:22'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    [32m+ actual[39m [31m- expected[39m
+    
+    [32m+[39m 'Quiero ver FULLPOS'
+    [31m-[39m '1001'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '1001'
+  actual: 'Quiero ver FULLPOS'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Users\PC\Desktop\botposvendedor\backend\dist\ai-response-architecture.test.js:1835:12)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+1..26
+# tests 26
+# suites 0
+# pass 23
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 152.8315
