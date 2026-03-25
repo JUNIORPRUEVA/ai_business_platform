@@ -289,6 +289,7 @@ export class AiBrainService {
       const matchedProducts = await this.retrieveProductsForMessage(
         params.companyId,
         userMessage,
+        recentMessages,
       );
 
       const memoryFacts = [
@@ -790,13 +791,41 @@ export class AiBrainService {
   private async retrieveProductsForMessage(
     companyId: string,
     incomingMessage: string,
+    recentMessages: MessageEntity[] = [],
   ) {
     try {
       if (!this.productsService) {
         return [];
       }
 
-      return this.productsService.search(companyId, incomingMessage, 4);
+      const directMatches = await this.productsService.search(companyId, incomingMessage, 4);
+      if (directMatches.length > 0) {
+        return directMatches;
+      }
+
+      const normalizedMessage = this.normalizeHeuristicText(incomingMessage);
+      if (
+        !this.isExplicitImageRequest(normalizedMessage) &&
+        !this.isExplicitVideoRequest(normalizedMessage)
+      ) {
+        return [];
+      }
+
+      const contextualQueries = this.extractContextualProductQueries(
+        incomingMessage,
+        recentMessages,
+      );
+      for (const query of contextualQueries) {
+        const contextualMatches = await this.productsService.search(companyId, query, 4);
+        if (contextualMatches.length > 0) {
+          this.logger.log(
+            `[AI BRAIN] product retrieval reused context query="${query.slice(0, 120)}" matches=${contextualMatches.length}`,
+          );
+          return contextualMatches;
+        }
+      }
+
+      return [];
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown_error';
       this.logger.warn(
@@ -804,6 +833,30 @@ export class AiBrainService {
       );
       return [];
     }
+  }
+
+  private extractContextualProductQueries(
+    incomingMessage: string,
+    recentMessages: MessageEntity[],
+  ): string[] {
+    const normalizedIncoming = this.normalizeHeuristicText(incomingMessage);
+    const clientQueries = [...recentMessages]
+      .reverse()
+      .filter((message) => message.sender === 'client')
+      .map((message) => message.content.trim())
+      .filter((content) => content.length > 6)
+      .filter((content) => this.normalizeHeuristicText(content) !== normalizedIncoming)
+      .filter((content) => !this.isExplicitImageRequest(this.normalizeHeuristicText(content)))
+      .filter((content) => !this.isExplicitVideoRequest(this.normalizeHeuristicText(content)));
+
+    const assistantQueries = [...recentMessages]
+      .reverse()
+      .filter((message) => message.sender === 'bot')
+      .map((message) => message.content.trim())
+      .filter((content) => content.length > 12)
+      .filter((content) => !/url_de_la_imagen|!\[|\[.*\]\(/i.test(content));
+
+    return [...new Set([...clientQueries, ...assistantQueries])].slice(0, 6);
   }
 
   private async resolveActiveBot(companyId: string, channel: ChannelEntity): Promise<BotEntity> {

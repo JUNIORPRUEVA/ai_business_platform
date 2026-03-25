@@ -1680,3 +1680,219 @@ test('ai brain sends a product video through whatsapp media when the user asks f
     },
   ]);
 });
+
+test('ai brain reuses the previous product context when the user asks for a photo without repeating the product name', async () => {
+  const mediaTargets: Array<Record<string, unknown>> = [];
+  const searchQueries: string[] = [];
+
+  const service = new AiBrainService(
+    {
+      getConfiguration: () => ({
+        memory: {
+          recentMessageWindowSize: 10,
+          summaryRefreshThreshold: 3,
+          enableShortTermMemory: false,
+          enableOperationalMemory: false,
+          summaryEnabled: false,
+        },
+        orchestrator: {
+          automaticMode: true,
+          enableToolExecution: false,
+        },
+        general: {
+          isEnabled: true,
+        },
+        openai: {
+          temperature: 0.7,
+          maxTokens: 500,
+          systemPromptPreview: 'Vende con contexto.',
+        },
+        prompts: [],
+      }),
+    } as never,
+    {
+      getMyCompany: async () => ({
+        name: 'Demo Company',
+        plan: 'pro',
+        status: 'active',
+        phone: '',
+        email: '',
+        website: '',
+        city: '',
+        state: '',
+        country: '',
+        description: '',
+      }),
+    } as never,
+    {
+      get: async () => ({
+        id: 'channel-1',
+        companyId: 'company-1',
+        type: 'whatsapp',
+        status: 'active',
+        config: {},
+      }),
+    } as never,
+    {
+      get: async () => ({ id: 'contact-1', name: 'Cliente', phone: '18295319442', tags: [] }),
+    } as never,
+    {
+      get: async () => ({ id: 'conversation-1', contactId: 'contact-1' }),
+    } as never,
+    {
+      getById: async () => ({
+        id: 'message-2',
+        sender: 'client',
+        content: 'Enviame una foto',
+      }),
+      listRecent: async () => [
+        {
+          id: 'message-1',
+          sender: 'client',
+          content: 'Hola me gustaria saber los destalle del softwore FULLPOS',
+          createdAt: new Date('2026-03-22T10:00:00.000Z'),
+        },
+        {
+          id: 'message-2',
+          sender: 'client',
+          content: 'Enviame una foto',
+          createdAt: new Date('2026-03-22T10:01:00.000Z'),
+        },
+      ],
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'bot-message-context-image-1',
+        ...payload,
+      }),
+    } as never,
+    {
+      getDefaultActiveBot: async () => ({
+        id: 'bot-1',
+        status: 'active',
+        model: 'gpt-5.4-mini',
+        temperature: null,
+        systemPrompt: 'Vende con contexto.',
+        name: 'Sales Bot',
+        language: 'es',
+      }),
+    } as never,
+    {
+      list: async () => [],
+    } as never,
+    {
+      listActive: async () => [],
+    } as never,
+    {
+      extractClientMemories: () => [],
+      assembleContext: async () => ({
+        keyFacts: [],
+        operationalState: [],
+        summary: null,
+        recentWindow: [],
+        contextText: '',
+      }),
+      getContactMemoryMap: async () => ({}),
+      persistAiConversationLog: async () => undefined,
+    } as never,
+    {
+      draftResponse: async () => ({
+        provider: 'mock',
+        model: 'gpt-5.4-mini',
+        content: 'Claro, aqui tienes una imagen de FULLPOS.',
+        usedMockFallback: false,
+        systemPrompt: 'Vende con contexto.',
+      }),
+    } as never,
+    {
+      listAvailable: async () => [],
+    } as never,
+    new AiBrainContextBuilderService(),
+    {
+      tryParse: () => null,
+    } as never,
+    {
+      sendText: async () => {
+        throw new Error('sendText should not be used when the previous context resolves the product image');
+      },
+      sendMedia: async (_companyId: string, payload: Record<string, unknown>) => {
+        mediaTargets.push(payload);
+        return { message: { id: 'wa-context-image-1' } };
+      },
+    } as never,
+    {
+      create: (payload: Record<string, unknown>) => payload,
+      save: async (payload: Record<string, unknown>) => payload,
+    } as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      search: async (_companyId: string, query: string) => {
+        searchQueries.push(query);
+        if (/enviame una foto/i.test(query)) {
+          return [];
+        }
+
+        if (/fullpos|softwore|software/i.test(query)) {
+          return [
+            {
+              id: 'product-1',
+              identifier: '1001',
+              name: 'FULLPOS',
+              salesPrice: '15000.00',
+              offerPrice: '9990.00',
+              currency: 'DOP',
+              category: 'Software',
+              brand: 'FULLTECH',
+              description: 'Sistema de punto de venta.',
+              benefits: null,
+              availabilityText: null,
+              stockQuantity: 1000,
+              lowStockThreshold: 10,
+              negotiationAllowed: false,
+              negotiationMarginPercent: null,
+              imageCount: 1,
+              videoCount: 0,
+              primaryImage: {
+                id: 'image-1',
+                fileName: 'fullpos.jpg',
+                mimeType: 'image/jpeg',
+                url: 'https://media.example.com/fullpos.jpg',
+                thumbnailUrl: null,
+                durationSeconds: null,
+              },
+              primaryVideo: null,
+            },
+          ];
+        }
+
+        return [];
+      },
+    } as never,
+  );
+
+  await service.processInboundMessage({
+    companyId: 'company-1',
+    channelId: 'channel-1',
+    conversationId: 'conversation-1',
+    contactPhone: '18295319442',
+    remoteJid: '18095550123@s.whatsapp.net',
+    messageId: 'message-2',
+  });
+
+  assert.equal(searchQueries[0], 'Enviame una foto');
+  assert.match(searchQueries[1] ?? '', /fullpos|softwore|software/i);
+  assert.deepEqual(mediaTargets, [
+    {
+      remoteJid: '18095550123@s.whatsapp.net',
+      mediaType: 'image',
+      mediaUrl: 'https://media.example.com/fullpos.jpg',
+      mimeType: 'image/jpeg',
+      fileName: 'fullpos.jpg',
+      caption: 'Claro, aqui tienes una imagen de FULLPOS.',
+    },
+  ]);
+});
