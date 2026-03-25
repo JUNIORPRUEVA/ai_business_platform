@@ -864,11 +864,55 @@ export class AiBrainService {
     const assistantQueries = [...recentMessages]
       .reverse()
       .filter((message) => message.sender === 'bot')
-      .map((message) => message.content.trim())
+      .filter((message) => this.isRelevantAssistantProductContext(message))
+      .map((message) => this.toAssistantProductContextQuery(message))
       .filter((content) => content.length > 12)
       .filter((content) => !/url_de_la_imagen|!\[|\[.*\]\(/i.test(content));
 
     return [...new Set([...clientQueries, ...assistantQueries])].slice(0, 6);
+  }
+
+  private isRelevantAssistantProductContext(message: MessageEntity): boolean {
+    const content = message.content.trim();
+    if (!content) {
+      return false;
+    }
+
+    const normalizedContent = this.normalizeHeuristicText(content);
+    if (
+      normalizedContent.includes('hubo un problema tecnico procesandolo')
+      || normalizedContent.includes('recibi tu audio')
+      || normalizedContent.includes('problema tecnico')
+    ) {
+      return false;
+    }
+
+    const metadata = message.metadata ?? {};
+    const outboundProductIdentifier = metadata['outboundProductIdentifier'];
+    const outboundMediaType = metadata['outboundMediaType'];
+    if (
+      typeof outboundProductIdentifier === 'string' && outboundProductIdentifier.trim().length > 0
+    ) {
+      return true;
+    }
+
+    if (typeof outboundMediaType === 'string' && outboundMediaType.trim().length > 0) {
+      return true;
+    }
+
+    return /(fullpos|software|softwore|sistema|punto de venta|producto|catalogo|cat[aá]logo)/i.test(content);
+  }
+
+  private toAssistantProductContextQuery(message: MessageEntity): string {
+    const metadata = message.metadata ?? {};
+    const outboundProductIdentifier = metadata['outboundProductIdentifier'];
+    if (
+      typeof outboundProductIdentifier === 'string' && outboundProductIdentifier.trim().length > 0
+    ) {
+      return outboundProductIdentifier.trim();
+    }
+
+    return message.content.trim();
   }
 
   private async resolveActiveBot(companyId: string, channel: ChannelEntity): Promise<BotEntity> {

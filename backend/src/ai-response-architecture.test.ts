@@ -1958,3 +1958,269 @@ test('ai brain reuses the previous product context when the user asks for a phot
     },
   ]);
 });
+
+test('ai brain ignores technical assistant replies and reuses prior outbound product context for multiple photos', async () => {
+  const mediaTargets: Array<Record<string, unknown>> = [];
+  const searchQueries: string[] = [];
+
+  const service = new AiBrainService(
+    {
+      getConfiguration: () => ({
+        memory: {
+          recentMessageWindowSize: 10,
+          summaryRefreshThreshold: 3,
+          enableShortTermMemory: false,
+          enableOperationalMemory: false,
+          summaryEnabled: false,
+        },
+        orchestrator: {
+          automaticMode: true,
+          enableToolExecution: false,
+        },
+        general: {
+          isEnabled: true,
+        },
+        openai: {
+          temperature: 0.7,
+          maxTokens: 500,
+          systemPromptPreview: 'Vende con contexto.',
+        },
+        prompts: [],
+      }),
+    } as never,
+    {
+      getMyCompany: async () => ({
+        name: 'Demo Company',
+        plan: 'pro',
+        status: 'active',
+        phone: '',
+        email: '',
+        website: '',
+        city: '',
+        state: '',
+        country: '',
+        description: '',
+      }),
+    } as never,
+    {
+      get: async () => ({
+        id: 'channel-1',
+        companyId: 'company-1',
+        type: 'whatsapp',
+        status: 'active',
+        config: {},
+      }),
+    } as never,
+    {
+      get: async () => ({ id: 'contact-1', name: 'Cliente', phone: '18295319442', tags: [] }),
+    } as never,
+    {
+      get: async () => ({ id: 'conversation-1', contactId: 'contact-1' }),
+    } as never,
+    {
+      getById: async () => ({
+        id: 'message-4',
+        sender: 'client',
+        content: 'Enviame varias fotos',
+      }),
+      listRecent: async () => [
+        {
+          id: 'message-1',
+          sender: 'client',
+          content: 'Quiero ver FULLPOS',
+          metadata: {},
+          createdAt: new Date('2026-03-22T10:00:00.000Z'),
+        },
+        {
+          id: 'message-2',
+          sender: 'bot',
+          content: 'Claro, aquí tienes varias fotos de FULLPOS.',
+          metadata: {
+            outboundProductIdentifier: '1001',
+            outboundMediaType: 'image',
+          },
+          createdAt: new Date('2026-03-22T10:01:00.000Z'),
+        },
+        {
+          id: 'message-3',
+          sender: 'bot',
+          content: 'Recibí tu audio, pero hubo un problema técnico procesándolo.',
+          metadata: {},
+          createdAt: new Date('2026-03-22T10:02:00.000Z'),
+        },
+        {
+          id: 'message-4',
+          sender: 'client',
+          content: 'Enviame varias fotos',
+          metadata: {},
+          createdAt: new Date('2026-03-22T10:03:00.000Z'),
+        },
+      ],
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'bot-message-context-multi-image-1',
+        ...payload,
+      }),
+    } as never,
+    {
+      getDefaultActiveBot: async () => ({
+        id: 'bot-1',
+        status: 'active',
+        model: 'gpt-5.4-mini',
+        temperature: null,
+        systemPrompt: 'Vende con contexto.',
+        name: 'Sales Bot',
+        language: 'es',
+      }),
+    } as never,
+    {
+      list: async () => [],
+    } as never,
+    {
+      listActive: async () => [],
+    } as never,
+    {
+      extractClientMemories: () => [],
+      assembleContext: async () => ({
+        keyFacts: [],
+        operationalState: [],
+        summary: null,
+        recentWindow: [],
+        contextText: '',
+      }),
+      getContactMemoryMap: async () => ({}),
+      persistAiConversationLog: async () => undefined,
+    } as never,
+    {
+      draftResponse: async () => ({
+        provider: 'mock',
+        model: 'gpt-5.4-mini',
+        content: 'Claro, aquí tienes varias fotos de FULLPOS.',
+        usedMockFallback: false,
+        systemPrompt: 'Vende con contexto.',
+      }),
+    } as never,
+    {
+      listAvailable: async () => [],
+    } as never,
+    new AiBrainContextBuilderService(),
+    {
+      tryParse: () => null,
+    } as never,
+    {
+      sendText: async () => {
+        throw new Error('sendText should not be used for multiple photo requests');
+      },
+      sendMedia: async (_companyId: string, payload: Record<string, unknown>) => {
+        mediaTargets.push(payload);
+        return { message: { id: `wa-image-${mediaTargets.length}` } };
+      },
+    } as never,
+    {
+      create: (payload: Record<string, unknown>) => payload,
+      save: async (payload: Record<string, unknown>) => payload,
+    } as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      search: async (_companyId: string, query: string) => {
+        searchQueries.push(query);
+        if (/enviame varias fotos/i.test(query)) {
+          return [];
+        }
+
+        if (/problema técnico|problema tecnico|recibí tu audio|recibi tu audio/i.test(query)) {
+          return [];
+        }
+
+        if (/1001|fullpos/i.test(query)) {
+          return [
+            {
+              id: 'product-1',
+              identifier: '1001',
+              name: 'FULLPOS',
+              salesPrice: '15000.00',
+              offerPrice: '9990.00',
+              currency: 'DOP',
+              category: 'Software',
+              brand: 'FULLTECH',
+              description: 'Sistema de punto de venta.',
+              benefits: null,
+              availabilityText: null,
+              stockQuantity: 1000,
+              lowStockThreshold: 10,
+              negotiationAllowed: false,
+              negotiationMarginPercent: null,
+              imageCount: 2,
+              videoCount: 0,
+              primaryImage: {
+                id: 'image-1',
+                fileName: 'fullpos-1.jpg',
+                mimeType: 'image/jpeg',
+                url: 'https://media.example.com/fullpos-1.jpg',
+                thumbnailUrl: null,
+                durationSeconds: null,
+              },
+              images: [
+                {
+                  id: 'image-1',
+                  fileName: 'fullpos-1.jpg',
+                  mimeType: 'image/jpeg',
+                  url: 'https://media.example.com/fullpos-1.jpg',
+                  thumbnailUrl: null,
+                  durationSeconds: null,
+                },
+                {
+                  id: 'image-2',
+                  fileName: 'fullpos-2.jpg',
+                  mimeType: 'image/jpeg',
+                  url: 'https://media.example.com/fullpos-2.jpg',
+                  thumbnailUrl: null,
+                  durationSeconds: null,
+                },
+              ],
+              primaryVideo: null,
+            },
+          ];
+        }
+
+        return [];
+      },
+    } as never,
+  );
+
+  await service.processInboundMessage({
+    companyId: 'company-1',
+    channelId: 'channel-1',
+    conversationId: 'conversation-1',
+    contactPhone: '18295319442',
+    remoteJid: '18095550123@s.whatsapp.net',
+    messageId: 'message-4',
+  });
+
+  assert.equal(searchQueries[0], 'Enviame varias fotos');
+  assert.ok(searchQueries.some((query) => /1001|fullpos/i.test(query)));
+  assert.ok(!searchQueries.some((query) => /problema técnico|problema tecnico|recibí tu audio|recibi tu audio/i.test(query)));
+  assert.deepEqual(mediaTargets, [
+    {
+      remoteJid: '18095550123@s.whatsapp.net',
+      mediaType: 'image',
+      mediaUrl: 'https://media.example.com/fullpos-1.jpg',
+      mimeType: 'image/jpeg',
+      fileName: 'fullpos-1.jpg',
+      caption: 'Claro, aquí tienes varias fotos de FULLPOS.',
+    },
+    {
+      remoteJid: '18095550123@s.whatsapp.net',
+      mediaType: 'image',
+      mediaUrl: 'https://media.example.com/fullpos-2.jpg',
+      mimeType: 'image/jpeg',
+      fileName: 'fullpos-2.jpg',
+      caption: '',
+    },
+  ]);
+});
