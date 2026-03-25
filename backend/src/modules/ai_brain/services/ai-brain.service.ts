@@ -476,16 +476,27 @@ export class AiBrainService {
         matchedProducts,
       });
 
+      const outboundMediaPlan = this.buildOutboundProductMediaPlan(
+        userMessage,
+        matchedProducts,
+      );
+
       const botMessage = await this.messagesService.create(params.companyId, params.conversationId, {
         sender: 'bot',
         content: finalContent,
-        type: 'text',
+        type: outboundMediaPlan?.mediaType ?? 'text',
+        mediaUrl: outboundMediaPlan?.mediaUrl ?? null,
+        mimeType: outboundMediaPlan?.mimeType ?? null,
+        fileName: outboundMediaPlan?.fileName ?? null,
         metadata: {
           provider: firstDraft.provider,
           model: bot.model,
           detectedIntent,
           tool: executedTool?.tool ?? null,
           usedMockFallback: firstDraft.usedMockFallback,
+          outboundMediaType: outboundMediaPlan?.mediaType ?? null,
+          outboundProductId: outboundMediaPlan?.productId ?? null,
+          outboundProductIdentifier: outboundMediaPlan?.productIdentifier ?? null,
         },
       });
       this.logger.log(`[AI BRAIN] assistant message saved id=${botMessage.id}`);
@@ -516,17 +527,23 @@ export class AiBrainService {
             `[AI BRAIN] whatsapp send skipped conversationId=${params.conversationId} reason=missing_response_target`,
           );
         } else {
-          const outboundDispatch = await this.whatsappMessagingService.sendText(
-            params.companyId,
-            {
-              remoteJid: targetRemoteJid,
-              text: botMessage.content,
-            },
-          );
+          const outboundDispatch = outboundMediaPlan
+            ? await this.whatsappMessagingService.sendMedia(params.companyId, {
+                remoteJid: targetRemoteJid,
+                mediaType: outboundMediaPlan.mediaType,
+                mediaUrl: outboundMediaPlan.mediaUrl,
+                mimeType: outboundMediaPlan.mimeType ?? undefined,
+                fileName: outboundMediaPlan.fileName,
+                caption: botMessage.content,
+              })
+            : await this.whatsappMessagingService.sendText(params.companyId, {
+                remoteJid: targetRemoteJid,
+                text: botMessage.content,
+              });
           const outboundMessageView = this.readRecord(outboundDispatch['message']);
           outboundTransportMessageId = this.readString(outboundMessageView['id']) || null;
           this.logger.log(
-            `[AI BRAIN] whatsapp send success conversationId=${params.conversationId} target=${targetRemoteJid} whatsappMessageId=${outboundTransportMessageId ?? 'n/a'}`,
+            `[AI BRAIN] whatsapp send success conversationId=${params.conversationId} target=${targetRemoteJid} mode=${outboundMediaPlan?.mediaType ?? 'text'} whatsappMessageId=${outboundTransportMessageId ?? 'n/a'}`,
           );
         }
       }
@@ -1013,7 +1030,7 @@ export class AiBrainService {
     recentMessages: MessageEntity[];
     senderName: string | null;
     detectedIntent: string;
-    matchedProducts: ProductCatalogSnippet[];
+    matchedProducts?: ProductCatalogSnippet[];
   }): string {
     const trimmedDraft = params.draft.trim();
     const trimmedUserMessage = params.userMessage.trim();
@@ -1114,7 +1131,7 @@ export class AiBrainService {
       recentMessages: params.recentMessages,
       senderName: params.senderName,
       detectedIntent: params.detectedIntent,
-      matchedProducts: params.matchedProducts,
+      matchedProducts: params.matchedProducts ?? [],
     });
     return fallback || conversationalDraft;
   }
@@ -1124,7 +1141,7 @@ export class AiBrainService {
     recentMessages: MessageEntity[];
     senderName: string | null;
     detectedIntent: string;
-    matchedProducts: ProductCatalogSnippet[];
+    matchedProducts?: ProductCatalogSnippet[];
   }): string {
     const normalized = params.userMessage.toLowerCase().trim();
     const recentVideoContext = this.extractRecentVideoContext(
@@ -1143,7 +1160,7 @@ export class AiBrainService {
 
     const productAwareReply = this.buildProductAwareReply(
       normalized,
-      params.matchedProducts,
+      params.matchedProducts ?? [],
     );
     if (productAwareReply) {
       return productAwareReply;
@@ -1265,6 +1282,61 @@ export class AiBrainService {
     }
 
     return null;
+  }
+
+  private buildOutboundProductMediaPlan(
+    userMessage: string,
+    matchedProducts: ProductCatalogSnippet[],
+  ):
+    | {
+        mediaType: 'image' | 'video';
+        mediaUrl: string;
+        mimeType: string | null;
+        fileName: string;
+        productId: string;
+        productIdentifier: string;
+      }
+    | null {
+    if (matchedProducts.length === 0) {
+      return null;
+    }
+
+    const normalized = this.normalizeHeuristicText(userMessage);
+    const asksForVideo = this.isExplicitVideoRequest(normalized);
+    const asksForImage = this.isExplicitImageRequest(normalized);
+    if (!asksForVideo && !asksForImage) {
+      return null;
+    }
+
+    const product = matchedProducts[0];
+    const requestedMedia = asksForVideo ? product.primaryVideo : product.primaryImage;
+    const requestedMediaType = asksForVideo ? 'video' : 'image';
+
+    if (!requestedMedia?.url?.trim()) {
+      return null;
+    }
+
+    return {
+      mediaType: requestedMediaType,
+      mediaUrl: requestedMedia.url,
+      mimeType: requestedMedia.mimeType,
+      fileName: requestedMedia.fileName || this.buildDefaultMediaFileName(product.identifier, requestedMediaType),
+      productId: product.id,
+      productIdentifier: product.identifier,
+    };
+  }
+
+  private isExplicitImageRequest(message: string): boolean {
+    return /(foto|fotos|imagen|imagenes|im[aá]genes|pic|pics|catalogo visual|cat[aá]logo visual|mu[eé]strame|muestrame)/.test(message);
+  }
+
+  private isExplicitVideoRequest(message: string): boolean {
+    return /(video|v[ií]deo|clip|demo|demostracion|demostraci[oó]n)/.test(message);
+  }
+
+  private buildDefaultMediaFileName(identifier: string, mediaType: 'image' | 'video'): string {
+    const normalizedIdentifier = identifier.replace(/[^a-z0-9_-]/gi, '-').toLowerCase() || 'producto';
+    return mediaType === 'video' ? `${normalizedIdentifier}.mp4` : `${normalizedIdentifier}.jpg`;
   }
 
   private isVideoQuestion(message: string): boolean {

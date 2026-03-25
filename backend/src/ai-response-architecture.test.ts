@@ -1288,3 +1288,395 @@ test('ai brain sends whatsapp reply to inbound remoteJid before contactPhone fal
   ]);
   assert.equal(aiBrainLogs.at(-1)?.['status'], 'processed');
 });
+
+test('ai brain sends a product image through whatsapp media when the user asks for a photo', async () => {
+  const mediaTargets: Array<Record<string, unknown>> = [];
+
+  const service = new AiBrainService(
+    {
+      getConfiguration: () => ({
+        memory: {
+          recentMessageWindowSize: 10,
+          summaryRefreshThreshold: 3,
+          enableShortTermMemory: false,
+          enableOperationalMemory: false,
+          summaryEnabled: false,
+        },
+        orchestrator: {
+          automaticMode: true,
+          enableToolExecution: false,
+        },
+        general: {
+          isEnabled: true,
+        },
+        openai: {
+          temperature: 0.7,
+          maxTokens: 500,
+          systemPromptPreview: 'Vende con contexto.',
+        },
+        prompts: [],
+      }),
+    } as never,
+    {
+      getMyCompany: async () => ({
+        name: 'Demo Company',
+        plan: 'pro',
+        status: 'active',
+        phone: '',
+        email: '',
+        website: '',
+        city: '',
+        state: '',
+        country: '',
+        description: '',
+      }),
+    } as never,
+    {
+      get: async () => ({
+        id: 'channel-1',
+        companyId: 'company-1',
+        type: 'whatsapp',
+        status: 'active',
+        config: {},
+      }),
+    } as never,
+    {
+      get: async () => ({ id: 'contact-1', name: 'Cliente', phone: '18295319442', tags: [] }),
+    } as never,
+    {
+      get: async () => ({ id: 'conversation-1', contactId: 'contact-1' }),
+    } as never,
+    {
+      getById: async () => ({
+        id: 'message-1',
+        sender: 'client',
+        content: 'Mandame una foto del P9 Ultra 2',
+      }),
+      listRecent: async () => [
+        {
+          id: 'message-1',
+          sender: 'client',
+          content: 'Mandame una foto del P9 Ultra 2',
+          createdAt: new Date('2026-03-22T10:00:00.000Z'),
+        },
+      ],
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'bot-message-image-1',
+        ...payload,
+      }),
+    } as never,
+    {
+      getDefaultActiveBot: async () => ({
+        id: 'bot-1',
+        status: 'active',
+        model: 'gpt-5.4-mini',
+        temperature: null,
+        systemPrompt: 'Vende con contexto.',
+        name: 'Sales Bot',
+        language: 'es',
+      }),
+    } as never,
+    {
+      list: async () => [],
+    } as never,
+    {
+      listActive: async () => [],
+    } as never,
+    {
+      extractClientMemories: () => [],
+      assembleContext: async () => ({
+        keyFacts: [],
+        operationalState: [],
+        summary: null,
+        recentWindow: [],
+        contextText: '',
+      }),
+      getContactMemoryMap: async () => ({}),
+      persistAiConversationLog: async () => undefined,
+    } as never,
+    {
+      draftResponse: async () => ({
+        provider: 'mock',
+        model: 'gpt-5.4-mini',
+        content: 'Claro, te la envío ahora mismo.',
+        usedMockFallback: false,
+        systemPrompt: 'Vende con contexto.',
+      }),
+    } as never,
+    {
+      listAvailable: async () => [],
+    } as never,
+    new AiBrainContextBuilderService(),
+    {
+      tryParse: () => null,
+    } as never,
+    {
+      sendText: async () => {
+        throw new Error('sendText should not be used for product image requests');
+      },
+      sendMedia: async (_companyId: string, payload: Record<string, unknown>) => {
+        mediaTargets.push(payload);
+        return { message: { id: 'wa-image-1' } };
+      },
+    } as never,
+    {
+      create: (payload: Record<string, unknown>) => payload,
+      save: async (payload: Record<string, unknown>) => payload,
+    } as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      search: async () => [
+        {
+          id: 'product-1',
+          identifier: 'P9-ULTRA-2',
+          name: 'P9 Ultra 2',
+          salesPrice: '1500',
+          offerPrice: null,
+          currency: 'DOP',
+          category: 'Audifonos',
+          brand: 'FULLTECH',
+          description: 'Audifonos bluetooth.',
+          benefits: null,
+          availabilityText: null,
+          stockQuantity: 8,
+          lowStockThreshold: 2,
+          negotiationAllowed: false,
+          negotiationMarginPercent: null,
+          imageCount: 1,
+          videoCount: 0,
+          primaryImage: {
+            id: 'image-1',
+            fileName: 'p9-ultra-2.jpg',
+            mimeType: 'image/jpeg',
+            url: 'https://media.example.com/p9-ultra-2.jpg',
+            thumbnailUrl: null,
+            durationSeconds: null,
+          },
+          primaryVideo: null,
+        },
+      ],
+    } as never,
+  );
+
+  await service.processInboundMessage({
+    companyId: 'company-1',
+    channelId: 'channel-1',
+    conversationId: 'conversation-1',
+    contactPhone: '18295319442',
+    remoteJid: '18095550123@s.whatsapp.net',
+    messageId: 'message-1',
+  });
+
+  assert.deepEqual(mediaTargets, [
+    {
+      remoteJid: '18095550123@s.whatsapp.net',
+      mediaType: 'image',
+      mediaUrl: 'https://media.example.com/p9-ultra-2.jpg',
+      mimeType: 'image/jpeg',
+      fileName: 'p9-ultra-2.jpg',
+      caption: 'Claro, te la envío ahora mismo.',
+    },
+  ]);
+});
+
+test('ai brain sends a product video through whatsapp media when the user asks for a video', async () => {
+  const mediaTargets: Array<Record<string, unknown>> = [];
+
+  const service = new AiBrainService(
+    {
+      getConfiguration: () => ({
+        memory: {
+          recentMessageWindowSize: 10,
+          summaryRefreshThreshold: 3,
+          enableShortTermMemory: false,
+          enableOperationalMemory: false,
+          summaryEnabled: false,
+        },
+        orchestrator: {
+          automaticMode: true,
+          enableToolExecution: false,
+        },
+        general: {
+          isEnabled: true,
+        },
+        openai: {
+          temperature: 0.7,
+          maxTokens: 500,
+          systemPromptPreview: 'Vende con contexto.',
+        },
+        prompts: [],
+      }),
+    } as never,
+    {
+      getMyCompany: async () => ({
+        name: 'Demo Company',
+        plan: 'pro',
+        status: 'active',
+        phone: '',
+        email: '',
+        website: '',
+        city: '',
+        state: '',
+        country: '',
+        description: '',
+      }),
+    } as never,
+    {
+      get: async () => ({
+        id: 'channel-1',
+        companyId: 'company-1',
+        type: 'whatsapp',
+        status: 'active',
+        config: {},
+      }),
+    } as never,
+    {
+      get: async () => ({ id: 'contact-1', name: 'Cliente', phone: '18295319442', tags: [] }),
+    } as never,
+    {
+      get: async () => ({ id: 'conversation-1', contactId: 'contact-1' }),
+    } as never,
+    {
+      getById: async () => ({
+        id: 'message-1',
+        sender: 'client',
+        content: 'Mandame un video del P9 Ultra 2',
+      }),
+      listRecent: async () => [
+        {
+          id: 'message-1',
+          sender: 'client',
+          content: 'Mandame un video del P9 Ultra 2',
+          createdAt: new Date('2026-03-22T10:00:00.000Z'),
+        },
+      ],
+      create: async (_companyId: string, _conversationId: string, payload: Record<string, unknown>) => ({
+        id: 'bot-message-video-1',
+        ...payload,
+      }),
+    } as never,
+    {
+      getDefaultActiveBot: async () => ({
+        id: 'bot-1',
+        status: 'active',
+        model: 'gpt-5.4-mini',
+        temperature: null,
+        systemPrompt: 'Vende con contexto.',
+        name: 'Sales Bot',
+        language: 'es',
+      }),
+    } as never,
+    {
+      list: async () => [],
+    } as never,
+    {
+      listActive: async () => [],
+    } as never,
+    {
+      extractClientMemories: () => [],
+      assembleContext: async () => ({
+        keyFacts: [],
+        operationalState: [],
+        summary: null,
+        recentWindow: [],
+        contextText: '',
+      }),
+      getContactMemoryMap: async () => ({}),
+      persistAiConversationLog: async () => undefined,
+    } as never,
+    {
+      draftResponse: async () => ({
+        provider: 'mock',
+        model: 'gpt-5.4-mini',
+        content: 'Perfecto, te comparto el video de una vez.',
+        usedMockFallback: false,
+        systemPrompt: 'Vende con contexto.',
+      }),
+    } as never,
+    {
+      listAvailable: async () => [],
+    } as never,
+    new AiBrainContextBuilderService(),
+    {
+      tryParse: () => null,
+    } as never,
+    {
+      sendText: async () => {
+        throw new Error('sendText should not be used for product video requests');
+      },
+      sendMedia: async (_companyId: string, payload: Record<string, unknown>) => {
+        mediaTargets.push(payload);
+        return { message: { id: 'wa-video-1' } };
+      },
+    } as never,
+    {
+      create: (payload: Record<string, unknown>) => payload,
+      save: async (payload: Record<string, unknown>) => payload,
+    } as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      search: async () => [
+        {
+          id: 'product-1',
+          identifier: 'P9-ULTRA-2',
+          name: 'P9 Ultra 2',
+          salesPrice: '1500',
+          offerPrice: null,
+          currency: 'DOP',
+          category: 'Audifonos',
+          brand: 'FULLTECH',
+          description: 'Audifonos bluetooth.',
+          benefits: null,
+          availabilityText: null,
+          stockQuantity: 8,
+          lowStockThreshold: 2,
+          negotiationAllowed: false,
+          negotiationMarginPercent: null,
+          imageCount: 0,
+          videoCount: 1,
+          primaryImage: null,
+          primaryVideo: {
+            id: 'video-1',
+            fileName: 'p9-ultra-2.mp4',
+            mimeType: 'video/mp4',
+            url: 'https://media.example.com/p9-ultra-2.mp4',
+            thumbnailUrl: 'https://media.example.com/p9-ultra-2-thumb.jpg',
+            durationSeconds: 15,
+          },
+        },
+      ],
+    } as never,
+  );
+
+  await service.processInboundMessage({
+    companyId: 'company-1',
+    channelId: 'channel-1',
+    conversationId: 'conversation-1',
+    contactPhone: '18295319442',
+    remoteJid: '18095550123@s.whatsapp.net',
+    messageId: 'message-1',
+  });
+
+  assert.deepEqual(mediaTargets, [
+    {
+      remoteJid: '18095550123@s.whatsapp.net',
+      mediaType: 'video',
+      mediaUrl: 'https://media.example.com/p9-ultra-2.mp4',
+      mimeType: 'video/mp4',
+      fileName: 'p9-ultra-2.mp4',
+      caption: 'Perfecto, te comparto el video de una vez.',
+    },
+  ]);
+});

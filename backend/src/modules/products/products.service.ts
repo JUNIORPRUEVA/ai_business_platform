@@ -16,6 +16,15 @@ import { ProductImageEntity } from './entities/product-image.entity';
 import { ProductEntity } from './entities/product.entity';
 import { ProductVideoEntity } from './entities/product-video.entity';
 
+export interface ProductMediaSnippet {
+  id: string;
+  fileName: string;
+  mimeType: string | null;
+  url: string;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+}
+
 export interface ProductCatalogSnippet {
   id: string;
   identifier: string;
@@ -34,6 +43,8 @@ export interface ProductCatalogSnippet {
   negotiationMarginPercent: string | null;
   imageCount: number;
   videoCount: number;
+  primaryImage: ProductMediaSnippet | null;
+  primaryVideo: ProductMediaSnippet | null;
 }
 
 @Injectable()
@@ -636,9 +647,22 @@ export class ProductsService {
   }
 
   private async toCatalogSnippet(product: ProductEntity): Promise<ProductCatalogSnippet> {
-    const [imageCount, videoCount] = await Promise.all([
+    const [imageCount, videoCount, primaryImageEntity, primaryVideoEntity] = await Promise.all([
       this.productImagesRepository.count({ where: { companyId: product.companyId, productId: product.id } }),
       this.productVideosRepository.count({ where: { companyId: product.companyId, productId: product.id } }),
+      this.productImagesRepository.findOne({
+        where: { companyId: product.companyId, productId: product.id, active: true },
+        order: { sortOrder: 'ASC', createdAt: 'ASC' },
+      }),
+      this.productVideosRepository.findOne({
+        where: { companyId: product.companyId, productId: product.id, active: true },
+        order: { sortOrder: 'ASC', createdAt: 'ASC' },
+      }),
+    ]);
+
+    const [primaryImage, primaryVideo] = await Promise.all([
+      this.toProductImageSnippet(product.companyId, primaryImageEntity),
+      this.toProductVideoSnippet(product.companyId, primaryVideoEntity),
     ]);
 
     return {
@@ -659,6 +683,65 @@ export class ProductsService {
       negotiationMarginPercent: product.negotiationMarginPercent,
       imageCount,
       videoCount,
+      primaryImage,
+      primaryVideo,
+    };
+  }
+
+  private async toProductImageSnippet(
+    companyId: string,
+    image: ProductImageEntity | null,
+  ): Promise<ProductMediaSnippet | null> {
+    if (!image) {
+      return null;
+    }
+
+    const signed = await this.storageService.presignDownload({
+      companyId,
+      key: image.storageKey,
+      expiresInSeconds: 60 * 60 * 24,
+    });
+
+    return {
+      id: image.id,
+      fileName: image.fileName,
+      mimeType: image.contentType,
+      url: signed.url,
+      thumbnailUrl: null,
+      durationSeconds: null,
+    };
+  }
+
+  private async toProductVideoSnippet(
+    companyId: string,
+    video: ProductVideoEntity | null,
+  ): Promise<ProductMediaSnippet | null> {
+    if (!video) {
+      return null;
+    }
+
+    const [signed, thumbnailSigned] = await Promise.all([
+      this.storageService.presignDownload({
+        companyId,
+        key: video.storageKey,
+        expiresInSeconds: 60 * 60 * 24,
+      }),
+      video.thumbnailStorageKey
+        ? this.storageService.presignDownload({
+            companyId,
+            key: video.thumbnailStorageKey,
+            expiresInSeconds: 60 * 60 * 24,
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      id: video.id,
+      fileName: video.fileName,
+      mimeType: video.contentType,
+      url: signed.url,
+      thumbnailUrl: thumbnailSigned?.url ?? null,
+      durationSeconds: video.durationSeconds,
     };
   }
 
